@@ -15,11 +15,14 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seconds', type=float, default=30)
     parser.add_argument('--reset', action='store_true')
+    parser.add_argument('--observation-boot', help='Observe this existing boot without claiming startup or continuity before attachment')
     parser.add_argument('--stop-file', type=Path, help='Finish and summarize when this file appears')
     parser.add_argument('--checks', nargs='*', default=[])
     args = parser.parse_args()
     if args.seconds <= 0:
         parser.error('--seconds must be positive')
+    if args.observation_boot and args.reset:
+        parser.error('--observation-boot cannot be combined with --reset')
     import serial
     from esptool.reset import HardReset
     args.output.mkdir(parents=True, exist_ok=False)
@@ -28,7 +31,8 @@ def main():
                 'port': args.port, 'requested_duration_s': args.seconds,
                 'host_clock': 'time.monotonic_ns; never subtract from device_us',
                 'device_clock': 'esp_timer_get_time microseconds since boot',
-                'required_checks': args.checks, 'reset_requested': args.reset}
+                'required_checks': args.checks, 'reset_requested': args.reset,
+                'observation_boot': args.observation_boot}
     (args.output/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     events, errors = [], []
     captures = CaptureStore(args.output/'captures')
@@ -75,7 +79,7 @@ def main():
                 errors.append('truncated instrumentation at end of capture')
     except Exception as error:
         errors.append(f'{type(error).__name__}: {error}')
-    summary = assess(events, args.checks)
+    summary = assess(events, args.checks, observation_boot=args.observation_boot)
     summary['incomplete_captures'] = captures.close()
     if summary['incomplete_captures']:
         errors.append('unfinished captures retained as incomplete')

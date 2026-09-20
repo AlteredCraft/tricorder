@@ -13,6 +13,24 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(result["checks"]["rtc_advance"], "inconclusive")
         self.assertEqual(result["status"], "inconclusive")
 
+    def test_observation_window_anchors_expected_boot_without_claiming_startup(self):
+        events = [self.event(500, "telemetry"), self.event(501, "check", check="audio", result="pass")]
+        self.assertEqual(assess(events, ["audio"])["status"], "fail")
+        result = assess(events, ["audio", "startup"], observation_boot="boot-a")
+        self.assertEqual(result["checks"], {"audio": "pass", "startup": "inconclusive"})
+        self.assertEqual(result["integrity_errors"], [])
+        self.assertIn("startup unobserved", result["scope"])
+
+    def test_observation_window_rejects_wrong_boot_and_internal_gaps(self):
+        for events in ([self.event(500, "telemetry", boot_id="wrong")],
+                       [self.event(500, "telemetry"), self.event(502, "telemetry")],
+                       [self.event(500, "telemetry"), self.event(501, "telemetry", device_us=1)]):
+            self.assertEqual(assess(events, [], observation_boot="boot-a")["status"], "fail")
+
+    def test_observation_window_does_not_accept_reboot(self):
+        events = [self.event(500, "telemetry"), self.event(0, "boot", boot_id="boot-b")]
+        self.assertEqual(assess(events, [], observation_boot="boot-a")["status"], "fail")
+
     def test_success_requires_explicit_measured_check(self):
         events = [self.event(0, "boot"), self.event(1, "check", check="rtc_advance", result="pass")]
         self.assertEqual(assess(events, ["rtc_advance"])["status"], "pass")

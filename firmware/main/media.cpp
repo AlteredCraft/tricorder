@@ -13,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
@@ -145,11 +146,19 @@ void capture_camera(const char* boot_id) {
     }
 }
 
+static std::atomic<unsigned> playback_volume{80};
+
+void set_playback_volume(unsigned volume) {
+    playback_volume.store(std::min(volume, 100U));
+}
+
 static bool play_slots(esp_codec_dev_handle_t speaker, const int16_t* raw, size_t frames,
                        const char* capture_id) {
     unsigned char before[32]{}, after[32]{};
     if (mbedtls_sha256(reinterpret_cast<const uint8_t*>(raw), frames*8, before, 0)) return false;
-    bool ok = esp_codec_dev_set_out_vol(speaker, 60) == ESP_OK;
+    // Snapshot once so all slots in this comparison use identical output gain.
+    unsigned volume = playback_volume.load();
+    bool ok = esp_codec_dev_set_out_vol(speaker, volume) == ESP_OK;
     // Only this small owned copy is passed to the potentially mutating codec.
     int16_t output[512];
     for (unsigned slot=0; slot<4 && ok; ++slot) {
@@ -160,7 +169,7 @@ static bool play_slots(esp_codec_dev_handle_t speaker, const int16_t* raw, size_
         auto* e = diagnostic_event("audio_playback_started");
         cJSON_AddStringToObject(e, "capture_id", capture_id);
         cJSON_AddNumberToObject(e, "slot", slot);
-        cJSON_AddNumberToObject(e, "volume_percent", 60);
+        cJSON_AddNumberToObject(e, "volume_percent", volume);
         diagnostic_emit(e);
         ok = esp_codec_dev_set_out_mute(speaker, false) == ESP_OK;
         for (size_t offset=0; offset<frames && ok; offset+=256) {

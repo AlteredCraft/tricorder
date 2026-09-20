@@ -34,17 +34,20 @@ def combine(results):
     return "pass"
 
 
-def assess(events, required_checks):
+def assess(events, required_checks, *, observation_boot=None):
     boots = {}
     errors = []
     previous_boot = None
     for raw in events:
         event = parse_event("TRICORDER " + json.dumps(raw))
         boot = event["boot_id"]
+        if observation_boot is not None and boot != observation_boot:
+            errors.append(f"{boot}: unexpected boot in observation window")
         if boot not in boots:
-            boots[boot] = {"last_seq": -1, "last_us": -1,
+            window_start = observation_boot == boot and previous_boot is None
+            boots[boot] = {"last_seq": event["seq"] - 1 if window_start else -1, "last_us": -1,
                            "checks": {name: [] for name in required_checks}}
-            if event["event"] != "boot":
+            if event["event"] != "boot" and not window_start:
                 errors.append(f"{boot}: missing boot event")
         elif previous_boot != boot:
             errors.append(f"{boot}: stale boot reappeared")
@@ -63,4 +66,6 @@ def assess(events, required_checks):
               for name in required_checks}
     return {"status": "fail" if errors else combine(list(checks.values())),
             "checks": checks, "integrity_errors": errors, "boot_count": len(boots),
-            "scope": "Only named instrumented checks; no implied peripheral or goal acceptance."}
+            "scope": ("Observation window only; startup unobserved; no continuity claim outside this window. "
+                      if observation_boot is not None else "") +
+                     "Only named instrumented checks; no implied peripheral or goal acceptance."}

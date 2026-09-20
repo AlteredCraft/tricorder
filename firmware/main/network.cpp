@@ -71,7 +71,12 @@ void wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
         auto* event = diagnostic_event("wifi_disconnected");
         cJSON_AddNumberToObject(event, "reason", disconnected->reason);
         diagnostic_emit(event);
-        show_status("Wi-Fi disconnected; open setup to retry.");
+        if (disconnected->reason==WIFI_REASON_NO_AP_FOUND)
+            show_status("Wi-Fi not found. Check the exact name and 2.4 GHz availability.");
+        else if (disconnected->reason==WIFI_REASON_AUTH_FAIL
+                 || disconnected->reason==WIFI_REASON_HANDSHAKE_TIMEOUT)
+            show_status("Wi-Fi authentication failed. Re-enter the password in setup.");
+        else show_status("Wi-Fi disconnected; open setup to retry.");
     } else if (base==IP_EVENT && id==IP_EVENT_STA_GOT_IP) {
         auto* address = static_cast<ip_event_got_ip_t*>(data);
         char ip[24], text[96];
@@ -209,7 +214,7 @@ void network_ui_init(lv_obj_t* screen, const char* boot_id) {
     lv_obj_center(panel);
     lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);
     auto* title=lv_label_create(panel);
-    lv_label_set_text(title,"Join the Mac's local Wi-Fi network (credentials kept in RAM)");
+    lv_label_set_text(title,"Join a 2.4 GHz network on the Mac's LAN");
     lv_obj_set_pos(title,15,0);
     ssid_field=lv_textarea_create(panel);
     lv_obj_set_pos(ssid_field,15,50); lv_obj_set_size(ssid_field,500,60);
@@ -222,6 +227,9 @@ void network_ui_init(lv_obj_t* screen, const char* boot_id) {
     lv_textarea_set_password_mode(password_field,true);
     lv_textarea_set_placeholder_text(password_field,"Password");
     lv_textarea_set_max_length(password_field,63);
+    auto* hint=lv_label_create(panel);
+    lv_label_set_text(hint,"1# opens symbols (including !); abc returns to letters. Credentials stay in RAM.");
+    lv_obj_set_pos(hint,15,114);
     keyboard=lv_keyboard_create(panel);
     lv_obj_set_size(keyboard,1040,300);
     lv_obj_align(keyboard,LV_ALIGN_BOTTOM_MID,0,0);

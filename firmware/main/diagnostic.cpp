@@ -34,6 +34,7 @@ static bool imu_ready;
 static bool power_ready;
 static lv_obj_t* status_label;
 static lv_obj_t* record_button;
+static lv_obj_t* volume_label;
 static QueueHandle_t media_commands;
 
 void diagnostic_stage(const char* text) {
@@ -164,6 +165,16 @@ static void record_clicked(lv_event_t*) {
         lv_obj_add_state(record_button, LV_STATE_DISABLED);
 }
 
+static void volume_changed(lv_event_t* event) {
+    auto* slider = static_cast<lv_obj_t*>(lv_event_get_target(event));
+    unsigned volume = lv_slider_get_value(slider);
+    set_playback_volume(volume);
+    lv_label_set_text_fmt(volume_label, "Playback volume: %u%%", volume);
+    auto* record = diagnostic_event("playback_volume_changed");
+    cJSON_AddNumberToObject(record, "volume_percent", volume);
+    diagnostic_emit(record);
+}
+
 static void media_idle() {
     diagnostic_stage("TRICORDER / hardware diagnostic\n\nTap Record & play when ready.\nWait for RECORDING, then say the test phrase.\nListen to slots 0, 1, 2 and 3.\n\nStorage checks await a microSD card.");
     if (bsp_display_lock(1000)) {
@@ -243,6 +254,15 @@ extern "C" void app_main() {
     auto* button_label = lv_label_create(record_button);
     lv_label_set_text(button_label, "Record & play");
     lv_obj_center(button_label);
+    auto* volume_slider = lv_slider_create(screen);
+    lv_obj_set_pos(volume_slider, 920, 658);
+    lv_obj_set_size(volume_slider, 290, 18);
+    lv_slider_set_range(volume_slider, 0, 100);
+    lv_slider_set_value(volume_slider, 80, LV_ANIM_OFF);
+    volume_label = lv_label_create(screen);
+    lv_obj_set_pos(volume_label, 920, 614);
+    lv_label_set_text(volume_label, "Playback volume: 80%");
+    lv_obj_add_event_cb(volume_slider, volume_changed, LV_EVENT_VALUE_CHANGED, nullptr);
     network_ui_init(screen, boot_id);
     bsp_display_brightness_set(50);
     bsp_display_unlock();
