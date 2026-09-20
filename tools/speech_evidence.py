@@ -10,8 +10,8 @@ from tools.audio_reference import pcm_fixtures
 from tools.inspect_capture import load_verified
 
 
-def speech_reference(samples, enabled):
-    if not enabled: return list(samples)
+def speech_reference(samples, enabled, with_clipping=False):
+    if not enabled: return (list(samples),0) if with_clipping else list(samples)
     alpha=math.exp(-2*math.pi*80/48000)
     highpass=[];previous_x=previous_y=0
     for sample in samples:
@@ -24,12 +24,13 @@ def speech_reference(samples, enabled):
         coefficients.append(sinc*(.42-.5*math.cos(2*math.pi*n/62)+.08*math.cos(4*math.pi*n/62)))
     total=math.fsum(coefficients)
     coefficients=[c/total for c in coefficients]
-    output=[]
+    output=[];clipped=0
     for n in range(2,len(samples),3):
         value=math.fsum(highpass[n-k]*c for k,c in enumerate(coefficients) if n>=k)
         rounded=math.floor(value+.5) if value>=0 else math.ceil(value-.5)
+        clipped+=int(rounded>32767 or rounded<-32768)
         output.append(max(-32768,min(32767,rounded)))
-    return output
+    return (output,clipped) if with_clipping else output
 
 
 def compare_pair(raw_meta,raw,speech_meta,speech):

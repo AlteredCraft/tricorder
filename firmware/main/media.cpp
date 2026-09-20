@@ -1,6 +1,7 @@
 #include "media.h"
 #include "audio_copy.h"
 #include "audio_ingress.h"
+#include "speech_filter.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_video_init.h"
@@ -208,6 +209,21 @@ static bool play_slots(esp_codec_dev_handle_t speaker, const int16_t* raw, size_
     return ok && unchanged;
 }
 
+struct AudioBlockEvidence {
+    size_t source_start=0,frames=0;
+    int64_t read_end_us=0,ready_us=0,compute_us=0;
+    char sha256[65]{};
+    unsigned clipped[4]{};
+    bool unchanged=false;
+};
+
+static bool hash_audio_block(const uint8_t* data,size_t bytes,char* hex) {
+    unsigned char digest[32];
+    if (mbedtls_sha256(data,bytes,digest,0)) return false;
+    for (size_t i=0;i<32;++i) snprintf(hex+i*2,3,"%02x",digest[i]);
+    return true;
+}
+
 void capture_audio(const char* boot_id, bool playback) {
     // Retain the codec interfaces for repeated tests; the BSP caches its speaker.
     static auto* speaker = bsp_audio_codec_speaker_init();
@@ -232,7 +248,13 @@ void capture_audio(const char* boot_id, bool playback) {
     char id[64];
     snprintf(id,sizeof(id),"%s-audio-%u",boot_id,capture_number++);
     auto* pcm = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    ok = pcm && ok;
+    constexpr size_t block_bytes=8192,max_blocks=(bytes+block_bytes-1)/block_bytes;
+    auto* proofs=static_cast<AudioBlockEvidence*>(heap_caps_calloc(max_blocks,sizeof(AudioBlockEvidence),MALLOC_CAP_SPIRAM));
+    auto* speech=static_cast<int16_t*>(heap_caps_malloc((frames/3)*2,MALLOC_CAP_SPIRAM));
+    SpeechFilter filter(true,4,0);
+    size_t block_count=0,speech_frames=0,input_clipped=0,output_clipped=0;
+    int64_t speech_compute_us=0;
+    ok = pcm && proofs && speech && ok;
     if (ok && playback) {
         for (int remaining=5; remaining>0; --remaining) {
             char text[192];
@@ -250,9 +272,27 @@ void capture_audio(const char* boot_id, bool playback) {
         diagnostic_emit(diagnostic_event("audio_acquisition_started"));
         started=esp_timer_get_time();
         ok=begin_audio_epoch(before);
-        for (size_t offset=0; ok && offset<bytes; offset+=8192) {
-            int count = std::min(size_t(8192), bytes-offset);
+        for (size_t offset=0; ok && offset<bytes; offset+=block_bytes) {
+            int count = std::min(block_bytes, bytes-offset);
             if (esp_codec_dev_read(microphone, pcm+offset, count) != ESP_OK) { ok = false; break; }
+            auto& proof=proofs[block_count];
+            proof.source_start=offset/8;proof.frames=count/8;proof.read_end_us=esp_timer_get_time();
+            if (!hash_audio_block(pcm+offset,count,proof.sha256)) {ok=false;break;}
+            const auto* raw=reinterpret_cast<const int16_t*>(pcm+offset);
+            for (size_t frame=0;frame<proof.frames;++frame)
+                for (unsigned slot=0;slot<4;++slot)
+                    if (raw[frame*4+slot]==-32768 || raw[frame*4+slot]==32767) ++proof.clipped[slot];
+            SpeechBlockResult result;
+            const int64_t process_start=esp_timer_get_time();
+            bool processed=filter.process(raw,proof.frames,speech+speech_frames,frames/3-speech_frames,result);
+            proof.compute_us=esp_timer_get_time()-process_start;
+            char after_hash[65]{};
+            proof.unchanged=hash_audio_block(pcm+offset,count,after_hash) && strcmp(proof.sha256,after_hash)==0;
+            proof.ready_us=esp_timer_get_time();
+            if (!processed || !proof.unchanged || result.source_start!=proof.source_start
+                    || result.source_frames!=proof.frames) {ok=false;break;}
+            speech_frames+=result.output_frames;input_clipped+=result.input_clipped;output_clipped+=result.output_clipped;
+            speech_compute_us+=proof.compute_us;++block_count;
         }
         after=audio_ingress_snapshot();
     }
@@ -293,13 +333,49 @@ void capture_audio(const char* boot_id, bool playback) {
         cJSON_AddStringToObject(e, "channel_mapping", "TDM slots 0-3; physical mapping not yet verified");
         cJSON_AddStringToObject(e, "processing", "none; speaker muted; IDF RX counters recorded for this acquisition epoch");
         cJSON_AddBoolToObject(e,"driver_epoch_integrity",ingress_ok);
+        cJSON_AddStringToObject(e,"ingress_boundary","successful codec read, before synchronous speech consumer; capture-relative frames");
+        auto* blocks=cJSON_AddArrayToObject(e,"ingress_blocks");
+        for (size_t index=0;index<block_count;++index) {
+            const auto& proof=proofs[index];
+            auto* block=cJSON_CreateObject();
+            cJSON_AddNumberToObject(block,"source_start_frame",proof.source_start);
+            cJSON_AddNumberToObject(block,"frames",proof.frames);
+            cJSON_AddNumberToObject(block,"read_end_us",proof.read_end_us);
+            cJSON_AddNumberToObject(block,"speech_ready_us",proof.ready_us);
+            cJSON_AddNumberToObject(block,"speech_compute_us",proof.compute_us);
+            cJSON_AddStringToObject(block,"sha256",proof.sha256);
+            cJSON_AddBoolToObject(block,"raw_unchanged",proof.unchanged);
+            auto* clipped=cJSON_AddArrayToObject(block,"clipped_samples");
+            for (auto count:proof.clipped) cJSON_AddItemToArray(clipped,cJSON_CreateNumber(count));
+            cJSON_AddItemToArray(blocks,block);
+        }
         diagnostic_stage("TRICORDER / saving recording\n\nPlease wait for the playback slot labels.");
         ok = export_diagnostic_capture(id, pcm, bytes, e);
+        if (ok) {
+            char speech_id[80];snprintf(speech_id,sizeof(speech_id),"%s-speech",id);
+            auto* derived=diagnostic_event("capture_start");
+            cJSON_AddStringToObject(derived,"role","speech_live");
+            cJSON_AddStringToObject(derived,"format","pcm_s16le");
+            cJSON_AddStringToObject(derived,"source_capture_id",id);
+            cJSON_AddNumberToObject(derived,"source_slot",0);
+            cJSON_AddNumberToObject(derived,"source_start_frame",0);
+            cJSON_AddNumberToObject(derived,"source_frames",frames);
+            cJSON_AddNumberToObject(derived,"channels",1);
+            cJSON_AddNumberToObject(derived,"sample_rate_hz",16000);
+            cJSON_AddNumberToObject(derived,"frames",speech_frames);
+            cJSON_AddNumberToObject(derived,"compute_us",speech_compute_us);
+            cJSON_AddNumberToObject(derived,"input_clipped",input_clipped);
+            cJSON_AddNumberToObject(derived,"output_clipped",output_clipped);
+            cJSON_AddStringToObject(derived,"processing","dc80-fir63-fc6500-decimate3-v1");
+            ok=speech_frames==frames/3;
+            if (ok) ok=export_diagnostic_capture(speech_id,reinterpret_cast<const uint8_t*>(speech),speech_frames*2,derived);
+            else cJSON_Delete(derived);
+        }
         if (ok && playback) play_slots(speaker, reinterpret_cast<const int16_t*>(pcm), frames, id);
     }
     diagnostic_check("audio_capture", ok ? "pass" : "fail",
                      "Isolated PCM capture/export only; no continuity or acoustic channel-mapping claim.");
-    free(pcm);
+    free(speech);free(proofs);free(pcm);
     esp_codec_dev_close(microphone);
     esp_codec_dev_close(speaker);
 }
