@@ -1,5 +1,7 @@
 ## G-0001. A trustworthy live investigation
 
+**Milestone.** [M-0001: Validate the handheld investigation](../milestones.md#m-0001-validate-the-handheld-investigation).
+
 **Outcome.** A person holding the Tricorder can ask a question, collect and compare evidence, and receive guidance while the instrument remains responsive and clearly represents what it has measured.
 
 **Driver.** The [vision](../../vision.md): realtime collaboration, tactile use, learning every built-in sensor, and explanations grounded in evidence.
@@ -15,3 +17,5 @@
 - [G-0001.05 Power and recovery](G-0001.05-power-recovery.md)
 
 **Status.** Not started, derived from all five specs being Not built. No implementation result is asserted.
+
+**Progress.** 2026-09-20: Planning only; parent milestone recorded. Next action is G-0001.01's hardware baseline. No outcome evidence exists yet.

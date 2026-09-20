@@ -17,12 +17,19 @@ Inspect the working tree and current branch before syncing. Fetch origin; fast-f
 1. [README](README.md) for entry points and status.
 2. [vision.md](vision.md) for the complete concept.
 3. [Planning guidelines](planning/README.md) and its goal/spec/ADR templates.
-4. [Stack and validation index](planning/stack-validation.md).
+4. [M-0001](planning/milestones.md#m-0001-validate-the-handheld-investigation), then its child [G-0001](planning/plans/G-0001-trustworthy-live-investigation.md) and the goal's five specs.
 5. [Proposed native stack ADR](planning/adrs/ADR-0001-native-firmware-stack.md).
 6. [Proposed local-instrument/agent ADR](planning/adrs/ADR-0002-local-instruments-connected-agent.md).
-7. [G-0001](planning/plans/G-0001-trustworthy-live-investigation.md), its five specs, and the [milestones](planning/milestones.md).
+7. The [shared run evidence format](planning/plans/G-0001.01-hardware-baseline.md#shared-run-evidence) owned by the hardware-baseline spec.
 
 ## User intent that must survive
+
+Follow-up alignment, 2026-09-20:
+
+- The user reports that the Tab5 is connected to this Mac. Device identity, currently running firmware and accessories have not yet been inspected.
+- The user is comfortable starting with C++/ESP-IDF, LVGL and the Python service. This agrees the experiment direction; it does not establish hardware results or accept the ADRs' unvalidated technical choices.
+- Run the Python service on the Mac for early R&D, first with a scripted mock agent and then a live provider. Preserve a configurable service endpoint and provider-independent device protocol so it can later become a hosted web service; the Mac would no longer be required for conversation. Local service execution does not mean local inference. Model/speech and hosting providers remain undecided.
+- The user has 25+ years of programming experience and is new to C++ and lower-level programming. Explain ownership/lifetimes, memory placement, hardware interfaces and real-time scheduling as encountered, building on their existing engineering experience.
 
 The Tab5 is attractive and tactile. Prioritize a person holding and operating it with an agent in real time. Unattended “leave it somewhere and record” use cases are outside the initial focus.
 
@@ -48,16 +55,16 @@ This addition records:
 
 There is **no firmware, backend, dependency installation, test implementation or device result**. No successful build, flashing, benchmark or sensor calibration has been established. Documentation/source inspection is the only technical evidence so far.
 
-## Recommendation, not an accepted implementation decision
+## Agreed starting direction; technical acceptance pending
 
-Candidate stack:
+Starting stack for experiments:
 
 - C++ application on ESP-IDF/FreeRTOS.
 - LVGL 9 for the interface.
 - Selected Espressif BSP and M5Unified/factory drivers, with one owner per peripheral/shared bus.
 - ESP-DSP for measurements; esp_video for camera/media.
 - ESP-SR for a separate speech-processing path; ESP-DL for later bounded local inference.
-- Python asynchronous service, with FastAPI and WebSockets as initial candidates.
+- Python asynchronous service on the Mac for early R&D, with FastAPI and WebSockets as initial candidates. It coordinates conversation, evidence and model/speech calls; provider credentials remain service-side. Later hosting is a separate validation scope.
 - Evaluate WebRTC if measured continuous speech/interruption requirements warrant it.
 
 Preserve raw measurement audio separately from enhanced speech. Noise suppression could remove the signal under investigation. Raw data still contains acoustic pickup of the device's speaker; record playback intervals.
@@ -79,7 +86,7 @@ Primary-source links and the research date are in ADR-0001. Moving documentation
 
 ## Next work
 
-Resume the stack discussion with the user, then use G-0001.01 to establish a reproducible hardware baseline before a broad implementation. Do not mark the Proposed ADRs Accepted merely because they are documented.
+Use G-0001.01 to establish a reproducible hardware baseline on the connected Tab5 before a broad implementation. The starting stack and local-service-first direction have been discussed and agreed; do not repeat that decision request. Hardware bring-up does not depend on the Python service or provider selection. Manage ADRs using the [planning lifecycle rules](planning/README.md#agent-lifecycle-responsibilities): review them as linked results arrive and resolve them when their conditions are met. Each current proposal names its owner, acceptance conditions and next review trigger; neither has hardware evidence yet.
 
 For each experiment, write its checks first and capture the evidence named in the spec. Append dated Observed entries; preserve refutations and incomplete runs. Revise a proposal through a dated header note before changing its hypothesis, workload or thresholds.
 
@@ -89,7 +96,7 @@ Bring up individual capabilities before the combined load test. Distinguish mock
 
 ## Planning conventions and verification limits
 
-The current artifacts use `planning/plans/G-0001...` together, following the filename examples in the user's guidelines. The guidelines also contain older goals/specs-directory and prototype-number wording; they were not rewritten. Preserve assigned IDs and settle any future layout change explicitly.
+The hierarchy is M-0001 → G-0001 → its five specs, with explicit parent links; ADRs are supporting decision records. Goal/spec files remain together in `planning/plans/`; preserve assigned IDs. The user wants to avoid document proliferation. The former standalone stack/validation overview has been consolidated: milestones own sequencing, ADRs own architecture rationale, and G-0001.01 owns the shared evidence format. Follow the planning README for status transitions, decision reviews and closure; update affected parents and summaries in the same change as the evidence. Do not let unresolved ADRs remain Proposed without an active next action and review trigger.
 
 All five specs have Observed set to "Not built, design only" and appear in `planning/milestones.md`, as required by the guidelines.
 

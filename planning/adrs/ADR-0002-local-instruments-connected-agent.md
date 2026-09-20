@@ -2,6 +2,9 @@
 
 Status: Proposed
 Date: 2026-09-20
+Owner: Agent implementing G-0001.03–.04
+Review trigger: First outcome recorded for G-0001.03; then each outcome or scope change in G-0001.04, including partial/refuted results
+Revision: 2026-09-20 — align with the user's agreed direction: Python service on the Mac for early R&D, with a later hosted deployment using the same device/service boundary. Status remains Proposed pending experiment evidence.
 
 ## Context
 
@@ -20,6 +23,10 @@ A handheld investigation needs immediate feedback even when an agent is slow or 
 
 **Propose** local acquisition, measurement DSP, UI and immediate feedback, plus an asynchronous Python agent service, with FastAPI as an initial candidate. Evaluate WebSockets first. Keep model adapters replaceable; choose speech/model providers separately.
 
+Start the service on the user's Mac, reached by the Tab5 over the local Wi-Fi network. Use a scripted mock agent first, then a live provider adapter. The service manages conversation context, assembles selected evidence for model requests, checks evidence references and coordinates model/speech services. Python is chosen for integration and experimentation; the service need not perform model inference itself.
+
+Preserve a path to hosting this service later: use a configurable service address and a device-initiated connection, and keep the application protocol independent of the Mac and the model provider. Provider credentials stay on the service. A hosted deployment would remove the Mac dependency for conversation, while local instruments remain independent of service availability. Hosted deployment and its device authentication, encrypted transport, credential provisioning and capture-retention policy require a later spec; they are not part of the initial LAN experiment.
+
 Use bounded commands such as request_capture, set_instrument_mode and cancel, with request IDs, deadlines, acknowledgements and device-side validation. A response references immutable capture IDs and their settings. Late responses from an earlier boot/session cannot change the active session. Acquisition never waits for an LLM response.
 
 Propose separate audio paths:
@@ -33,8 +40,14 @@ Use a mocked agent before a live model to distinguish transport/device latency f
 
 ## Consequences
 
-The Python side remains easy to inspect and evolve. The device can operate its instruments offline. We must design flow control, reconnect/cancel semantics, evidence identity and clock alignment. A local service is another component to run, and network/cloud round trips remain visible to the user.
+The Python side remains easy to inspect and evolve. The device can operate its instruments offline. We must design flow control, reconnect/cancel semantics, evidence identity and clock alignment. During local R&D, conversation depends on the Mac service being available, plus provider connectivity when using a remote model. Hosting adds operational work and internet variability; local measurements do not establish hosted latency or reliability.
 
 No full-duplex or agent-latency claim is accepted yet. [G-0001.03](../plans/G-0001.03-audio-integrity.md) tests audio separation; [G-0001.04](../plans/G-0001.04-agent-interaction.md) tests interaction and recovery. Revise this proposal if WebSockets cannot meet the workload's timing/buffering needs, and record a controlled WebRTC comparison before switching.
 
 Privacy-sensitive captures and provider keys remain outside the public repository. This is a data-handling requirement for the experiment artifacts, not a new approval step.
+
+## Decision review
+
+Acceptance conditions: The linked .03/.04 evidence must support separated measurement audio, responsive local instruments, correct evidence references, cancellation/recovery and usable interaction on the local deployment. Record the tested transport/provider configuration and its limits. Hosting, local inference and full-duplex speech are deferred capabilities, not acceptance gates for this decision.
+
+- 2026-09-20: **Proposed.** Reviewed the user's agreement to a Mac service first and a later hosting path. The .03/.04 experiments are unbuilt, so no audio or interaction result supports technical acceptance yet. Next action: validate .03's audio separation after hardware bring-up; review here when its result is recorded, then after .04's mock and live-agent results. A transport failure requires a decision review and the controlled comparison described above, not indefinite Proposed status.

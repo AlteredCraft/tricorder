@@ -1,8 +1,10 @@
-# NNNN. Title
+# G-NNNN.nn. Title
 
 Status: Proposed | In progress | Confirmed | Refuted | Partial | Not built
-Goal: G-N, one line saying which outcome this spec serves
-Date: YYYY-MM-DD (revised YYYY-MM-DD: what changed and why)
+Goal: Link to the one parent G-NNNN, one line saying which outcome this spec serves
+ADRs: Links to decisions this experiment tests or informs, or None
+Date: YYYY-MM-DD
+Revision: Initial proposal. Add dated revision notes before changing hypothesis, workload, scope or thresholds.
 
 ## Proposal
 
@@ -12,23 +14,26 @@ One paragraph. What we expect to be true once the build has run, stated so that 
 
 ### Refuted if
 
-The observations that would falsify the hypothesis. Concrete: a duplicated row, a manual UI step, a readable row that should not be.
+Concrete observations that would falsify the hypothesis. Distinguish a failed check from missing or inconclusive evidence.
 
 ### Build
 
-- What is built, one bullet per component, with the mechanism named (the key, the grant, the join, the task type).
-- If time allows: work that extends the hypothesis but is not needed to test it.
+- Bounded build steps needed to test this hypothesis. Name the mechanism and any prerequisite specs; link architecture rationale in an ADR.
 
 ### Out of scope
 
-What this spec deliberately does not test, and which later spec or Milestone item takes it. Each item is recorded as Not tested under Observed.
+What this spec deliberately does not test. Link an existing later spec or milestone note where relevant; do not create new documents just to account for exclusions. Exclusions remain Not tested, not implied successes.
 
 ### How we know
 
-One check per build step, read from tables, event logs, or run records. State the query and the expected result. Cross-run checks last.
+Write checks before build steps. Name each check's evidence source, expected result and handling of missing data. Label proposed numeric targets. Link shared evidence formats defined by a prerequisite spec rather than copying them. Specify repetition and cross-run comparisons where needed to support the claim.
 
 ## Observed
 
-One dated entry per build step, appended in order. Each names the status (Confirmed, Refuted, Partial, Not tested), what was seen and where, and what changed the design, or "Nothing changed the design." Link the ADR when a decision was taken.
+Before any build: "YYYY-MM-DD: Not built, design only." Keep the spec status Not built when recording an unattempted design in a milestone.
+
+Append dated entries per build step. Each names the result (Confirmed, Refuted, Partial, Not tested), what was seen, its evidence path and what changed the design, or "Nothing changed the design." Link an ADR for a consequential architecture decision. Preserve failures and incomplete runs. Identify planning-only revisions separately from measured results.
+
+After each result, reassess status and review linked ADRs whose conditions are affected; update the parent goal and milestone in the same change. For unresolved or deferred work, record the missing evidence, next action and any resumption condition. At closure, account for every check; use Partial when evidence cannot resolve the hypothesis.
 
 - Step N, name (YYYY-MM-DD): Status. What was observed, from which table or log. What changed.

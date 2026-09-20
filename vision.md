@@ -8,7 +8,7 @@ The goal is to learn about both the physical world and the device itself by givi
 
 > “I learned something about this object—and something about what my device can do.”
 
-**Status:** concept and project initialization. This repository currently contains this README and an MIT license. The experiences below describe intended behavior, not implemented features. The technology stack is deliberately undecided.
+**Status:** planning and research. The experiences below describe intended behavior, not implemented features. The agreed starting stack for experiments is C++/ESP-IDF with LVGL and a Python agent service; exact dependencies and hardware support still require validation. See the [milestones](planning/milestones.md).
 
 ## The experience
 
@@ -104,7 +104,7 @@ The agent must not invent measurements or imply that an unavailable sensor suppl
 
 The intended division of responsibility is straightforward: the device handles responsive acquisition, controls, live displays, and immediate feedback; a connected agent handles conversation and richer interpretation.
 
-That is a behavioral direction, not a committed implementation architecture. The firmware framework, UI toolkit, transport, backend language, model provider, and speech pipeline remain open decisions.
+The agreed starting approach is C++/ESP-IDF with LVGL on the device and a Python service on the developer's Mac during early R&D. The service coordinates conversation, evidence and model/speech calls, beginning with a scripted mock agent. It can later move to a hosted web service that the Tab5 connects to directly, removing the Mac dependency. Running the Python service locally does not imply local model inference. Model/speech providers remain undecided; WebSockets and FastAPI are initial candidates to validate.
 
 Core exploration should remain useful when the agent connection is unavailable. The interface should clearly distinguish live local readings from pending or unavailable agent responses.
 
@@ -134,9 +134,9 @@ The milestone is successful when the interaction is understandable, responsive, 
 
 These are possible extensions. The initial focus stays on a realtime, handheld Tricorder and learning the built-in capabilities.
 
-## Next decision
+## Next step
 
-Choose the stack together, using the first live investigation and hardware support as the selection criteria. No firmware scaffold, dependencies, or backend implementation have been selected yet.
+Establish a reproducible hardware baseline on the connected Tab5 using the agreed starting stack. Follow [M-0001 and its goal/specs](planning/milestones.md#m-0001-validate-the-handheld-investigation) for the experiments and linked decisions that establish driver, version and interaction suitability. No firmware scaffold, dependencies, or backend implementation exists yet.
 
 ## Hardware references
 

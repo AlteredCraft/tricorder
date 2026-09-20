@@ -2,6 +2,9 @@
 
 Status: Proposed
 Date: 2026-09-20
+Owner: Agent implementing G-0001.01–.03
+Review trigger: First outcome recorded for G-0001.01; then each outcome or scope change in G-0001.02/.03, including partial/refuted results
+Alignment: 2026-09-20 — user agreed to begin with this stack. Status remains Proposed pending the hardware and workload evidence below.
 
 ## Context
 
@@ -54,6 +57,12 @@ Specific assumptions to resolve:
 - Use speech processing without changing measurement audio; see [ADR-0002](ADR-0002-local-instruments-connected-agent.md).
 
 Acceptance depends on [hardware baseline](../plans/G-0001.01-hardware-baseline.md), [combined load](../plans/G-0001.02-concurrent-workload.md), and [audio integrity](../plans/G-0001.03-audio-integrity.md). Revisit if required peripherals cannot coexist, panel support remains unreliable, or another route substantially reduces measured integration cost.
+
+## Decision review
+
+Acceptance conditions: The linked .01–.03 evidence must support the required native hardware integration, combined workload and raw-audio integrity. Resolve driver/version choices and record remaining limits before accepting. Optional ESP-DL, later acceleration and other deferred capabilities do not gate this decision; acceptance does not validate them.
+
+- 2026-09-20: **Proposed.** Reviewed the user's agreement to start with this stack and the unbuilt .01–.03 specs. No hardware evidence exists, so technical acceptance remains unresolved. Next action: establish .01's reproducible hardware baseline, then review this ADR immediately against that result. Later gates remain .02/.03; do not wait until milestone closure to assess failures or revise the proposal.
 
 ## Primary research references
 

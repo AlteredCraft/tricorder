@@ -9,14 +9,13 @@ Hold it, point it, move it, and ask questions. The goal is to learn what the dev
 ## Start here
 
 - [Vision](vision.md) — the complete product concept, interaction loop, modes and hardware roles.
-- [Stack recommendation and validation plan](planning/stack-validation.md) — researched options, proposed decisions and experiments.
 - [Planning guidelines](planning/README.md) — goals, hypothesis-driven specs and architecture decision records.
-- [Milestones](planning/milestones.md) — design-only phase 1 iterations.
+- [Milestones](planning/milestones.md) — Milestone → Goal → Spec, with links to architecture decisions and validation work.
 - [Agent handoff](HANDOFF.md) — current state and how to continue locally.
 
 ## Status
 
-Planning and research only. No firmware, backend, test harness or hardware validation has been implemented. Stack recommendations are Proposed; exact versions and peripheral drivers require validation on the actual device.
+Planning and research only. The agreed starting stack is C++/ESP-IDF with LVGL on the Tab5 and a Python agent service on the developer's Mac for early R&D, with a path to hosting the service later. Begin with a mock agent; model and speech providers remain undecided. No firmware, backend, test harness or hardware validation has been implemented. ADRs remain Proposed; exact versions and peripheral drivers require validation on the actual device.
 
 ## License
 
