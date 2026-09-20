@@ -1,0 +1,11 @@
+.tools/
+.local/
+__pycache__/
+*.pyc
+.venv/
+build/
+sdkconfig.old
+firmware/sdkconfig
+managed_components/
+.DS_Store
+.env

@@ -61,7 +61,7 @@ Revocation does not require a replacement. If the choice is now unresolved, stat
 
 ### Initial proposal reconciliation
 
-2026-09-20: The former ADR-0001 and ADR-0002 were unvalidated proposals, not decisions in force. Their research and candidate designs now live in [G-0001.01](plans/G-0001.01-hardware-baseline.md#candidate-native-stack) and [G-0001.04](plans/G-0001.04-agent-interaction.md#candidate-service-architecture). Their original files remain in Git history. They are neither Active nor Revoked ADRs. Reserve those numbers for traceability; the first actual ADR will be ADR-0003. No architectural decisions have yet been recorded under this convention.
+2026-09-20: The former ADR-0001 and ADR-0002 were unvalidated proposals, not decisions in force. Their research and candidate designs now live in [G-0001.01](plans/G-0001.01-hardware-baseline.md#candidate-native-stack) and [G-0001.04](plans/G-0001.04-agent-interaction.md#candidate-service-architecture). Their original files remain in Git history. They are neither Active nor Revoked ADRs. Reserve those numbers for traceability; the first actual ADR will be ADR-0003. The first actual decision is [ADR-0003](adrs/ADR-0003-tab5-diagnostic-foundation.md), the reproduced diagnostic foundation.
 
 ## Agent lifecycle responsibilities
 

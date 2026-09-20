@@ -16,6 +16,10 @@
 - [G-0001.04 Agent interaction](G-0001.04-agent-interaction.md)
 - [G-0001.05 Power and recovery](G-0001.05-power-recovery.md)
 
-**Status.** Not started, derived from all five specs being Not built. No implementation result is asserted.
+**Status.** In progress. Hardware baseline underway; the full investigation and all device acceptance gates remain unverified.
 
 **Progress.** 2026-09-20: Planning only; parent milestone recorded. Next action is G-0001.01's hardware baseline. No outcome evidence exists yet.
+
+**Progress.** 2026-09-20: Started [.01](G-0001.01-hardware-baseline.md#observed): serial access, recovery checks and pinned factory/toolchain setup. Remaining specs are Not built.
+
+**Progress.** 2026-09-20: Factory reproduction and native identity/RTC checks recorded in [.01](G-0001.01-hardware-baseline.md#observed); diagnostic foundation adopted in [ADR-0003](../adrs/ADR-0003-tab5-diagnostic-foundation.md). No SD card; full hardware and guided-investigation gates remain open.

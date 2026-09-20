@@ -1,0 +1,32 @@
+{
+  "repositories": {
+    ".tools/esp-idf": {
+      "url": "https://github.com/espressif/esp-idf.git",
+      "commit": "f5c3654a1c2d2a01f7f67def7a0dc48e691f63c0"
+    },
+    ".tools/M5Tab5-UserDemo": {
+      "url": "https://github.com/m5stack/M5Tab5-UserDemo.git",
+      "commit": "b4e356bc491ca070d54004718dad789c07d5fc93"
+    },
+    ".tools/M5Tab5-UserDemo/dependencies/mooncake": {
+      "url": "https://github.com/Forairaaaaa/mooncake.git",
+      "commit": "0dfc177b72fcc55095fd222b0bdc69595b001d9f"
+    },
+    ".tools/M5Tab5-UserDemo/dependencies/mooncake_log": {
+      "url": "https://github.com/Forairaaaaa/mooncake_log.git",
+      "commit": "41d00d9d7209668215cea09dbfb0cbac36b5a1c0"
+    },
+    ".tools/M5Tab5-UserDemo/dependencies/smooth_ui_toolkit": {
+      "url": "https://github.com/Forairaaaaa/smooth_ui_toolkit.git",
+      "commit": "3a749e5b7090c6aba81729cf556b7b88cb42ce54"
+    },
+    ".tools/M5Tab5-UserDemo/dependencies/lvgl": {
+      "url": "https://github.com/lvgl/lvgl.git",
+      "commit": "7f07a129e8d77f4984fff8e623fd5be18ff42e74"
+    }
+  },
+  "host_python": "3.11",
+  "inspection_esptool": "5.1.0",
+  "cmake": "3.30.5",
+  "ninja": "1.11.1.4"
+}
