@@ -19,7 +19,11 @@ G-0001 is **In progress**. Read [milestones](planning/milestones.md), [the goal]
 
 Camera/PCM export: `media-boot-2` retains a readable 1280×720 frame and three seconds of four-slot raw audio with matching device/host hashes; 30 host tests pass. [ADR-0004](planning/adrs/ADR-0004-capture-completion.md) governs completion/partials.
 
-Finish .01: physical microphone channels/record-playback, headphone checks, Wi-Fi roundtrip/C6 version, SD checks when a card is installed, ten cold starts and ten software resets. Then execute .02–.05 against their stated workloads and counts. Do not substitute USB resets for cold starts or declare calibration from raw readings. Ask the user when physical interaction is needed; they are available to operate the device.
+Touch-triggered record/playback now exists; `acoustic-1` retained two operator attempts with unchanged raw hashes. User hears recognizable but faint output; user explicitly reports screen slots 1/3, conflicting with stronger raw signals in 0/2; keep mapping unresolved. Current build raises playback volume 40→60% with capture gain unchanged at 24 dB and adds clearer ordinal/raw-slot labels with a two-second lead plus RAM-only on-device Wi-Fi setup.
+
+[ADR-0005](planning/adrs/ADR-0005-diagnostic-radio-startup.md) records the hosted startup correction: defer constructor initialization to the running network task and keep FreeRTOS allocations in compatible SRAM. Retain failed `acoustic-network-1/2`; corrected `acoustic-network-3` reaches media/interactive checks. Host suite has 36 tests.
+
+Finish .01: physical microphone mapping and louder playback, headphone checks, Wi-Fi roundtrip/C6 version, SD checks when a card is installed, ten cold starts and ten software resets. Then execute .02–.05 against their stated workloads and counts. Do not substitute USB resets for cold starts or declare calibration from raw readings. Ask the user when physical interaction is needed; they are available to operate the device.
 
 Maintain concise planning progress in the same commits as implementation. Observed entries are append-only. Record consequential decisions as they happen; reserved former ADR-0001/0002 were proposals, not revoked decisions. Inspect branch status before syncing and preserve local commits; do not reset to a remote baseline.
 

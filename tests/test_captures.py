@@ -92,6 +92,15 @@ class CaptureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.chunk(b"abcdefgh")
 
+    def test_duplicate_start_cannot_later_publish_ambiguous_capture(self):
+        self.start()
+        with self.assertRaises(ValueError):
+            self.start(size=3)
+        self.chunk(b"abcdef")
+        with self.assertRaisesRegex(ValueError, "earlier rejected"):
+            self.finish()
+        self.assertFalse((self.root/"frame-1.bin").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

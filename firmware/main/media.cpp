@@ -1,4 +1,5 @@
 #include "media.h"
+#include "audio_copy.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_video_init.h"
@@ -144,9 +145,63 @@ void capture_camera(const char* boot_id) {
     }
 }
 
-void capture_audio(const char* boot_id) {
-    auto* speaker = bsp_audio_codec_speaker_init();
-    auto* microphone = bsp_audio_codec_microphone_init();
+static bool play_slots(esp_codec_dev_handle_t speaker, const int16_t* raw, size_t frames,
+                       const char* capture_id) {
+    unsigned char before[32]{}, after[32]{};
+    if (mbedtls_sha256(reinterpret_cast<const uint8_t*>(raw), frames*8, before, 0)) return false;
+    bool ok = esp_codec_dev_set_out_vol(speaker, 60) == ESP_OK;
+    // Only this small owned copy is passed to the potentially mutating codec.
+    int16_t output[512];
+    for (unsigned slot=0; slot<4 && ok; ++slot) {
+        char text[192];
+        snprintf(text, sizeof(text), "PLAYBACK %u of 4 / RAW SLOT %u\n\nListen for your recorded phrase.\nEach slot plays for three seconds.", slot+1, slot);
+        diagnostic_stage(text);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        auto* e = diagnostic_event("audio_playback_started");
+        cJSON_AddStringToObject(e, "capture_id", capture_id);
+        cJSON_AddNumberToObject(e, "slot", slot);
+        cJSON_AddNumberToObject(e, "volume_percent", 60);
+        diagnostic_emit(e);
+        ok = esp_codec_dev_set_out_mute(speaker, false) == ESP_OK;
+        for (size_t offset=0; offset<frames && ok; offset+=256) {
+            size_t count = std::min(size_t(256), frames-offset);
+            ok = audio_slot_stereo(raw+offset*4, count, slot, output, 512)
+                && esp_codec_dev_write(speaker, output, count*4) == ESP_OK;
+        }
+        // Allow the final queued samples to drain before muting.
+        vTaskDelay(pdMS_TO_TICKS(100));
+        ok = esp_codec_dev_set_out_mute(speaker, true) == ESP_OK && ok;
+        e = diagnostic_event("audio_playback_finished");
+        cJSON_AddStringToObject(e, "capture_id", capture_id);
+        cJSON_AddNumberToObject(e, "slot", slot);
+        cJSON_AddBoolToObject(e, "write_ok", ok);
+        diagnostic_emit(e);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    bool unchanged = mbedtls_sha256(reinterpret_cast<const uint8_t*>(raw), frames*8, after, 0) == 0
+        && memcmp(before, after, sizeof(before)) == 0;
+    char before_hex[65], after_hex[65];
+    for (size_t i=0; i<sizeof(before); ++i) {
+        snprintf(before_hex+i*2, 3, "%02x", before[i]);
+        snprintf(after_hex+i*2, 3, "%02x", after[i]);
+    }
+    auto* event = diagnostic_event("audio_playback_integrity");
+    cJSON_AddStringToObject(event, "capture_id", capture_id);
+    cJSON_AddStringToObject(event, "sha256_before", before_hex);
+    cJSON_AddStringToObject(event, "sha256_after", after_hex);
+    diagnostic_emit(event);
+    diagnostic_check("audio_raw_unchanged", unchanged ? "pass" : "fail",
+                     "Raw PCM SHA-256 compared before/after playback of separate slot copies.");
+    diagnostic_check("audio_playback_write", ok ? "pass" : "fail",
+                     "Codec writes only; audible playback requires operator observation.");
+    return ok && unchanged;
+}
+
+void capture_audio(const char* boot_id, bool playback) {
+    // Retain the codec interfaces for repeated tests; the BSP caches its speaker.
+    static auto* speaker = bsp_audio_codec_speaker_init();
+    static auto* microphone = bsp_audio_codec_microphone_init();
+    static unsigned capture_number;
     if (!speaker || !microphone) {
         diagnostic_check("audio_capture", "fail", "codec creation failed");
         return;
@@ -165,9 +220,19 @@ void capture_audio(const char* boot_id) {
     constexpr size_t bytes = frames * 4 * sizeof(int16_t);
     auto* pcm = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     ok = pcm && ok;
+    if (ok && playback) {
+        for (int remaining=5; remaining>0; --remaining) {
+            char text[192];
+            snprintf(text, sizeof(text), "TRICORDER / record in %d\n\nAt RECORDING, say:\nTricorder audio test, one two three.", remaining);
+            diagnostic_stage(text);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+        // Flush queued countdown audio; this is not a continuity measurement.
+        ok = esp_codec_dev_read(microphone, pcm, 8192) == ESP_OK;
+    }
     int64_t started = esp_timer_get_time();
     if (ok) {
-        diagnostic_stage("TRICORDER / microphone capture\n\nRecording three seconds of raw audio.\nThe speaker is muted.");
+        diagnostic_stage("TRICORDER / RECORDING\n\nSay: Tricorder audio test, one two three.\nThree seconds; speaker muted.");
         diagnostic_emit(diagnostic_event("audio_acquisition_started"));
         for (size_t offset=0; offset<bytes; offset+=8192) {
             int count = std::min(size_t(8192), bytes-offset);
@@ -177,7 +242,7 @@ void capture_audio(const char* boot_id) {
     int64_t ended = esp_timer_get_time();
     if (ok) {
         char id[64];
-        snprintf(id, sizeof(id), "%s-audio", boot_id);
+        snprintf(id, sizeof(id), "%s-audio-%u", boot_id, capture_number++);
         auto* e = diagnostic_event("capture_start");
         cJSON_AddStringToObject(e, "format", "pcm_s16le");
         cJSON_AddNumberToObject(e, "sample_rate_hz", 48000);
@@ -188,12 +253,13 @@ void capture_audio(const char* boot_id) {
         cJSON_AddNumberToObject(e, "acquisition_end_us", ended);
         cJSON_AddStringToObject(e, "channel_mapping", "TDM slots 0-3; physical mapping not yet verified");
         cJSON_AddStringToObject(e, "processing", "none; speaker muted; driver loss counters not yet instrumented");
+        diagnostic_stage("TRICORDER / saving recording\n\nPlease wait for the playback slot labels.");
         ok = export_capture(id, pcm, bytes, e);
+        if (ok && playback) play_slots(speaker, reinterpret_cast<const int16_t*>(pcm), frames, id);
     }
     diagnostic_check("audio_capture", ok ? "pass" : "fail",
                      "Isolated PCM capture/export only; no continuity or acoustic channel-mapping claim.");
     free(pcm);
     esp_codec_dev_close(microphone);
     esp_codec_dev_close(speaker);
-    esp_codec_dev_delete(microphone);
 }

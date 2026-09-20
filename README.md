@@ -35,6 +35,10 @@ Rediscover the port after reconnecting. Flash with `tools/idf.sh -C firmware -p 
 
 Capture runs also retain checked raw media in `captures/`; incomplete exports stay explicitly incomplete. Run `python3 -m tools.inspect_capture PATH_TO_CAPTURE.json` to verify bytes and create a camera PNG or per-slot WAV files (camera conversion requires `ffmpeg`). Physical channel mapping and calibration are separate checks.
 
+The diagnostic has **Record & play** for a countdown, three-second raw recording, and four separately labeled playback slots. **Wi-Fi setup** accepts the local network name/password on the device; credentials are RAM-only. Once its address appears, run `python3 -m tools.network_probe --url http://DEVICE_IP --boot-id BOOT_ID --output .local/runs/lan-001` for three fresh echo exchanges. Audible playback, physical channel mapping and LAN round trips remain separate evidence.
+
+For a longer operator session, add `--stop-file .local/STOP` to serial capture and create that file when finished; the collector closes partials and writes its summary. Use a fresh stop-file path or remove your previous stop request before starting.
+
 ## License
 
 [MIT](LICENSE)

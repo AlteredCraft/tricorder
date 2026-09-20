@@ -15,6 +15,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seconds', type=float, default=30)
     parser.add_argument('--reset', action='store_true')
+    parser.add_argument('--stop-file', type=Path, help='Finish and summarize when this file appears')
     parser.add_argument('--checks', nargs='*', default=[])
     args = parser.parse_args()
     if args.seconds <= 0:
@@ -41,7 +42,7 @@ def main():
                 HardReset(port, uses_usb=True)()
             end = time.monotonic() + args.seconds
             pending = b''
-            while time.monotonic() < end:
+            while time.monotonic() < end and not (args.stop_file and args.stop_file.exists()):
                 chunk = port.read(8192)
                 if not chunk:
                     continue

@@ -6,6 +6,7 @@
 #include "bsp/m5stack_tab5.h"
 #include "diagnostic_events.h"
 #include "media.h"
+#include "network.h"
 #include "accel_gyro_bmi270.h"
 #include "ina226.hpp"
 #include "cJSON.h"
@@ -20,6 +21,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 
 // The factory BSP owns I2C, IO expanders, display and touch. Each remaining
@@ -31,6 +33,8 @@ static INA226 power_monitor;
 static bool imu_ready;
 static bool power_ready;
 static lv_obj_t* status_label;
+static lv_obj_t* record_button;
+static QueueHandle_t media_commands;
 
 void diagnostic_stage(const char* text) {
     if (status_label && bsp_display_lock(1000)) {
@@ -153,9 +157,27 @@ static void touch_event(lv_event_t* ev) {
     diagnostic_emit(e);
 }
 
+static void record_clicked(lv_event_t*) {
+    uint8_t command = 1;
+    // UI never waits for capture/export/playback. Ignore repeats while busy.
+    if (xQueueSend(media_commands, &command, 0) == pdTRUE)
+        lv_obj_add_state(record_button, LV_STATE_DISABLED);
+}
+
+static void media_idle() {
+    diagnostic_stage("TRICORDER / hardware diagnostic\n\nTap Record & play when ready.\nWait for RECORDING, then say the test phrase.\nListen to slots 0, 1, 2 and 3.\n\nStorage checks await a microSD card.");
+    if (bsp_display_lock(1000)) {
+        lv_obj_remove_state(record_button, LV_STATE_DISABLED);
+        bsp_display_unlock();
+    }
+    diagnostic_emit(diagnostic_event("audio_test_ready"));
+}
+
 extern "C" void app_main() {
     event_mutex = xSemaphoreCreateMutex();
     configASSERT(event_mutex);
+    media_commands = xQueueCreate(1, sizeof(uint8_t));
+    configASSERT(media_commands);
     uint32_t random[4];
     esp_fill_random(random, sizeof(random));
     snprintf(boot_id, sizeof(boot_id), "%08" PRIx32 "%08" PRIx32 "%08" PRIx32 "%08" PRIx32,
@@ -208,9 +230,20 @@ extern "C" void app_main() {
     lv_obj_add_event_cb(screen, touch_event, LV_EVENT_PRESSED, nullptr);
     auto* label = lv_label_create(screen);
     status_label = label;
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(label, "TRICORDER / hardware diagnostic\n\nTouch all four corners and the center.\nTilt the device to record motion.\n\nCamera/audio/network checks pending.");
     lv_obj_center(label);
     lv_obj_add_flag(label, LV_OBJ_FLAG_EVENT_BUBBLE);
+    record_button = lv_button_create(screen);
+    lv_obj_set_size(record_button, 240, 70);
+    lv_obj_align(record_button, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_add_state(record_button, LV_STATE_DISABLED);
+    lv_obj_add_event_cb(record_button, record_clicked, LV_EVENT_CLICKED, nullptr);
+    auto* button_label = lv_label_create(record_button);
+    lv_label_set_text(button_label, "Record & play");
+    lv_obj_center(button_label);
+    network_ui_init(screen, boot_id);
     bsp_display_brightness_set(50);
     bsp_display_unlock();
     auto* panel = diagnostic_event("display_initialized");
@@ -227,8 +260,13 @@ extern "C" void app_main() {
     diagnostic_emit(diagnostic_event("ready"));
     capture_camera(boot_id);
     capture_audio(boot_id);
-    diagnostic_stage("TRICORDER / hardware diagnostic\n\nMedia tests finished; host verifies saved captures.\nTouch or tilt to record input.\n\nNetwork and SD checks remain pending.");
+    media_idle();
     for (;;) {
+        uint8_t command;
+        if (xQueueReceive(media_commands, &command, 0) == pdTRUE) {
+            capture_audio(boot_id, true);
+            media_idle();
+        }
         auto* e = diagnostic_event("telemetry");
         cJSON_AddNumberToObject(e, "free_internal", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
         cJSON_AddNumberToObject(e, "free_psram", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));

@@ -37,6 +37,9 @@ class CaptureStore:
             raise ValueError("invalid capture ID")
         partial = self.directory / f"{capture_id}.partial"
         if kind == "capture_start":
+            if capture_id in self.active:
+                self.active[capture_id]["invalid"].append("duplicate capture start")
+                raise ValueError("capture ID already exists")
             if capture_id in self.seen or any((self.directory/f"{capture_id}{suffix}").exists()
                                             for suffix in (".bin", ".partial", ".json")):
                 raise ValueError("capture ID already exists")

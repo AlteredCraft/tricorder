@@ -25,3 +25,5 @@
 **Progress.** 2026-09-20: Factory reproduction and native identity/RTC checks recorded in [.01](G-0001.01-hardware-baseline.md#observed); diagnostic foundation adopted in [ADR-0003](../adrs/ADR-0003-tab5-diagnostic-foundation.md). No SD card; full hardware and guided-investigation gates remain open.
 
 **Progress.** 2026-09-20: [.01](G-0001.01-hardware-baseline.md#observed) now retains a readable camera frame and hash-verified raw PCM. Acoustic/network/restart checks and SD-dependent gates remain open; [ADR-0004](../adrs/ADR-0004-capture-completion.md) records capture completion.
+
+**Progress — interactive diagnostics.** 2026-09-20: Audible but faint playback recorded; physical slot mapping remains unresolved. Radio startup corrected and Wi-Fi setup prepared; LAN evidence, storage and restart gates remain open. See [.01](G-0001.01-hardware-baseline.md#observed) and [ADR-0005](../adrs/ADR-0005-diagnostic-radio-startup.md).
