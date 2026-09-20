@@ -1,8 +1,8 @@
-# Tricorder roadmap
+# Tricorder milestones
 
 Date: 2026-09-20
 
-## Phase 1: Validate the handheld investigation
+## Milestone 1: Validate the handheld investigation
 
 These are design-only iterations. No firmware or test runner has been built, and no hardware result is implied.
 
@@ -18,4 +18,4 @@ Read the [recommendation and validation index](../planning/stack-validation.md) 
 
 ## Later hypotheses to write
 
-Choose later goals from what phase 1 teaches. Candidates include local ESP-DL inference, full-duplex speech/AEC tuning, wake words, higher-resolution video, USB peripherals, RS-485 fixtures, external environmental sensors, and additional radio protocols where board/firmware support is established. Each needs a bounded hypothesis and budget; none is a committed implementation feature.
+Choose later Milestone with goals from what Milestone 1 teaches. Candidates include local ESP-DL inference, full-duplex speech/AEC tuning, wake words, higher-resolution video, USB peripherals, RS-485 fixtures, external environmental sensors, and additional radio protocols where board/firmware support is established. Each needs a bounded hypothesis and budget; none is a committed implementation feature.

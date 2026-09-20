@@ -1,6 +1,8 @@
-# Guidelines for Tricorder Planning via Goals and associated Spec in addition to extracted ADRs
+# Guidelines for Tricorder Planning via Milestones, Goals and associated Spec in addition to extracted ADRs
 
 Two artifacts, one direction. A **goal** states an outcome the platform, or the project around it, must produce. A **spec** states one hypothesis about how to reach a goal, what is built to test it, and what was observed. Goals are why; specs are experiments; ADRs (`planning/adrs/`) are the trade-offs those experiments forced.
+
+Regarding all Milestones, Goals and associated Specs. Tight constrained scopes are desired. A human needs to be able to easily understand and act on these artifacts and a tight, well defined scope is critical for that.
 
 ```
 # example goal with specs on the filesystem
@@ -19,7 +21,11 @@ One file per hypothesis, `plans/G-NNNN.nn-short-title.md` (e.g. `G-0001.01-`), f
 
 A spec has two halves. **Proposal** is written before any code and changes only through a dated revision note in its header: the hypothesis, what would refute it, what is built, what is deliberately out of scope, and how the result will be read from what the system records. **Observed** is appended as the work happens: one dated entry per build step, each saying what was checked, in which table or log, and what, if anything, changed the design. A change of design goes to an ADR; the entry links it.
 
-Status is one of Proposed, In progress, Confirmed, Refuted, Partial, or Not built. A spec whose build is not attempted for the review stays Not built, with Observed reading "Not built, design only", and appears in `docs/roadmap.md` as a phase 1 iteration.
+Status is one of Proposed, In progress, Confirmed, Refuted, Partial, or Not built. A spec whose build is not attempted for the review stays Not built, with Observed reading "Not built, design only", and appears in `docs/milestones.md` as a phase 1 iteration.
+
+## Milestones
+
+`planning/milestones.md` is the low fidelity journal of the Milestones of the project.  This is where you keep a running list of the Milestones you're working on, and the specs you're building. A given Milestone has a well-defined scope and deliverable.
 
 ## Rules
 

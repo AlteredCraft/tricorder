@@ -11,7 +11,7 @@ Hold it, point it, move it, and ask questions. The goal is to learn what the dev
 - [Vision](vision.md) — the complete product concept, interaction loop, modes and hardware roles.
 - [Stack recommendation and validation plan](planning/stack-validation.md) — researched options, proposed decisions and experiments.
 - [Planning guidelines](planning/README.md) — goals, hypothesis-driven specs and architecture decision records.
-- [Roadmap](docs/roadmap.md) — design-only phase 1 iterations.
+- [Milestones](planning/milestones.md) — design-only phase 1 iterations.
 - [Agent handoff](HANDOFF.md) — current state and how to continue locally.
 
 ## Status

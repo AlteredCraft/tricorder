@@ -25,7 +25,7 @@ Following the planning templates, goals describe outcomes, specs test hypotheses
 | 4 | [G-0001.04 Agent interaction](plans/G-0001.04-agent-interaction.md) | Can the agent guide a live investigation without blocking instruments? | .02, .03 |
 | 5 | [G-0001.05 Power and recovery](plans/G-0001.05-power-recovery.md) | Can a handheld session recover predictably and expose its energy cost? | .01; repeat with .02/.04 |
 
-All five are **Not built**. See the [phase 1 roadmap](../docs/roadmap.md). Proposed numeric targets below are project acceptance targets, not manufacturer guarantees or observed results. Change them only in a dated proposal revision before running the affected experiment; preserve failures at the original settings.
+All five are **Not built**. See the [milestone 1](milestones.md). Proposed numeric targets below are project acceptance targets, not manufacturer guarantees or observed results. Change them only in a dated proposal revision before running the affected experiment; preserve failures at the original settings.
 
 ## Evidence contract for the experiments
 

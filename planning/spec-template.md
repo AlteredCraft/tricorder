@@ -21,7 +21,7 @@ The observations that would falsify the hypothesis. Concrete: a duplicated row, 
 
 ### Out of scope
 
-What this spec deliberately does not test, and which later spec or roadmap item takes it. Each item is recorded as Not tested under Observed.
+What this spec deliberately does not test, and which later spec or Milestone item takes it. Each item is recorded as Not tested under Observed.
 
 ### How we know
 

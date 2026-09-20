@@ -20,7 +20,7 @@ Inspect the working tree and current branch before syncing. Fetch origin; fast-f
 4. [Stack and validation index](planning/stack-validation.md).
 5. [Proposed native stack ADR](planning/adrs/ADR-0001-native-firmware-stack.md).
 6. [Proposed local-instrument/agent ADR](planning/adrs/ADR-0002-local-instruments-connected-agent.md).
-7. [G-0001](planning/plans/G-0001-trustworthy-live-investigation.md), its five specs, and the [roadmap](docs/roadmap.md).
+7. [G-0001](planning/plans/G-0001-trustworthy-live-investigation.md), its five specs, and the [milestones](planning/milestones.md).
 
 ## User intent that must survive
 
@@ -44,7 +44,7 @@ This addition records:
 - One outcome-only goal, G-0001.
 - Five **Not built** specs: hardware baseline, concurrent workload, audio integrity, agent interaction, power/recovery.
 - Proposed run evidence formats and measurable acceptance targets.
-- A phase 1 roadmap, a README credit/navigation update, and this handoff.
+- A phase 1 Milestone, a README credit/navigation update, and this handoff.
 
 There is **no firmware, backend, dependency installation, test implementation or device result**. No successful build, flashing, benchmark or sensor calibration has been established. Documentation/source inspection is the only technical evidence so far.
 
@@ -91,7 +91,7 @@ Bring up individual capabilities before the combined load test. Distinguish mock
 
 The current artifacts use `planning/plans/G-0001...` together, following the filename examples in the user's guidelines. The guidelines also contain older goals/specs-directory and prototype-number wording; they were not rewritten. Preserve assigned IDs and settle any future layout change explicitly.
 
-All five specs have Observed set to “Not built, design only” and appear in `docs/roadmap.md`, as required by the guidelines.
+All five specs have Observed set to "Not built, design only" and appear in `planning/milestones.md`, as required by the guidelines.
 
 The publishing pass checks internal document links, required spec/ADR sections, status consistency and saved GitHub content. These are documentation checks only.
 
