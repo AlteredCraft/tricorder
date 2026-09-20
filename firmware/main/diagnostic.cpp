@@ -13,6 +13,7 @@
 #include "esp_attr.h"
 #include <atomic>
 #include "accel_gyro_bmi270.h"
+#include "imu_checked.h"
 #include "ina226.hpp"
 #include "cJSON.h"
 #include "esp_app_desc.h"
@@ -289,8 +290,8 @@ extern "C" void app_main() {
     // independently of the product page's SC2356 name.
     identity("camera_driver_id", 0x36, 0x3107, 2, 2, 0xeb52);
     imu_ready = accel_gyro_bmi270_init(bsp_i2c_get_handle()) == ESP_OK;
-    if (imu_ready) accel_gyro_bmi270_enable_sensor();
-    diagnostic_check("imu_initialize", imu_ready ? "pass" : "fail", "BMI270 driver initialization; no calibration claim.");
+    if (imu_ready) imu_ready=imu_configure_checked()==BMI2_OK;
+    diagnostic_check("imu_initialize", imu_ready ? "pass" : "fail", "Bosch initialization, sensor enable and ODR/range readback verified; no calibration claim.");
     power_ready = power_monitor.begin(bsp_i2c_get_handle(), 0x41)
         && power_monitor.configure(INA226_AVERAGES_16, INA226_BUS_CONV_TIME_1100US,
                                   INA226_SHUNT_CONV_TIME_1100US, INA226_MODE_SHUNT_BUS_CONT)
@@ -380,7 +381,10 @@ extern "C" void app_main() {
     run_dsp_fixtures(boot_id);
     run_speech_fixtures(boot_id);
     // Autonomous isolated baseline while the operator is away.
-    if (!resuming_restarts && !initialization_failed.load()) run_audio_baseline(boot_id);
+    if (!resuming_restarts && !initialization_failed.load()) {
+        run_audio_baseline(boot_id);
+        if (imu_ready) run_imu_baseline(boot_id);
+    }
     if (resuming_restarts) continue_restarts();
     media_idle();
     for (;;) {
@@ -398,10 +402,13 @@ extern "C" void app_main() {
         cJSON_AddNumberToObject(e, "free_psram", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
         if (imu_ready) {
             bmi2_sens_data data{};
-            accel_gyro_bmi270_get_data(&data);
-            cJSON_AddNumberToObject(e, "accel_x_raw", data.acc.x);
-            cJSON_AddNumberToObject(e, "accel_y_raw", data.acc.y);
-            cJSON_AddNumberToObject(e, "accel_z_raw", data.acc.z);
+            const auto result=imu_read_checked(data);
+            cJSON_AddNumberToObject(e,"imu_read_result",result);
+            if (result==BMI2_OK) {
+                cJSON_AddNumberToObject(e, "accel_x_raw", data.acc.x);
+                cJSON_AddNumberToObject(e, "accel_y_raw", data.acc.y);
+                cJSON_AddNumberToObject(e, "accel_z_raw", data.acc.z);
+            }
         }
         if (power_ready) {
             cJSON_AddNumberToObject(e, "ina226_bus_v", power_monitor.readBusVoltage());
