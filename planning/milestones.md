@@ -54,6 +54,8 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 
 **Progress — motion baseline.** 2026-09-20: [.02](plans/G-0001.02-concurrent-workload.md#observed) verifies the 100 Hz motion baseline with checked driver errors and passes camera/audio regressions. UI/network/concurrent work and operator follow-ups remain open.
 
+**Progress — animated display.** 2026-09-20: [.02](plans/G-0001.02-concurrent-workload.md#observed) verifies 30.30 fps panel submission with passing interval limits and clean camera/audio/motion regressions. Original failed UI evidence is retained. JPEG/network, combined and operator gates remain open.
+
 ## Later hypotheses to write
 
 A hosted agent-service experiment should test the same device protocol against an internet-accessible deployment without requiring the Mac. Define device authentication, encrypted transport, credential provisioning, capture retention and internet latency/recovery checks before implementation. Hosting and model providers remain open choices.

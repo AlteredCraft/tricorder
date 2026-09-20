@@ -45,3 +45,5 @@
 **Progress — isolated baselines.** 2026-09-20: [.02](G-0001.02-concurrent-workload.md#observed) verifies native camera acquisition at 30 fps and two sustained audio runs. Remaining isolated/combined stages and the full investigation stay open. User follow-ups are in [TODO.md](../../TODO.md).
 
 **Progress — checked motion baseline.** 2026-09-20: [.02](G-0001.02-concurrent-workload.md#observed) passes 6,000 checked IMU polls at 100 Hz and repeats camera/audio integrity checks. Vendor error propagation is corrected; full concurrent and guided-investigation acceptance remains open.
+
+**Progress — animated display.** 2026-09-20: [.02](G-0001.02-concurrent-workload.md#observed) passes an isolated 30.30 fps display-submission baseline after correcting timer drift and retaining a failed capture affected by host sleep. Camera/audio/motion regressions pass; JPEG/network, combined loads and the guided investigation remain open.

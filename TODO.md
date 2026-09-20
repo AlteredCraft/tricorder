@@ -10,4 +10,4 @@ These need your participation or equipment. Progress and evidence stay in [plann
 - **Handheld interaction:** when prompted by the prepared test, supply the combined-run touch events, supported touch/motion wake trials, and three guided A/B investigations with responsiveness/usefulness ratings.
 - **Battery session:** help with the controlled USB disconnect/power fixtures and a representative 30-minute handheld battery session, including comfort observations. The rear battery is installed; endurance and power-sign/rail checks remain open.
 
-Two native camera baselines, three isolated audio baselines, a 100 Hz motion baseline and repeated live raw/speech integrity captures have passed. Full G-0001 acceptance is still in progress.
+Isolated camera, audio, 100 Hz motion and 30 fps animated-display baselines have passed, along with repeated live raw/speech integrity checks. Full G-0001 acceptance is still in progress.

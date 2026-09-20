@@ -14,6 +14,7 @@
 #include <atomic>
 #include "accel_gyro_bmi270.h"
 #include "imu_checked.h"
+#include "ui_ingress.h"
 #include "ina226.hpp"
 #include "cJSON.h"
 #include "esp_app_desc.h"
@@ -384,6 +385,7 @@ extern "C" void app_main() {
     if (!resuming_restarts && !initialization_failed.load()) {
         run_audio_baseline(boot_id);
         if (imu_ready) run_imu_baseline(boot_id);
+        run_ui_baseline(boot_id);
     }
     if (resuming_restarts) continue_restarts();
     media_idle();
