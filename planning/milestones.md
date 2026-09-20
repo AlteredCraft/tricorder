@@ -10,7 +10,7 @@ Date: 2026-09-20
 
 **Deliverable:** A reproducible device build and local service, with run evidence for a complete guided investigation and explicitly recorded capability limits.
 
-**Completion:** G-0001's outcome is Met with linked run evidence; required capability, concurrency, audio, interaction and recovery checks are resolved; in-scope ADRs are Accepted, Rejected or Withdrawn with rationale. Missing evidence or unresolved required failures prevents completion. Scope changes preserve the original result through dated revisions.
+**Completion:** G-0001's outcome is Met with linked run evidence; required capability, concurrency, audio, interaction and recovery checks are resolved; architectural choices actually made are recorded in evidence-backed ADRs, and any revoked decisions are identified with their consequences addressed. Missing evidence or unresolved required choices/failures prevents completion. Scope changes preserve the original result through dated revisions.
 
 These are design-only iterations. No firmware or test runner has been built, and no hardware result is implied.
 
@@ -28,9 +28,11 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 | 4 | [Agent interaction](plans/G-0001.04-agent-interaction.md) | Not built | .02, .03 | Protocol, latency, cancellation and WebSocket/WebRTC choice |
 | 5 | [Power and recovery](plans/G-0001.05-power-recovery.md) | Not built | .01; repeat with .02/.04 | Power telemetry, wake behavior and recoverable evidence |
 
-**Decisions:** [ADR-0001](adrs/ADR-0001-native-firmware-stack.md) covers the native stack; [ADR-0002](adrs/ADR-0002-local-instruments-connected-agent.md) covers local instruments and the connected agent. Each owns its acceptance conditions and review trigger. The [hardware-baseline spec](plans/G-0001.01-hardware-baseline.md#shared-run-evidence) owns the shared evidence format.
+**Architecture under investigation:** The [hardware-baseline spec](plans/G-0001.01-hardware-baseline.md#candidate-native-stack) owns the native-stack research; the [agent-interaction spec](plans/G-0001.04-agent-interaction.md#candidate-service-architecture) owns the device/service candidates. No ADRs have yet been recorded under the decision-only convention. Record them as spec evidence leads to architectural choices. The [hardware-baseline spec](plans/G-0001.01-hardware-baseline.md#shared-run-evidence) also owns the shared evidence format.
 
 **Progress — 2026-09-20:** Planning only. Established M-0001 → G-0001 → five specs; no implementation evidence. Next action is the hardware baseline. Review ADR-0001 when that experiment records an outcome, including a partial or refuted result.
+
+**Progress — 2026-09-20, ADR reconciliation:** The two former proposals were moved into the specs above; their IDs remain reserved in history. The earlier instruction to review ADR-0001 is replaced by assessing .01's results for architectural choices and recording an ADR only when a choice is made from that evidence. Scope, completion outcomes and test thresholds are unchanged.
 
 ## Later hypotheses to write
 

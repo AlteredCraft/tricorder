@@ -1,14 +1,13 @@
 # ADR-NNNN. Title
 
-Status: Proposed | Accepted | Rejected | Withdrawn | Superseded by NNNN
-Date: YYYY-MM-DD
-Owner: Responsible person or implementation-agent role
-Review trigger: Named spec result, decision event or date; update after each unresolved review
-Revision: Initial proposal. Date changes while Proposed; preserve the decision text after acceptance and supersede it with a new ADR if the decision changes.
+Status: Active
+Decided: YYYY-MM-DD
+Evidence: Links to specific dated goal/spec observations supporting this decision
+Replaces: None, or link to the revoked ADR
 
 ## Context
 
-What situation or requirement forces this consequential trade-off. Constraints, linked evidence and unresolved assumptions. Keep research relevant to this decision here.
+What architectural constraint or trade-off required a choice. Summarize the linked goal/spec evidence and its limits; distinguish measured results, source inspection and requirements.
 
 ## Options considered
 
@@ -17,14 +16,20 @@ What situation or requirement forces this consequential trade-off. Constraints, 
 
 ## Decision
 
-What is proposed or chosen and why. Distinguish agreement to try an approach from validated suitability. State acceptance conditions when applicable and link the specs that test them rather than repeating checks.
+The architectural choice already made, its scope and why the available evidence supports it. Do not create this record while the choice is still an experiment candidate; keep that material in the spec.
 
 ## Consequences
 
-What becomes easier. What becomes harder or is deferred. What would cause this to be revisited.
+What becomes easier or harder, constraints future work must honor, untested limits, and evidence that would warrant reconsideration.
 
-## Decision review
+<!-- Add the following section only when revoking an actual decision. Rename
+ADR-NNNN-short-title.md to ADR-NNNN-R-short-title.md, add -R to the title ID,
+set Status to Revoked, preserve the original body, and update inbound links.
 
-Acceptance conditions: State what resolves this decision, linking the relevant spec checks. Keep optional future capabilities outside the current acceptance scope.
+## Revocation — YYYY-MM-DD
 
-- YYYY-MM-DD: Evidence/decision context reviewed; status and rationale; exact blocker and next action if still Proposed. Update the header review trigger. When Accepted/Rejected/Withdrawn, record why and the supporting links. A superseding ADR links back here and updates this record only when the replacement is Accepted.
+Evidence: Links to the new dated goal/spec observations.
+Reason: Why the original decision no longer applies, and the affected scope.
+Consequences: Required migration/actions, remaining risks and their owning spec.
+Replacement: New Active ADR, or None with the next experiment's spec link.
+-->

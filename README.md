@@ -15,7 +15,7 @@ Hold it, point it, move it, and ask questions. The goal is to learn what the dev
 
 ## Status
 
-Planning and research only. The agreed starting stack is C++/ESP-IDF with LVGL on the Tab5 and a Python agent service on the developer's Mac for early R&D, with a path to hosting the service later. Begin with a mock agent; model and speech providers remain undecided. No firmware, backend, test harness or hardware validation has been implemented. ADRs remain Proposed; exact versions and peripheral drivers require validation on the actual device.
+Planning and research only. The agreed starting stack is C++/ESP-IDF with LVGL on the Tab5 and a Python agent service on the developer's Mac for early R&D, with a path to hosting the service later. Begin with a mock agent; model and speech providers remain undecided. No firmware, backend, test harness or hardware validation has been implemented. Candidate architectures and research live in the specs; ADRs will record architectural choices actually made from their evidence. Exact versions and peripheral drivers require validation on the actual device.
 
 ## License
 
