@@ -23,7 +23,7 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 | Order | Spec | Status | Depends on | Decision informed |
 | --- | --- | --- | --- | --- |
 | 1 | [Hardware baseline](plans/G-0001.01-hardware-baseline.md) | In progress | None | Actual panel/silicon/camera identity, peripheral ownership, reproducible versions |
-| 2 | [Concurrent workload](plans/G-0001.02-concurrent-workload.md) | Not built | .01 | Rates, buffers, scheduling and memory budget |
+| 2 | [Concurrent workload](plans/G-0001.02-concurrent-workload.md) | In progress (audio preparation) | .01 | Rates, buffers, scheduling and memory budget |
 | 3 | [Audio integrity](plans/G-0001.03-audio-integrity.md) | In progress (synthetic DSP) | .01; repeat under .02 load | Raw measurement and speech-processing separation |
 | 4 | [Agent interaction](plans/G-0001.04-agent-interaction.md) | Not built | .02, .03 | Protocol, latency, cancellation and WebSocket/WebRTC choice |
 | 5 | [Power and recovery](plans/G-0001.05-power-recovery.md) | Not built | .01; repeat with .02/.04 | Power telemetry, wake behavior and recoverable evidence |
@@ -47,6 +47,8 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 **Progress — device DSP.** 2026-09-20: [.03](plans/G-0001.03-audio-integrity.md#observed) passes twelve on-device synthetic FFT comparisons. Speech separation, continuous acquisition, acoustic/load and SD checks remain open.
 
 **Progress — speech replay.** 2026-09-20: [.03](plans/G-0001.03-audio-integrity.md#observed) verifies synthetic raw/speech separation on P4. Live ingress checks are prepared; microphone mapping remains ambiguous. Required hardware, load, interaction and recovery gates remain open.
+
+**Progress — live audio boundary.** 2026-09-20: [.03](plans/G-0001.03-audio-integrity.md#observed) verifies three live raw/speech pairs; [ADR-0006](adrs/ADR-0006-raw-audio-and-derived-speech.md) records immutable raw input and separately owned derivatives. [.02](plans/G-0001.02-concurrent-workload.md#observed) has a built sustained-audio diagnostic; combined workload and other required gates remain open.
 
 ## Later hypotheses to write
 

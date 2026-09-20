@@ -16,7 +16,7 @@
 - [G-0001.04 Agent interaction](G-0001.04-agent-interaction.md)
 - [G-0001.05 Power and recovery](G-0001.05-power-recovery.md)
 
-**Status.** In progress. Hardware baseline and synthetic DSP evidence are recorded; the full investigation and remaining acceptance gates are unverified.
+**Status.** In progress. Hardware baseline and isolated live-audio integrity evidence are recorded; the full investigation and remaining acceptance gates are unverified.
 
 **Progress.** 2026-09-20: Planning only; parent milestone recorded. Next action is G-0001.01's hardware baseline. No outcome evidence exists yet.
 
@@ -37,3 +37,7 @@
 **Progress — device DSP.** 2026-09-20: [.03](G-0001.03-audio-integrity.md#observed) passes three repetitions of all four synthetic FFT fixtures on P4. Speech separation, continuous acquisition, acoustic/load and SD checks remain open.
 
 **Progress — speech replay.** 2026-09-20: [.03](G-0001.03-audio-integrity.md#observed) verifies synthetic raw/speech separation on P4. Live ingress checks are prepared; microphone mapping remains ambiguous and all remaining gates stay open.
+
+**Progress — tracked microphone trials.** 2026-09-20: [.01](G-0001.01-hardware-baseline.md#observed) records repeated physical-position response and [.03](G-0001.03-audio-integrity.md#observed) finalizes seven clean isolated ingress epochs. [.02](G-0001.02-concurrent-workload.md#observed) begins sustained-audio preparation; full combined, cold-start, storage and interaction gates remain open.
+
+**Progress — live audio boundary.** 2026-09-20: [.03](G-0001.03-audio-integrity.md#observed) verifies three live raw/speech pairs and records [ADR-0006](../adrs/ADR-0006-raw-audio-and-derived-speech.md). Sustained/combined workloads and the full guided investigation remain unverified.

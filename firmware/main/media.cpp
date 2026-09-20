@@ -1,6 +1,7 @@
 #include "media.h"
 #include "audio_copy.h"
 #include "audio_ingress.h"
+#include "audio_devices.h"
 #include "speech_filter.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
@@ -226,8 +227,8 @@ static bool hash_audio_block(const uint8_t* data,size_t bytes,char* hex) {
 
 void capture_audio(const char* boot_id, bool playback) {
     // Retain the codec interfaces for repeated tests; the BSP caches its speaker.
-    static auto* speaker = bsp_audio_codec_speaker_init();
-    static auto* microphone = bsp_audio_codec_microphone_init();
+    auto speaker = diagnostic_speaker();
+    auto microphone = diagnostic_microphone();
     static unsigned capture_number;
     if (!speaker || !microphone) {
         diagnostic_check("audio_capture", "fail", "codec creation failed");

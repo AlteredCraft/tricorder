@@ -7,6 +7,7 @@
 #include "diagnostic_events.h"
 #include "media.h"
 #include "network.h"
+#include "audio_devices.h"
 #include "restart_sequence.h"
 #include "dsp_diagnostic.h"
 #include "esp_attr.h"
@@ -40,6 +41,7 @@ static lv_obj_t* status_label;
 static lv_obj_t* record_button;
 static lv_obj_t* volume_label;
 static lv_obj_t* restart_button;
+static lv_obj_t* baseline_button;
 static QueueHandle_t media_commands;
 static std::atomic<bool> initialization_failed{false};
 RTC_NOINIT_ATTR static RestartSequence restart_sequence;
@@ -173,8 +175,11 @@ static void record_clicked(lv_event_t*) {
     uint8_t command = 1;
     // UI never waits for capture/export/playback. Ignore repeats while busy.
     bool accepted=xQueueSend(media_commands, &command, 0)==pdTRUE;
-    if (accepted)
+    if (accepted) {
         lv_obj_add_state(record_button, LV_STATE_DISABLED);
+        lv_obj_add_state(restart_button, LV_STATE_DISABLED);
+        lv_obj_add_state(baseline_button, LV_STATE_DISABLED);
+    }
     auto* event=diagnostic_event("audio_button");
     cJSON_AddBoolToObject(event,"accepted",accepted);
     diagnostic_emit(event);
@@ -185,6 +190,16 @@ static void restart_clicked(lv_event_t*) {
     if (xQueueSend(media_commands, &command, 0)==pdTRUE) {
         lv_obj_add_state(restart_button, LV_STATE_DISABLED);
         lv_obj_add_state(record_button, LV_STATE_DISABLED);
+        lv_obj_add_state(baseline_button, LV_STATE_DISABLED);
+    }
+}
+
+static void baseline_clicked(lv_event_t*) {
+    uint8_t command=3;
+    if (xQueueSend(media_commands,&command,0)==pdTRUE) {
+        lv_obj_add_state(record_button,LV_STATE_DISABLED);
+        lv_obj_add_state(restart_button,LV_STATE_DISABLED);
+        lv_obj_add_state(baseline_button,LV_STATE_DISABLED);
     }
 }
 
@@ -227,6 +242,7 @@ static void media_idle() {
     if (bsp_display_lock(1000)) {
         lv_obj_remove_state(record_button, LV_STATE_DISABLED);
         lv_obj_remove_state(restart_button, LV_STATE_DISABLED);
+        lv_obj_remove_state(baseline_button, LV_STATE_DISABLED);
         bsp_display_unlock();
     }
     diagnostic_emit(diagnostic_event("audio_test_ready"));
@@ -331,6 +347,14 @@ extern "C" void app_main() {
     auto* restart_label=lv_label_create(restart_button);
     lv_label_set_text(restart_label,"Test 10 restarts");
     lv_obj_center(restart_label);
+    baseline_button=lv_button_create(screen);
+    lv_obj_set_pos(baseline_button,30,145);
+    lv_obj_set_size(baseline_button,230,58);
+    lv_obj_add_state(baseline_button,LV_STATE_DISABLED);
+    lv_obj_add_event_cb(baseline_button,baseline_clicked,LV_EVENT_CLICKED,nullptr);
+    auto* baseline_label=lv_label_create(baseline_button);
+    lv_label_set_text(baseline_label,"Audio baseline 60s");
+    lv_obj_center(baseline_label);
     network_ui_init(screen, boot_id);
     bsp_display_brightness_set(50);
     bsp_display_unlock();
@@ -348,7 +372,8 @@ extern "C" void app_main() {
     sd_roundtrip();
     diagnostic_emit(diagnostic_event("ready"));
     capture_camera(boot_id);
-    capture_audio(boot_id);
+    // Three isolated live raw/speech comparisons, without operator input.
+    for (unsigned repetition=0;repetition<3;++repetition) capture_audio(boot_id);
     diagnostic_stage("Checking radio initialization...");
     diagnostic_check("wifi_initialize",network_prepare(30000) ? "pass" : "fail",
                      "Hosted radio initialization and C6 version query; no network association claim.");
@@ -362,7 +387,8 @@ extern "C" void app_main() {
             if (command==2) {
                 restart_sequence.start(esp_random());
                 continue_restarts();
-            } else capture_audio(boot_id, true);
+            } else if (command==3) run_audio_baseline(boot_id);
+            else capture_audio(boot_id, true);
             media_idle();
         }
         auto* e = diagnostic_event("telemetry");
