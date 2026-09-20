@@ -24,7 +24,7 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 | --- | --- | --- | --- | --- |
 | 1 | [Hardware baseline](plans/G-0001.01-hardware-baseline.md) | In progress | None | Actual panel/silicon/camera identity, peripheral ownership, reproducible versions |
 | 2 | [Concurrent workload](plans/G-0001.02-concurrent-workload.md) | Not built | .01 | Rates, buffers, scheduling and memory budget |
-| 3 | [Audio integrity](plans/G-0001.03-audio-integrity.md) | Not built | .01; repeat under .02 load | Raw measurement and speech-processing separation |
+| 3 | [Audio integrity](plans/G-0001.03-audio-integrity.md) | In progress (host fixtures) | .01; repeat under .02 load | Raw measurement and speech-processing separation |
 | 4 | [Agent interaction](plans/G-0001.04-agent-interaction.md) | Not built | .02, .03 | Protocol, latency, cancellation and WebSocket/WebRTC choice |
 | 5 | [Power and recovery](plans/G-0001.05-power-recovery.md) | Not built | .01; repeat with .02/.04 | Power telemetry, wake behavior and recoverable evidence |
 

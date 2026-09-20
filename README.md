@@ -39,6 +39,8 @@ The diagnostic has **Record & play** for a countdown, three-second raw recording
 
 For a longer operator session, add `--stop-file .local/STOP` to serial capture and create that file when finished; the collector closes partials and writes its summary. Use a fresh stop-file path or remove your previous stop request before starting.
 
+Generate synthetic desktop FFT references with `python3 -m tools.audio_reference --output .local/runs/audio-reference-001`. These use a direct DFT and explicit periodic-Hann amplitude normalization; they are preparation for device comparisons, not device DSP acceptance.
+
 ## License
 
 [MIT](LICENSE)
