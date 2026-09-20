@@ -53,7 +53,8 @@ def compare_camera(meta,data):
     rate=(count-1)*1e6/(rows[-1][1]-rows[0][1]) if rows[-1][1]>rows[0][1] else 0
     if rate<15:errors.append('Capture rate below 15 fps starting target')
     result={'status':'fail' if errors else ('inconclusive' if missing else 'pass'),'errors':errors,'missing':missing,
-            'frames':count,'capture_fps':rate,'cpu_tasks':cpu,'scope':'Isolated native camera acquisition; no preview, JPEG/network or combined-load acceptance.'}
+            'frames':count,'capture_fps':rate,'cpu_tasks':cpu,'workload':meta.get('workload','isolated camera acquisition'),
+            'scope':'Camera acquisition counters only; companion JPEG, preview/network and full combined acceptance require separate assessments.'}
     if not errors and not missing:
         result.update(frame_interval_us=distribution([b[1]-a[1] for a,b in zip(rows,rows[1:])]),
                       completion_to_dequeue_us=distribution([row[2]-row[1] for row in rows]),

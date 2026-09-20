@@ -4,7 +4,7 @@ Date: 2026-09-20
 
 ## M-0001: Validate the handheld investigation
 
-**Status:** In progress; G-0001 hardware baseline started.
+**Status:** In progress; work paused at the user’s request. Resume from [HANDOFF.md](../HANDOFF.md).
 
 **Scope:** One trustworthy handheld A/B investigation using built-in camera, audio, motion, touch and spoken guidance, with the agent service on the Mac over the local network. Hosted deployment is deferred.
 
@@ -23,7 +23,7 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 | Order | Spec | Status | Depends on | Decision informed |
 | --- | --- | --- | --- | --- |
 | 1 | [Hardware baseline](plans/G-0001.01-hardware-baseline.md) | In progress | None | Actual panel/silicon/camera identity, peripheral ownership, reproducible versions |
-| 2 | [Concurrent workload](plans/G-0001.02-concurrent-workload.md) | In progress (isolated baselines) | .01 | Rates, buffers, scheduling and memory budget |
+| 2 | [Concurrent workload](plans/G-0001.02-concurrent-workload.md) | In progress (camera/JPEG regression open) | .01 | Rates, buffers, scheduling and memory budget |
 | 3 | [Audio integrity](plans/G-0001.03-audio-integrity.md) | In progress (isolated live integrity) | .01; repeat under .02 load | Raw measurement and speech-processing separation |
 | 4 | [Agent interaction](plans/G-0001.04-agent-interaction.md) | Not built | .02, .03 | Protocol, latency, cancellation and WebSocket/WebRTC choice |
 | 5 | [Power and recovery](plans/G-0001.05-power-recovery.md) | Not built | .01; repeat with .02/.04 | Power telemetry, wake behavior and recoverable evidence |
@@ -55,6 +55,8 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 **Progress — motion baseline.** 2026-09-20: [.02](plans/G-0001.02-concurrent-workload.md#observed) verifies the 100 Hz motion baseline with checked driver errors and passes camera/audio regressions. UI/network/concurrent work and operator follow-ups remain open.
 
 **Progress — animated display.** 2026-09-20: [.02](plans/G-0001.02-concurrent-workload.md#observed) verifies 30.30 fps panel submission with passing interval limits and clean camera/audio/motion regressions. Original failed UI evidence is retained. JPEG/network, combined and operator gates remain open.
+
+**Progress — stopping checkpoint.** 2026-09-20: [.02](plans/G-0001.02-concurrent-workload.md#observed) camera+JPEG candidate builds and decodes 30 images but fails camera completion accounting; 98 host tests pass. Failed evidence is retained, later sustained stages are inconclusive, and all host work has stopped. Next: fix camera buffer hold/completion accounting, then repeat regressions. [HANDOFF.md](../HANDOFF.md) records the exact checkpoint; [TODO.md](../TODO.md) lists user follow-ups. No remaining gate is waived.
 
 ## Later hypotheses to write
 

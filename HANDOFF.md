@@ -1,10 +1,10 @@
 # Tricorder agent handoff
 
-Updated: 2026-09-20
+Updated: 2026-09-20, stopping checkpoint
 
 G-0001 is **In progress**. Authoritative gates and concise outcomes are in [milestones](planning/milestones.md) and [G-0001](planning/plans/G-0001-trustworthy-live-investigation.md). .01 hardware, .02 isolated workloads and .03 audio integrity have evidence; full acceptance is unverified. .04/.05 remain Not built. Preserve original thresholds, counts and failed runs. Observed sections are append-only; details belong in commits/private evidence.
 
-The user is **away** and requests autonomous progress with follow-ups in [TODO.md](TODO.md). No physical input is pending. Continue JPEG, combined-workload and Mac mock-service preparation; do not repeatedly ask for unavailable equipment or physical actions.
+**Work is paused at the user’s request.** No collector, build, flash or keep-awake process remains active. Resume only when asked; start with the camera/JPEG regression below. User/equipment follow-ups are in [TODO.md](TODO.md); no physical input is pending now.
 
 ## Device and execution
 
@@ -13,13 +13,23 @@ The user is **away** and requests autonomous progress with follow-ups in [TODO.m
 - Verified original flash backup (two matching full reads), restore instructions, artifacts and private captures are in `.local/runs/20260920-baseline/`. Do not commit captures, backup contents or secrets. Both factory builds were explicitly approved and booted.
 - Bootstrap: `python3 tools/bootstrap.py`; build: `tools/idf.sh -C firmware build`; tests: `python3 -m unittest discover -s tests -q`. Toolchain/USB/git writes required sandbox escalation here. No push requested.
 - **Prevent host sleep during serial runs:** prefix the collector with `/usr/bin/caffeinate -is`; its assertions automatically end with the collector. A sleeping Mac lost whole USB export intervals while the battery-powered Tab5 kept running. Do not infer successful device continuity from a missing host interval.
-- Current diagnostic starts sequential 60-second camera/audio/motion/display baselines plus short live and synthetic audio fixtures; allow six minutes. Manual record/restart/audio controls remain available. Reopening USB can reset the board. Never restart a process merely because an observation timeout expires; inspect its exact handle/state first.
+- Current diagnostic attempts a 60-second camera+JPEG stage, then sequential audio/motion/display baselines plus short live and synthetic audio fixtures; allow eight minutes for a successful full run. A failed camera check skips the later sustained stages. Manual record/restart/audio controls remain available. Reopening USB can reset the board. Never restart a process merely because an observation timeout expires; inspect its exact handle/state first.
 
-## Current verified build
+## Current checkpoint: built, hardware regression unresolved
 
-**92 host tests and P4 build pass.** Current source/artifact manifest: baseline `ui-baseline-build-2-manifest.json`; archived binary/ELF/map and exact source snapshot: `ui-baseline-build-2-artifacts/`. Source hashes are authoritative despite the dirty version string.
+**98 host tests and the P4 build pass; current hardware run FAILS.** The flashed candidate is based on `557ddb1`, version `557ddb1-dirty`. Exact firmware sources, binary/ELF/map and hashes are archived under `.local/runs/20260920-baseline/jpeg-build-2-artifacts/` and `jpeg-build-manifest.json` (binary SHA-256 `6e5ed511639aa0762835b582ded6158d6d07412a36251e4cb8b27ee2c9cb8e8b`). Later host-assessor changes did not change firmware.
 
-**No active collector.** Session77821 is terminal: `ui-baseline-2`, boot `7ed9e2e81b8d3843853ab0858bb53826`, firmware `6079c55-dirty`. Final serial summary, four isolated baseline assessments, live-audio/ingress, synthetic speech and FFT pass. No event gaps or capture errors; keep-awake assertions ended with collection. Device is idle at the diagnostic screen.
+Run `jpeg-baseline-1`, boot `efc223ac6c12b69d6a23e3460267c6dd`, collector session 33205: **terminal, stopped gracefully via its STOP file**. Final summary has no serial gaps, capture errors or incomplete captures. Camera check fails; later sustained audio/IMU/UI stages were skipped and are inconclusive in this boot. The device remains on this diagnostic candidate, with no host collection; it was not flashed back to the earlier passing build.
+
+All 30 fresh 1280×720 quality 75/YUV420 JPEGs independently decode. Source/copy/post-encode hashes match; the final JPEG source also matches the retained raw frame. Worker duration p95/max 92.242 ms includes hash checks and output retention, not just the codec. JPEG assessment deliberately remains FAIL because the whole run failed. Private evidence: `jpeg-baseline-1/summary.json`, `jpeg-assessment.json`, `captures/*-camera-baseline-assessment.json`; host tests: `.local/runs/20260920-jpeg-final-host-tests-2.log`.
+
+Camera delivered 1743 rows in 60.069 s (29.049fps), with 1802 completion callbacks and 59 unaccounted completions. No missing/untracked-buffer callback was reported. Sequence gaps coincide with JPEG source hashing/copying while holding the dequeued camera buffer (maximum 69.540 ms). `discarded_completed_at_stop=59` is currently the arithmetic difference, **not proof those completions occurred at stop**. This failure is not an accepted preview-drop policy. Inspect `JpegPipeline::submit` and camera completion/buffer identity first; the exact driver/queue mechanism is not yet established. Fixed source/output buffers and a 6 MiB retention pool bound memory; allocation saturation, lifecycle/cleanup and full-load evidence remain open.
+
+## Previous passing build (fallback reference)
+
+**92 host tests and P4 build passed at this earlier checkpoint (`557ddb1`).** Previous source/artifact manifest: baseline `ui-baseline-build-2-manifest.json`; archived binary/ELF/map and exact source snapshot: `ui-baseline-build-2-artifacts/`. Source hashes are authoritative despite the dirty version string.
+
+**No active collector.** Session77821 is terminal: `ui-baseline-2`, boot `7ed9e2e81b8d3843853ab0858bb53826`, firmware `6079c55-dirty`. Final serial summary, four isolated baseline assessments, live-audio/ingress, synthetic speech and FFT pass. No event gaps or capture errors; keep-awake assertions ended with collection. This is historical passing evidence, not the currently flashed candidate.
 
 Display result: 1,819 distinct states in 60 seconds, 30.299 software panel submissions/s; frame p95/max47.168/50.185ms, state-change-to-submit p9519.167ms, no coalesced/repeated states or observer overflow. LVGL runtime4.97%, stack margin4316B. These are **software submissions**, not physical presentation or physical-input latency.
 
@@ -35,7 +45,7 @@ Display result: 1,819 distinct states in 60 seconds, 30.299 software panel submi
 
 ## Other established evidence
 
-Native camera acquisition:1280×720 RGB565 at~30fps, 60-second runs with observed backup-buffer starvation/completion accounting. Runtime rejects640×480. Camera receive is bounded; the final owned image is exported only after streaming stops. No live preview/JPEG/network acceptance yet.
+Native camera acquisition:1280×720 RGB565 at~30fps, 60-second runs with observed backup-buffer starvation/completion accounting. Runtime rejects640×480. Camera receive is bounded; the final owned image is exported only after streaming stops. No live preview/network or passing camera+JPEG acquisition acceptance yet.
 
 Audio: repeated6000×480-frame48kHz baselines with raw immutability, separate16kHz speech and FFT2048 every2400frames; isolated read/consumer timing and driver counters pass. Live pairs retain141 block hashes/ranges each; independent derived-reference comparison passes. Synthetic speech has24pairs and FFT12fixtures. Current consumers are synchronous and retain copies, not raw pointers; future asynchronous ownership requires new evidence.
 
@@ -45,8 +55,8 @@ ADRs0003–0006 are Active: pinned factory/IDF and BSP ownership, capture comple
 
 ## Next work
 
-1. Implement/test native JPEG encoding and fresh-frame provenance, then progressive camera/audio/IMU/UI concurrency. Source findings: baseline `jpeg-source-notes.md`. IDF hardware JPEG supports RGB565; use a single owned engine, aligned bounded output, valid quality/subsampling and explicit timeout. Validate source byte extent yourself. Preserve encoder failure/cleanup evidence; independently decode saved JPEGs. A static-frame encode benchmark is not fresh acquisition every2seconds.
-2. Do not hold either of the two camera capture buffers during encoding or serial/network export. Establish copied-frame ownership and explicit counted preview coalescing. Raw-audio loss remains failure. Test allocation/queue saturation/lifetimes before combined runs.
+1. Resume by fixing the camera/JPEG regression, with a reproducing test first. Inspect `firmware/main/jpeg_pipeline.cpp` (`submit` hashes then copies before QBUF), `camera_baseline.cpp`, and the callback/driver ownership contract. Separate source hash/copy timing; return camera buffers promptly while retaining valid provenance. Explain the 59 completion discrepancy rather than relabeling it. Preserve `jpeg-baseline-1` unchanged; record a fresh run and assess both camera and JPEG before proceeding.
+2. Re-run the sequential audio/IMU/UI and live/synthetic regressions after camera passes. Review worker shutdown/timeout and allocation-failure paths before broader concurrency. Then add preview and progressive camera/audio/IMU/UI concurrency, explicit bounded queues and counted preview coalescing. Raw-audio loss remains failure. Source research is in private `jpeg-source-notes.md`.
 3. Prepare bounded host backpressure receiver and Mac Python mock-agent protocol while device Wi-Fi waits for user reconnection. Keep configurable endpoint, IDs/deadlines/cancel/idempotency and service-side credentials. .04 mock tests do not substitute for30 live turns or3 guided A/B ratings.
 4. Execute all original .02 gates: isolated stages, three10-minute combined runs,100 physical input events/run,10-second receiver stall, mode cycles and memory return. .01 still needs true cold starts/storage and remaining capability limits; .03 needs acoustic/load/SD evidence; .05 power/wake/recovery is unbuilt. Follow-ups requiring the user are in TODO.md.
 

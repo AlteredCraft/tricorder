@@ -1,6 +1,8 @@
 # Follow-ups for G-0001
 
-These need your participation or equipment. Progress and evidence stay in [planning/milestones.md](planning/milestones.md); this list is only the handoff to you.
+**Paused checkpoint:** no interaction is needed now. The next engineering task is to fix camera completion loss during JPEG source hashing/copying, then repeat the skipped regression stages; see [HANDOFF.md](HANDOFF.md#next-work). All 30 JPEGs decode, but this candidate is not a passing camera workload.
+
+The follow-ups below need your participation or equipment. Progress and evidence stay in [planning/milestones.md](planning/milestones.md); this list is only the handoff to you.
 
 - **Wi-Fi:** after firmware resets, reconnect the Tab5 to the working 2.4 GHz network through its setup screen. Credentials are RAM-only. Needed for device-to-Mac streaming and agent tests; please do not put the password in this file or chat.
 - **microSD:** provide a card that may hold disposable test captures. Storage checks, checksum readback and interrupted-write recovery remain untested without one.

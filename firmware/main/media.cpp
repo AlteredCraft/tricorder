@@ -76,7 +76,7 @@ struct VideoSession {
 };
 
 void capture_camera(const char* boot_id) {
-    diagnostic_stage("CAMERA BASELINE / 60 seconds\n\nAutomatic frame timing and loss checks.\nPlease leave the device powered and connected.");
+    diagnostic_stage("CAMERA + JPEG / 60 seconds\n\nAutomatic frame timing, loss and image encoding checks.\nPlease leave the device powered and connected.");
     auto fail = [](const char* detail) { diagnostic_check("camera_frame", "fail", detail); };
     esp_video_init_csi_config_t csi{};
     csi.sccb_config.init_sccb = false;

@@ -16,7 +16,7 @@
 - [G-0001.04 Agent interaction](G-0001.04-agent-interaction.md)
 - [G-0001.05 Power and recovery](G-0001.05-power-recovery.md)
 
-**Status.** In progress. Hardware baseline and isolated live-audio integrity evidence are recorded; the full investigation and remaining acceptance gates are unverified.
+**Status.** In progress; work paused at the user’s request. Hardware baseline and isolated live-audio integrity evidence are recorded; the full investigation and remaining acceptance gates are unverified.
 
 **Progress.** 2026-09-20: Planning only; parent milestone recorded. Next action is G-0001.01's hardware baseline. No outcome evidence exists yet.
 
@@ -47,3 +47,5 @@
 **Progress — checked motion baseline.** 2026-09-20: [.02](G-0001.02-concurrent-workload.md#observed) passes 6,000 checked IMU polls at 100 Hz and repeats camera/audio integrity checks. Vendor error propagation is corrected; full concurrent and guided-investigation acceptance remains open.
 
 **Progress — animated display.** 2026-09-20: [.02](G-0001.02-concurrent-workload.md#observed) passes an isolated 30.30 fps display-submission baseline after correcting timer drift and retaining a failed capture affected by host sleep. Camera/audio/motion regressions pass; JPEG/network, combined loads and the guided investigation remain open.
+
+**Progress — stopping checkpoint.** 2026-09-20: Camera+JPEG candidate builds and decodes 30 images but fails camera completion accounting; later sustained regressions are skipped. 98 host tests pass. Collection is stopped and failed evidence retained. Resume with the [.02 regression](G-0001.02-concurrent-workload.md#observed), using [HANDOFF.md](../../HANDOFF.md); user/equipment follow-ups remain in [TODO.md](../../TODO.md). Full G-0001 acceptance remains open.
