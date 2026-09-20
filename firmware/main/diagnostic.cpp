@@ -285,6 +285,9 @@ extern "C" void app_main() {
     display_config.flags.sw_rotate = true;
     auto* display = bsp_display_start_with_config(&display_config);
     configASSERT(display);
+    // The BSP has already started the LVGL task and returns with no lock held.
+    // Protect the entire object-construction phase from concurrent refresh.
+    configASSERT(bsp_display_lock(0));
     lv_display_set_rotation(display, LV_DISPLAY_ROTATION_90);
     auto* screen = lv_screen_active();
     lv_obj_add_event_cb(screen, touch_event, LV_EVENT_PRESSED, nullptr);
