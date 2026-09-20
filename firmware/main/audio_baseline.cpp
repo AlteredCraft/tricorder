@@ -1,4 +1,5 @@
 #include "audio_devices.h"
+#include "workload_metrics.h"
 #include "audio_ingress.h"
 #include "audio_workload.h"
 #include "diagnostic_events.h"
@@ -13,24 +14,6 @@
 #include <cstdlib>
 #include <new>
 
-static cJSON* cpu_snapshot() {
-    constexpr unsigned capacity=64;
-    auto* tasks=static_cast<TaskStatus_t*>(malloc(capacity*sizeof(TaskStatus_t)));
-    if (!tasks) return nullptr;
-    configRUN_TIME_COUNTER_TYPE total=0;
-    unsigned count=uxTaskGetSystemState(tasks,capacity,&total);
-    auto* result=cJSON_CreateObject();
-    cJSON_AddNumberToObject(result,"total_ticks",total);
-    auto* list=cJSON_AddArrayToObject(result,"tasks");
-    for (unsigned i=0;i<count;++i) {
-        auto* task=cJSON_CreateObject();
-        cJSON_AddNumberToObject(task,"id",tasks[i].xTaskNumber);
-        cJSON_AddStringToObject(task,"name",tasks[i].pcTaskName);
-        cJSON_AddNumberToObject(task,"ticks",tasks[i].ulRunTimeCounter);
-        cJSON_AddItemToArray(list,task);
-    }
-    free(tasks);return result;
-}
 
 struct MemorySample {
     size_t internal=0,external=0,largest_internal=0,largest_external=0,stack=0;
@@ -53,7 +36,7 @@ void run_audio_baseline(const char* boot_id) {
     auto output=input;output.channel=2;
     if (ok) ok=esp_codec_dev_open(microphone,&input)==ESP_OK && esp_codec_dev_open(speaker,&output)==ESP_OK
         && esp_codec_dev_set_out_mute(speaker,true)==ESP_OK && esp_codec_dev_set_in_gain(microphone,24)==ESP_OK;
-    auto* cpu_before=cpu_snapshot();
+    auto* cpu_before=workload_cpu_snapshot();
     AudioIngressSnapshot before{},after{};
     size_t completed=0,speech_frames=0,fft_count=0,mutations=0;
     int64_t started=esp_timer_get_time();
@@ -87,7 +70,7 @@ void run_audio_baseline(const char* boot_id) {
     }
     after=audio_ingress_snapshot();
     const int64_t ended=esp_timer_get_time();
-    auto* cpu_after=cpu_snapshot();
+    auto* cpu_after=workload_cpu_snapshot();
     if (microphone) esp_codec_dev_close(microphone);
     if (speaker) esp_codec_dev_close(speaker);
     auto* meta=diagnostic_event("capture_start");

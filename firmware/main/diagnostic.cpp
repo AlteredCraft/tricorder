@@ -379,6 +379,8 @@ extern "C" void app_main() {
                      "Hosted radio initialization and C6 version query; no network association claim.");
     run_dsp_fixtures(boot_id);
     run_speech_fixtures(boot_id);
+    // Autonomous isolated baseline while the operator is away.
+    if (!resuming_restarts && !initialization_failed.load()) run_audio_baseline(boot_id);
     if (resuming_restarts) continue_restarts();
     media_idle();
     for (;;) {

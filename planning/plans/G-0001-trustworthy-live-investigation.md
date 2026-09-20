@@ -41,3 +41,5 @@
 **Progress — tracked microphone trials.** 2026-09-20: [.01](G-0001.01-hardware-baseline.md#observed) records repeated physical-position response and [.03](G-0001.03-audio-integrity.md#observed) finalizes seven clean isolated ingress epochs. [.02](G-0001.02-concurrent-workload.md#observed) begins sustained-audio preparation; full combined, cold-start, storage and interaction gates remain open.
 
 **Progress — live audio boundary.** 2026-09-20: [.03](G-0001.03-audio-integrity.md#observed) verifies three live raw/speech pairs and records [ADR-0006](../adrs/ADR-0006-raw-audio-and-derived-speech.md). Sustained/combined workloads and the full guided investigation remain unverified.
+
+**Progress — isolated baselines.** 2026-09-20: [.02](G-0001.02-concurrent-workload.md#observed) verifies native camera acquisition at 30 fps and two sustained audio runs. Remaining isolated/combined stages and the full investigation stay open. User follow-ups are in [TODO.md](../../TODO.md).

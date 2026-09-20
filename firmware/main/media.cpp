@@ -2,11 +2,14 @@
 #include "audio_copy.h"
 #include "audio_ingress.h"
 #include "audio_devices.h"
+#include "camera_baseline.h"
+#include "camera_ingress.h"
 #include "speech_filter.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_video_init.h"
 #include "esp_video_device.h"
+#include "esp_video_ioctl.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_codec_dev.h"
@@ -17,6 +20,7 @@
 #include "freertos/task.h"
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
@@ -72,7 +76,7 @@ struct VideoSession {
 };
 
 void capture_camera(const char* boot_id) {
-    diagnostic_stage("TRICORDER / camera capture\n\nHold the device still.\nOne frame will be saved on the Mac.");
+    diagnostic_stage("CAMERA BASELINE / 60 seconds\n\nAutomatic frame timing and loss checks.\nPlease leave the device powered and connected.");
     auto fail = [](const char* detail) { diagnostic_check("camera_frame", "fail", detail); };
     esp_video_init_csi_config_t csi{};
     csi.sccb_config.init_sccb = false;
@@ -89,6 +93,34 @@ void capture_camera(const char* boot_id) {
     v4l2_format format{};
     format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if (ioctl(video.fd, VIDIOC_G_FMT, &format)) return fail("get video format failed");
+    auto* capabilities=diagnostic_event("camera_capabilities");
+    esp_cam_sensor_format_t sensor{};
+    int sensor_result=ioctl(video.fd,VIDIOC_G_SENSOR_FMT,&sensor);
+    cJSON_AddBoolToObject(capabilities,"sensor_format_read",sensor_result==0);
+    if (!sensor_result) {
+        cJSON_AddStringToObject(capabilities,"sensor_mode",sensor.name ? sensor.name:"unknown");
+        cJSON_AddNumberToObject(capabilities,"sensor_width",sensor.width);
+        cJSON_AddNumberToObject(capabilities,"sensor_height",sensor.height);
+        cJSON_AddNumberToObject(capabilities,"sensor_fps_nominal",sensor.fps);
+    }
+    auto* formats=cJSON_AddArrayToObject(capabilities,"pixel_formats");
+    for (unsigned index=0;index<16;++index) {
+        v4l2_fmtdesc item{};item.type=V4L2_BUF_TYPE_VIDEO_CAPTURE;item.index=index;
+        if (ioctl(video.fd,VIDIOC_ENUM_FMT,&item)) {
+            cJSON_AddNumberToObject(capabilities,"format_enum_end_errno",errno);break;
+        }
+        cJSON_AddItemToArray(formats,cJSON_CreateNumber(item.pixelformat));
+    }
+    auto requested=format;requested.type=V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    requested.fmt.pix.width=640;requested.fmt.pix.height=480;requested.fmt.pix.pixelformat=V4L2_PIX_FMT_RGB565;
+    int requested_result=ioctl(video.fd,VIDIOC_S_FMT,&requested);
+    cJSON_AddBoolToObject(capabilities,"request_640x480_accepted",requested_result==0);
+    if (requested_result) cJSON_AddNumberToObject(capabilities,"request_640x480_errno",errno);
+    format.type=V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if (ioctl(video.fd,VIDIOC_G_FMT,&format)) {cJSON_Delete(capabilities);return fail("post-probe format read failed");}
+    cJSON_AddNumberToObject(capabilities,"selected_width",format.fmt.pix.width);
+    cJSON_AddNumberToObject(capabilities,"selected_height",format.fmt.pix.height);
+    diagnostic_emit(capabilities);
     // The vendor G_FMT copies its stored struct, including a zero type field.
     // Preserve the explicit capture type for subsequent calls, as the factory
     // example does by creating a separate format struct before S_FMT.
@@ -119,16 +151,15 @@ void capture_camera(const char* boot_id) {
         if (ioctl(video.fd, VIDIOC_QBUF, &buffer)) return fail("queue video buffer failed");
     }
     int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    configure_camera_ingress(size_t(format.fmt.pix.width)*format.fmt.pix.height*2);
     if (ioctl(video.fd, VIDIOC_STREAMON, &type)) return fail("start video stream failed");
     video.streaming = true;
-    for (int frame=0; frame<10; ++frame) {
-        v4l2_buffer buffer{};
-        buffer.type = request.type;
-        buffer.memory = request.memory;
-        if (ioctl(video.fd, VIDIOC_DQBUF, &buffer)) return fail("dequeue video frame failed");
-        if (buffer.index >= 2 || !buffer.bytesused || buffer.bytesused > video.lengths[buffer.index])
-            return fail("invalid frame size/index");
-        if (frame == 9) {
+    v4l2_buffer buffer{};
+    int64_t dequeued_us=0;
+    if (!run_camera_baseline(video.fd,format,video.buffers,video.lengths,boot_id,buffer,dequeued_us))
+        return fail("camera baseline did not retain a stopped-stream image");
+    video.streaming=false;
+    {
             char id[64];
             snprintf(id, sizeof(id), "%s-camera", boot_id);
             auto* e = diagnostic_event("capture_start");
@@ -136,16 +167,17 @@ void capture_camera(const char* boot_id) {
             cJSON_AddNumberToObject(e, "width", format.fmt.pix.width);
             cJSON_AddNumberToObject(e, "height", format.fmt.pix.height);
             cJSON_AddNumberToObject(e, "stride_bytes", format.fmt.pix.bytesperline);
-            cJSON_AddNumberToObject(e, "frame_sequence", buffer.sequence);
-            cJSON_AddNumberToObject(e, "dequeue_device_us", esp_timer_get_time());
+            CameraFrameEvidence evidence;
+            if (camera_frame_evidence(video.buffers[buffer.index],evidence)) {
+                cJSON_AddNumberToObject(e,"completion_sequence",evidence.sequence);
+                cJSON_AddNumberToObject(e,"completion_device_us",evidence.finished_us);
+            }
+            cJSON_AddNumberToObject(e, "driver_frame_sequence_unpopulated", buffer.sequence);
+            cJSON_AddNumberToObject(e, "dequeue_device_us", dequeued_us);
             cJSON_AddStringToObject(e, "sensor_driver", "SC202CS");
             bool ok = export_diagnostic_capture(id, video.buffers[buffer.index], buffer.bytesused, e);
             diagnostic_check("camera_frame", ok ? "pass" : "fail",
                              "One frame exported; host must independently verify size/hash and visible content.");
-        }
-        // Keep the dequeued frame owned here until export completes: it cannot
-        // be reused by the camera while its bytes are being hashed/transferred.
-        if (ioctl(video.fd, VIDIOC_QBUF, &buffer)) return fail("return video buffer failed");
     }
 }
 
