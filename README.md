@@ -37,6 +37,8 @@ Capture runs also retain checked raw media in `captures/`; incomplete exports st
 
 The diagnostic has **Record & play** for a countdown, three-second raw recording, and four separately labeled playback slots. **Wi-Fi setup** accepts the local network name/password on the device; credentials are RAM-only. Once its address appears, run `python3 -m tools.network_probe --url http://DEVICE_IP --boot-id BOOT_ID --output .local/runs/lan-001` for three fresh echo exchanges. Audible playback, physical channel mapping and LAN round trips remain separate evidence.
 
+**Test 10 restarts** starts a bounded software-reset sequence after the diagnostic is ready. Keep a single serial collector attached from the initial boot through completion; each boot exports camera/PCM and repeats radio initialization without joining Wi-Fi. Run `python3 -m tools.restart_evidence RUN_DIRECTORY` after capture finalization to check all ten software-reset boots. Cold starts and SD checks require their separate fixtures. Reopening the USB port can itself reset this board; `--observation-boot BOOT_ID` makes an unexpected boot explicit and does not claim continuity before attachment.
+
 For a longer operator session, add `--stop-file .local/STOP` to serial capture and create that file when finished; the collector closes partials and writes its summary. Use a fresh stop-file path or remove your previous stop request before starting.
 
 Generate synthetic desktop FFT references with `python3 -m tools.audio_reference --output .local/runs/audio-reference-001`. These use a direct DFT and explicit periodic-Hann amplitude normalization; they are preparation for device comparisons, not device DSP acceptance.

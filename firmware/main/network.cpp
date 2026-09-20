@@ -13,14 +13,16 @@
 #include "freertos/task.h"
 #include <cstdio>
 #include <cstring>
+#include <atomic>
 
 namespace {
-struct Credentials { char ssid[33]; char password[64]; };
+struct Credentials { char ssid[33]; char password[64]; bool initialize_only; };
 QueueHandle_t requests;
 lv_obj_t *panel, *ssid_field, *password_field, *keyboard, *status;
 const char* current_boot;
 httpd_handle_t server;
 bool initialized;
+std::atomic<int> prepare_result{-1};
 
 void show_status(const char* text) {
     if (bsp_display_lock(1000)) {
@@ -131,7 +133,7 @@ esp_err_t initialize() {
         cJSON_AddStringToObject(event, "version", value);
     }
     diagnostic_emit(event);
-    return ESP_OK;
+    return version_result;
 }
 
 void network_task(void*) {
@@ -142,7 +144,7 @@ void network_task(void*) {
         esp_err_t result=ESP_OK;
         if (!attempted) { attempted=true; result=initialize(); initialized=result==ESP_OK; }
         else if (!initialized) result=ESP_FAIL;
-        if (initialized) {
+        if (initialized && !credentials.initialize_only) {
             wifi_config_t config{};
             memcpy(config.sta.ssid, credentials.ssid, strlen(credentials.ssid));
             memcpy(config.sta.password, credentials.password, strlen(credentials.password));
@@ -156,10 +158,12 @@ void network_task(void*) {
                 if (result==ESP_OK) started=true;
             }
         }
+        bool initialize_only=credentials.initialize_only;
+        if (initialize_only) prepare_result.store(result==ESP_OK ? 0 : 1);
         volatile unsigned char* clear = reinterpret_cast<volatile unsigned char*>(&credentials);
         for (size_t i=0; i<sizeof(credentials); ++i) clear[i]=0;
         if (result!=ESP_OK) show_status("Wi-Fi initialization failed; inspect serial evidence.");
-        auto* event = diagnostic_event("wifi_connect_requested");
+        auto* event = diagnostic_event(initialize_only ? "wifi_initialize_requested" : "wifi_connect_requested");
         cJSON_AddStringToObject(event, "result", esp_err_to_name(result));
         diagnostic_emit(event);
     }
@@ -199,6 +203,17 @@ lv_obj_t* button(lv_obj_t* parent, const char* text, int x, int y, lv_event_cb_t
     lv_obj_center(label);
     return object;
 }
+}
+
+bool network_prepare(unsigned timeout_ms) {
+    Credentials command{};
+    command.initialize_only=true;
+    prepare_result.store(-1);
+    if (xQueueSend(requests, &command, pdMS_TO_TICKS(100))!=pdTRUE) return false;
+    const int64_t deadline=esp_timer_get_time()+static_cast<int64_t>(timeout_ms)*1000;
+    while (prepare_result.load()<0 && esp_timer_get_time()<deadline)
+        vTaskDelay(pdMS_TO_TICKS(20));
+    return prepare_result.load()==0;
 }
 
 void network_ui_init(lv_obj_t* screen, const char* boot_id) {

@@ -7,6 +7,9 @@
 #include "diagnostic_events.h"
 #include "media.h"
 #include "network.h"
+#include "restart_sequence.h"
+#include "esp_attr.h"
+#include <atomic>
 #include "accel_gyro_bmi270.h"
 #include "ina226.hpp"
 #include "cJSON.h"
@@ -35,7 +38,10 @@ static bool power_ready;
 static lv_obj_t* status_label;
 static lv_obj_t* record_button;
 static lv_obj_t* volume_label;
+static lv_obj_t* restart_button;
 static QueueHandle_t media_commands;
+static std::atomic<bool> initialization_failed{false};
+RTC_NOINIT_ATTR static RestartSequence restart_sequence;
 
 void diagnostic_stage(const char* text) {
     if (status_label && bsp_display_lock(1000)) {
@@ -67,6 +73,7 @@ void diagnostic_emit(cJSON* e) {
 }
 
 void diagnostic_check(const char* name, const char* result, const char* detail) {
+    if (strcmp(result, "fail") == 0) initialization_failed.store(true);
     auto* e = diagnostic_event("check");
     cJSON_AddStringToObject(e, "check", name);
     cJSON_AddStringToObject(e, "result", result);
@@ -165,6 +172,38 @@ static void record_clicked(lv_event_t*) {
         lv_obj_add_state(record_button, LV_STATE_DISABLED);
 }
 
+static void restart_clicked(lv_event_t*) {
+    uint8_t command=2;
+    if (xQueueSend(media_commands, &command, 0)==pdTRUE) {
+        lv_obj_add_state(restart_button, LV_STATE_DISABLED);
+        lv_obj_add_state(record_button, LV_STATE_DISABLED);
+    }
+}
+
+static void continue_restarts() {
+    const auto series=restart_sequence.series();
+    const auto completed=restart_sequence.completed();
+    if (initialization_failed.load() || completed==10) {
+        auto* event=diagnostic_event(initialization_failed.load() ? "software_reset_aborted" : "software_reset_complete");
+        cJSON_AddNumberToObject(event, "series_id", series);
+        cJSON_AddNumberToObject(event, "cycle", completed);
+        diagnostic_emit(event);
+        restart_sequence.clear();
+        return;
+    }
+    unsigned cycle=restart_sequence.next();
+    if (!cycle) return;
+    char text[160];
+    snprintf(text,sizeof(text),"SOFTWARE RESTART TEST\n\nRestart %u of 10\nInitialization checks repeat after every restart.",cycle);
+    diagnostic_stage(text);
+    auto* event=diagnostic_event("software_reset_requested");
+    cJSON_AddNumberToObject(event, "series_id", series);
+    cJSON_AddNumberToObject(event, "cycle", cycle);
+    diagnostic_emit(event);
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    esp_restart();
+}
+
 static void volume_changed(lv_event_t* event) {
     auto* slider = static_cast<lv_obj_t*>(lv_event_get_target(event));
     unsigned volume = lv_slider_get_value(slider);
@@ -179,6 +218,7 @@ static void media_idle() {
     diagnostic_stage("TRICORDER / hardware diagnostic\n\nTap Record & play when ready.\nWait for RECORDING, then say the test phrase.\nListen to slots 0, 1, 2 and 3.\n\nStorage checks await a microSD card.");
     if (bsp_display_lock(1000)) {
         lv_obj_remove_state(record_button, LV_STATE_DISABLED);
+        lv_obj_remove_state(restart_button, LV_STATE_DISABLED);
         bsp_display_unlock();
     }
     diagnostic_emit(diagnostic_event("audio_test_ready"));
@@ -205,6 +245,13 @@ extern "C" void app_main() {
     cJSON_AddNumberToObject(boot, "psram_bytes", esp_psram_get_size());
     cJSON_AddNumberToObject(boot, "reset_reason", esp_reset_reason());
     diagnostic_emit(boot);
+    bool resuming_restarts=restart_sequence.resume(esp_reset_reason()==ESP_RST_SW);
+    if (resuming_restarts) {
+        auto* event=diagnostic_event("software_reset_resumed");
+        cJSON_AddNumberToObject(event,"series_id",restart_sequence.series());
+        cJSON_AddNumberToObject(event,"cycle",restart_sequence.completed());
+        diagnostic_emit(event);
+    }
 
     ESP_ERROR_CHECK(bsp_cam_osc_init());
     ESP_ERROR_CHECK(bsp_i2c_init());
@@ -219,10 +266,12 @@ extern "C" void app_main() {
     identity("camera_driver_id", 0x36, 0x3107, 2, 2, 0xeb52);
     imu_ready = accel_gyro_bmi270_init(bsp_i2c_get_handle()) == ESP_OK;
     if (imu_ready) accel_gyro_bmi270_enable_sensor();
+    diagnostic_check("imu_initialize", imu_ready ? "pass" : "fail", "BMI270 driver initialization; no calibration claim.");
     power_ready = power_monitor.begin(bsp_i2c_get_handle(), 0x41)
         && power_monitor.configure(INA226_AVERAGES_16, INA226_BUS_CONV_TIME_1100US,
                                   INA226_SHUNT_CONV_TIME_1100US, INA226_MODE_SHUNT_BUS_CONT)
         && power_monitor.calibrate(0.005, 8.192);
+    diagnostic_check("power_initialize", power_ready ? "pass" : "fail", "INA226 driver setup only; physical rail/sign accuracy unverified.");
 
     bsp_reset_tp();
     // Factory-verified full-frame PSRAM buffers. The BSP convenience default
@@ -263,12 +312,21 @@ extern "C" void app_main() {
     lv_obj_set_pos(volume_label, 920, 614);
     lv_label_set_text(volume_label, "Playback volume: 80%");
     lv_obj_add_event_cb(volume_slider, volume_changed, LV_EVENT_VALUE_CHANGED, nullptr);
+    restart_button=lv_button_create(screen);
+    lv_obj_set_pos(restart_button,30,70);
+    lv_obj_set_size(restart_button,230,58);
+    lv_obj_add_state(restart_button,LV_STATE_DISABLED);
+    lv_obj_add_event_cb(restart_button,restart_clicked,LV_EVENT_CLICKED,nullptr);
+    auto* restart_label=lv_label_create(restart_button);
+    lv_label_set_text(restart_label,"Test 10 restarts");
+    lv_obj_center(restart_label);
     network_ui_init(screen, boot_id);
     bsp_display_brightness_set(50);
     bsp_display_unlock();
     auto* panel = diagnostic_event("display_initialized");
     cJSON_AddStringToObject(panel, "driver", bsp_display_get_panel_ic());
     diagnostic_emit(panel);
+    diagnostic_check("display_initialize", "pass", "Display/LVGL initialized; physical touch fixture remains separate.");
 
     int start_second = rtc_second();
     vTaskDelay(pdMS_TO_TICKS(1100));
@@ -280,11 +338,18 @@ extern "C" void app_main() {
     diagnostic_emit(diagnostic_event("ready"));
     capture_camera(boot_id);
     capture_audio(boot_id);
+    diagnostic_stage("Checking radio initialization...");
+    diagnostic_check("wifi_initialize",network_prepare(30000) ? "pass" : "fail",
+                     "Hosted radio initialization and C6 version query; no network association claim.");
+    if (resuming_restarts) continue_restarts();
     media_idle();
     for (;;) {
         uint8_t command;
         if (xQueueReceive(media_commands, &command, 0) == pdTRUE) {
-            capture_audio(boot_id, true);
+            if (command==2) {
+                restart_sequence.start(esp_random());
+                continue_restarts();
+            } else capture_audio(boot_id, true);
             media_idle();
         }
         auto* e = diagnostic_event("telemetry");
