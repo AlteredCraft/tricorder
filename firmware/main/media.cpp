@@ -1,5 +1,6 @@
 #include "media.h"
 #include "audio_copy.h"
+#include "audio_ingress.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_video_init.h"
@@ -163,7 +164,8 @@ static bool play_slots(esp_codec_dev_handle_t speaker, const int16_t* raw, size_
     int16_t output[512];
     for (unsigned slot=0; slot<4 && ok; ++slot) {
         char text[192];
-        snprintf(text, sizeof(text), "PLAYBACK %u of 4 / RAW SLOT %u\n\nListen for your recorded phrase.\nEach slot plays for three seconds.", slot+1, slot);
+        const char* take=strstr(capture_id,"-audio-");
+        snprintf(text, sizeof(text), "TAKE %s\nPLAYBACK %u of 4 / RAW SLOT %u\n\nListen for your recorded phrase.", take ? take+1:capture_id,slot+1,slot);
         diagnostic_stage(text);
         vTaskDelay(pdMS_TO_TICKS(2000));
         auto* e = diagnostic_event("audio_playback_started");
@@ -227,31 +229,59 @@ void capture_audio(const char* boot_id, bool playback) {
         && esp_codec_dev_set_in_gain(microphone, 24.0f) == ESP_OK;
     constexpr size_t frames = 48000 * 3;
     constexpr size_t bytes = frames * 4 * sizeof(int16_t);
+    char id[64];
+    snprintf(id,sizeof(id),"%s-audio-%u",boot_id,capture_number++);
     auto* pcm = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     ok = pcm && ok;
     if (ok && playback) {
         for (int remaining=5; remaining>0; --remaining) {
             char text[192];
-            snprintf(text, sizeof(text), "TRICORDER / record in %d\n\nAt RECORDING, say:\nTricorder audio test, one two three.", remaining);
+            snprintf(text, sizeof(text), "TAKE audio-%u / record in %d\n\nAt RECORDING, say:\nTricorder audio test, one two three.",capture_number-1,remaining);
             diagnostic_stage(text);
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
-        // Flush queued countdown audio; this is not a continuity measurement.
-        ok = esp_codec_dev_read(microphone, pcm, 8192) == ESP_OK;
     }
-    int64_t started = esp_timer_get_time();
+    AudioIngressSnapshot before{},after{};
+    int64_t started=esp_timer_get_time();
     if (ok) {
-        diagnostic_stage("TRICORDER / RECORDING\n\nSay: Tricorder audio test, one two three.\nThree seconds; speaker muted.");
+        char text[192];
+        snprintf(text,sizeof(text),"TAKE audio-%u / RECORDING\n\nSay: Tricorder audio test, one two three.\nThree seconds; speaker muted.",capture_number-1);
+        diagnostic_stage(text);
         diagnostic_emit(diagnostic_event("audio_acquisition_started"));
-        for (size_t offset=0; offset<bytes; offset+=8192) {
+        started=esp_timer_get_time();
+        ok=begin_audio_epoch(before);
+        for (size_t offset=0; ok && offset<bytes; offset+=8192) {
             int count = std::min(size_t(8192), bytes-offset);
             if (esp_codec_dev_read(microphone, pcm+offset, count) != ESP_OK) { ok = false; break; }
         }
+        after=audio_ingress_snapshot();
     }
     int64_t ended = esp_timer_get_time();
+    bool ingress_ok=ok && after.read_bytes-before.read_bytes==bytes
+        && after.dma_bytes-before.dma_bytes>=bytes
+        && after.overflows==before.overflows && after.overwritten_bytes==before.overwritten_bytes
+        && after.short_reads==before.short_reads && after.read_errors==before.read_errors;
+    auto* ingress=diagnostic_event("audio_ingress");
+    cJSON_AddStringToObject(ingress,"capture_id",id);
+    cJSON_AddNumberToObject(ingress,"requested_bytes",bytes);
+    cJSON_AddNumberToObject(ingress,"read_bytes_before",before.read_bytes);
+    cJSON_AddNumberToObject(ingress,"read_bytes_after",after.read_bytes);
+    cJSON_AddNumberToObject(ingress,"dma_bytes_before",before.dma_bytes);
+    cJSON_AddNumberToObject(ingress,"dma_bytes_after",after.dma_bytes);
+    cJSON_AddNumberToObject(ingress,"overwritten_bytes_before",before.overwritten_bytes);
+    cJSON_AddNumberToObject(ingress,"overwritten_bytes_after",after.overwritten_bytes);
+    cJSON_AddNumberToObject(ingress,"overflows_before",before.overflows);
+    cJSON_AddNumberToObject(ingress,"overflows_after",after.overflows);
+    cJSON_AddNumberToObject(ingress,"short_reads_before",before.short_reads);
+    cJSON_AddNumberToObject(ingress,"short_reads_after",after.short_reads);
+    cJSON_AddNumberToObject(ingress,"read_errors_before",before.read_errors);
+    cJSON_AddNumberToObject(ingress,"read_errors_after",after.read_errors);
+    cJSON_AddNumberToObject(ingress,"acquisition_start_us",started);
+    cJSON_AddNumberToObject(ingress,"acquisition_end_us",ended);
+    diagnostic_emit(ingress);
+    diagnostic_check("audio_ingress",ingress_ok ? "pass":"fail",
+                     "Exact returned bytes and zero IDF RX queue loss/short reads/errors within this epoch only.");
     if (ok) {
-        char id[64];
-        snprintf(id, sizeof(id), "%s-audio-%u", boot_id, capture_number++);
         auto* e = diagnostic_event("capture_start");
         cJSON_AddStringToObject(e, "format", "pcm_s16le");
         cJSON_AddNumberToObject(e, "sample_rate_hz", 48000);
@@ -261,7 +291,8 @@ void capture_audio(const char* boot_id, bool playback) {
         cJSON_AddNumberToObject(e, "acquisition_start_us", started);
         cJSON_AddNumberToObject(e, "acquisition_end_us", ended);
         cJSON_AddStringToObject(e, "channel_mapping", "TDM slots 0-3; physical mapping not yet verified");
-        cJSON_AddStringToObject(e, "processing", "none; speaker muted; driver loss counters not yet instrumented");
+        cJSON_AddStringToObject(e, "processing", "none; speaker muted; IDF RX counters recorded for this acquisition epoch");
+        cJSON_AddBoolToObject(e,"driver_epoch_integrity",ingress_ok);
         diagnostic_stage("TRICORDER / saving recording\n\nPlease wait for the playback slot labels.");
         ok = export_diagnostic_capture(id, pcm, bytes, e);
         if (ok && playback) play_slots(speaker, reinterpret_cast<const int16_t*>(pcm), frames, id);

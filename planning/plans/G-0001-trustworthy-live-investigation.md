@@ -35,3 +35,5 @@
 **Progress — headphones and software resets.** 2026-09-20: [.01](G-0001.01-hardware-baseline.md#observed) confirms both-ear headphone playback and ten software-reset boots after correcting a display race. Cold starts, microphone mapping, storage and later acceptance gates remain open.
 
 **Progress — device DSP.** 2026-09-20: [.03](G-0001.03-audio-integrity.md#observed) passes three repetitions of all four synthetic FFT fixtures on P4. Speech separation, continuous acquisition, acoustic/load and SD checks remain open.
+
+**Progress — speech replay.** 2026-09-20: [.03](G-0001.03-audio-integrity.md#observed) verifies synthetic raw/speech separation on P4. Live ingress checks are prepared; microphone mapping remains ambiguous and all remaining gates stay open.

@@ -46,6 +46,8 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 
 **Progress — device DSP.** 2026-09-20: [.03](plans/G-0001.03-audio-integrity.md#observed) passes twelve on-device synthetic FFT comparisons. Speech separation, continuous acquisition, acoustic/load and SD checks remain open.
 
+**Progress — speech replay.** 2026-09-20: [.03](plans/G-0001.03-audio-integrity.md#observed) verifies synthetic raw/speech separation on P4. Live ingress checks are prepared; microphone mapping remains ambiguous. Required hardware, load, interaction and recovery gates remain open.
+
 ## Later hypotheses to write
 
 A hosted agent-service experiment should test the same device protocol against an internet-accessible deployment without requiring the Mac. Define device authentication, encrypted transport, credential provisioning, capture retention and internet latency/recovery checks before implementation. Hosting and model providers remain open choices.

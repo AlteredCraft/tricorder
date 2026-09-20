@@ -50,6 +50,9 @@ void diagnostic_stage(const char* text) {
         lv_obj_center(status_label);
         bsp_display_unlock();
     }
+    auto* event=diagnostic_event("display_stage");
+    cJSON_AddStringToObject(event,"text",text);
+    diagnostic_emit(event);
 }
 
 cJSON* diagnostic_event(const char* name) {
@@ -169,8 +172,12 @@ static void touch_event(lv_event_t* ev) {
 static void record_clicked(lv_event_t*) {
     uint8_t command = 1;
     // UI never waits for capture/export/playback. Ignore repeats while busy.
-    if (xQueueSend(media_commands, &command, 0) == pdTRUE)
+    bool accepted=xQueueSend(media_commands, &command, 0)==pdTRUE;
+    if (accepted)
         lv_obj_add_state(record_button, LV_STATE_DISABLED);
+    auto* event=diagnostic_event("audio_button");
+    cJSON_AddBoolToObject(event,"accepted",accepted);
+    diagnostic_emit(event);
 }
 
 static void restart_clicked(lv_event_t*) {
@@ -346,6 +353,7 @@ extern "C" void app_main() {
     diagnostic_check("wifi_initialize",network_prepare(30000) ? "pass" : "fail",
                      "Hosted radio initialization and C6 version query; no network association claim.");
     run_dsp_fixtures(boot_id);
+    run_speech_fixtures(boot_id);
     if (resuming_restarts) continue_restarts();
     media_idle();
     for (;;) {
