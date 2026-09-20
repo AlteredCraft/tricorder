@@ -36,6 +36,8 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 
 **Progress — 2026-09-20, hardware bring-up:** [.01](plans/G-0001.01-hardware-baseline.md#observed): verified recovery reads, two factory builds booted, native identity/RTC checks running. Physical fixtures, SD (card absent), functional captures/network and later specs remain open. [ADR-0003](adrs/ADR-0003-tab5-diagnostic-foundation.md) records the diagnostic foundation.
 
+**Progress — media:** 2026-09-20: [.01](plans/G-0001.01-hardware-baseline.md#observed) now retains a readable camera frame and hash-verified raw PCM. Acoustic/network/restart checks and SD-dependent gates remain open; [ADR-0004](adrs/ADR-0004-capture-completion.md) records capture completion.
+
 ## Later hypotheses to write
 
 A hosted agent-service experiment should test the same device protocol against an internet-accessible deployment without requiring the Mac. Define device authentication, encrypted transport, credential provisioning, capture retention and internet latency/recovery checks before implementation. Hosting and model providers remain open choices.

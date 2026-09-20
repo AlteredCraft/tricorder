@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.evidence import assess, parse_event
+from tools.captures import CaptureStore
 
 
 def main():
@@ -29,6 +30,7 @@ def main():
                 'required_checks': args.checks, 'reset_requested': args.reset}
     (args.output/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     events, errors = [], []
+    captures = CaptureStore(args.output/'captures')
     port = serial.Serial()
     port.port, port.baudrate, port.timeout = args.port, 115200, .2
     port.dtr, port.rts = False, False
@@ -64,11 +66,18 @@ def main():
                         events.append(event)
                         out.write(json.dumps(event)+'\n')
                         out.flush()
+                        try:
+                            captures.consume(event)
+                        except ValueError as error:
+                            errors.append(str(error))
             if pending.startswith(b'TRICORDER '):
                 errors.append('truncated instrumentation at end of capture')
     except Exception as error:
         errors.append(f'{type(error).__name__}: {error}')
     summary = assess(events, args.checks)
+    summary['incomplete_captures'] = captures.close()
+    if summary['incomplete_captures']:
+        errors.append('unfinished captures retained as incomplete')
     summary['capture_errors'] = errors
     if errors:
         summary['status'] = 'fail'

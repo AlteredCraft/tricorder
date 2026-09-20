@@ -15,7 +15,7 @@ Hold it, point it, move it, and ask questions. The goal is to learn what the dev
 
 ## Status
 
-G-0001 is in progress, beginning with the [hardware baseline](planning/plans/G-0001.01-hardware-baseline.md#observed). The connected Tab5 identifies as ESP32-P4 revision 1.3 with 16 MB flash. Recovery verification tools and pinned factory-build inputs are being established; peripheral and full-investigation acceptance remain unverified. The starting direction is C++/ESP-IDF with LVGL and a Python agent service on the Mac, first mocked and then provider-backed.
+G-0001 is in progress, beginning with the [hardware baseline](planning/plans/G-0001.01-hardware-baseline.md#observed). The connected Tab5 identifies as ESP32-P4 revision 1.3 with 16 MB flash. Both clean factory builds booted; native diagnostics retain physical input, camera and raw audio evidence. Acoustic, network, storage, repeatability and full-investigation acceptance remain open. The starting direction is C++/ESP-IDF with LVGL and a Python agent service on the Mac, first mocked and then provider-backed.
 
 Run host checks with `python3 -m unittest discover -s tests -v`. Toolchains, private flash backups and run captures stay in ignored `.tools/` and `.local/` directories.
 
@@ -32,6 +32,8 @@ tools/idf.sh -C firmware build
 ```
 
 Rediscover the port after reconnecting. Flash with `tools/idf.sh -C firmware -p PORT flash` only after verifying the connected board and preserving its recovery image. Raw serial data, events and summaries are kept together in each new run directory. Missing checks remain inconclusive; these summaries do not establish full G-0001 acceptance.
+
+Capture runs also retain checked raw media in `captures/`; incomplete exports stay explicitly incomplete. Run `python3 -m tools.inspect_capture PATH_TO_CAPTURE.json` to verify bytes and create a camera PNG or per-slot WAV files (camera conversion requires `ffmpeg`). Physical channel mapping and calibration are separate checks.
 
 ## License
 

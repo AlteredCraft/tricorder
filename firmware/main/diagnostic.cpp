@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <inttypes.h>
 #include "bsp/m5stack_tab5.h"
+#include "diagnostic_events.h"
+#include "media.h"
 #include "accel_gyro_bmi270.h"
 #include "ina226.hpp"
 #include "cJSON.h"
@@ -28,15 +30,24 @@ static SemaphoreHandle_t event_mutex;
 static INA226 power_monitor;
 static bool imu_ready;
 static bool power_ready;
+static lv_obj_t* status_label;
 
-static cJSON* event(const char* name) {
+void diagnostic_stage(const char* text) {
+    if (status_label && bsp_display_lock(1000)) {
+        lv_label_set_text(status_label, text);
+        lv_obj_center(status_label);
+        bsp_display_unlock();
+    }
+}
+
+cJSON* diagnostic_event(const char* name) {
     auto* e = cJSON_CreateObject();
     configASSERT(e);
     cJSON_AddStringToObject(e, "event", name);
     return e;
 }
 
-static void emit(cJSON* e) {
+void diagnostic_emit(cJSON* e) {
     xSemaphoreTake(event_mutex, portMAX_DELAY);
     cJSON_AddStringToObject(e, "boot_id", boot_id);
     cJSON_AddNumberToObject(e, "seq", sequence++);
@@ -50,12 +61,12 @@ static void emit(cJSON* e) {
     xSemaphoreGive(event_mutex);
 }
 
-static void check(const char* name, const char* result, const char* detail) {
-    auto* e = event("check");
+void diagnostic_check(const char* name, const char* result, const char* detail) {
+    auto* e = diagnostic_event("check");
     cJSON_AddStringToObject(e, "check", name);
     cJSON_AddStringToObject(e, "result", result);
     cJSON_AddStringToObject(e, "detail", detail);
-    emit(e);
+    diagnostic_emit(e);
 }
 
 static esp_err_t read_register(uint8_t address, uint16_t reg, size_t reg_size,
@@ -79,14 +90,14 @@ static void identity(const char* name, uint8_t addr, uint16_t reg, size_t reg_si
     uint8_t data[2]{};
     auto result = read_register(addr, reg, reg_size, data, bytes);
     int value = bytes == 2 ? (data[0] << 8) | data[1] : data[0];
-    auto* e = event("identity");
+    auto* e = diagnostic_event("identity");
     cJSON_AddStringToObject(e, "component", name);
     cJSON_AddNumberToObject(e, "address", addr);
     cJSON_AddNumberToObject(e, "register", reg);
     cJSON_AddNumberToObject(e, "value", value);
     cJSON_AddStringToObject(e, "read_result", esp_err_to_name(result));
-    emit(e);
-    check(name, result == ESP_OK && value == expected ? "pass" : "fail",
+    diagnostic_emit(e);
+    diagnostic_check(name, result == ESP_OK && value == expected ? "pass" : "fail",
           "Register identity only; does not establish functional capability.");
 }
 
@@ -102,7 +113,7 @@ static void sd_roundtrip() {
     char mount[] = "/sdcard";
     auto result = bsp_sdcard_init(mount, 3); // Vendor mount never formats on failure.
     if (result != ESP_OK) {
-        check("sd_roundtrip", "inconclusive", esp_err_to_name(result));
+        diagnostic_check("sd_roundtrip", "inconclusive", esp_err_to_name(result));
         return;
     }
     char path[96];
@@ -122,13 +133,13 @@ static void sd_roundtrip() {
         close(fd);
         ok = ok && memcmp(written, readback, sizeof(written)) == 0;
     } else ok = false;
-    auto* e = event("sd_readback");
+    auto* e = diagnostic_event("sd_readback");
     cJSON_AddStringToObject(e, "path", path);
     cJSON_AddNumberToObject(e, "size_bytes", sizeof(written));
     cJSON_AddNumberToObject(e, "expected_crc32", esp_rom_crc32_le(0, written, sizeof(written)));
     if (ok) cJSON_AddNumberToObject(e, "read_crc32", esp_rom_crc32_le(0, readback, sizeof(readback)));
-    emit(e);
-    check("sd_roundtrip", ok ? "pass" : "fail", "Exclusive new file; fsync, reopen, byte comparison and CRC32.");
+    diagnostic_emit(e);
+    diagnostic_check("sd_roundtrip", ok ? "pass" : "fail", "Exclusive new file; fsync, reopen, byte comparison and CRC32.");
 }
 
 static void touch_event(lv_event_t* ev) {
@@ -136,10 +147,10 @@ static void touch_event(lv_event_t* ev) {
     if (!indev) return;
     lv_point_t point{};
     lv_indev_get_point(indev, &point);
-    auto* e = event("touch");
+    auto* e = diagnostic_event("touch");
     cJSON_AddNumberToObject(e, "x", point.x);
     cJSON_AddNumberToObject(e, "y", point.y);
-    emit(e);
+    diagnostic_emit(e);
 }
 
 extern "C" void app_main() {
@@ -153,14 +164,14 @@ extern "C" void app_main() {
     esp_chip_info(&chip);
     uint32_t flash_bytes{};
     ESP_ERROR_CHECK(esp_flash_get_size(nullptr, &flash_bytes));
-    auto* boot = event("boot");
+    auto* boot = diagnostic_event("boot");
     cJSON_AddStringToObject(boot, "firmware", esp_app_get_description()->version);
     cJSON_AddStringToObject(boot, "idf", esp_get_idf_version());
     cJSON_AddNumberToObject(boot, "chip_revision", chip.revision);
     cJSON_AddNumberToObject(boot, "flash_bytes", flash_bytes);
     cJSON_AddNumberToObject(boot, "psram_bytes", esp_psram_get_size());
     cJSON_AddNumberToObject(boot, "reset_reason", esp_reset_reason());
-    emit(boot);
+    diagnostic_emit(boot);
 
     ESP_ERROR_CHECK(bsp_cam_osc_init());
     ESP_ERROR_CHECK(bsp_i2c_init());
@@ -196,25 +207,29 @@ extern "C" void app_main() {
     auto* screen = lv_screen_active();
     lv_obj_add_event_cb(screen, touch_event, LV_EVENT_PRESSED, nullptr);
     auto* label = lv_label_create(screen);
+    status_label = label;
     lv_label_set_text(label, "TRICORDER / hardware diagnostic\n\nTouch all four corners and the center.\nTilt the device to record motion.\n\nCamera/audio/network checks pending.");
     lv_obj_center(label);
     lv_obj_add_flag(label, LV_OBJ_FLAG_EVENT_BUBBLE);
     bsp_display_brightness_set(50);
     bsp_display_unlock();
-    auto* panel = event("display_initialized");
+    auto* panel = diagnostic_event("display_initialized");
     cJSON_AddStringToObject(panel, "driver", bsp_display_get_panel_ic());
-    emit(panel);
+    diagnostic_emit(panel);
 
     int start_second = rtc_second();
     vTaskDelay(pdMS_TO_TICKS(1100));
     int end_second = rtc_second();
     int elapsed = (end_second-start_second+60)%60;
-    check("rtc_advance", start_second >= 0 && end_second >= 0 && elapsed >= 1 && elapsed <= 2
+    diagnostic_check("rtc_advance", start_second >= 0 && end_second >= 0 && elapsed >= 1 && elapsed <= 2
         ? "pass" : "fail", "Seconds register advances; calendar accuracy is not established.");
     sd_roundtrip();
-    emit(event("ready"));
+    diagnostic_emit(diagnostic_event("ready"));
+    capture_camera(boot_id);
+    capture_audio(boot_id);
+    diagnostic_stage("TRICORDER / hardware diagnostic\n\nMedia tests finished; host verifies saved captures.\nTouch or tilt to record input.\n\nNetwork and SD checks remain pending.");
     for (;;) {
-        auto* e = event("telemetry");
+        auto* e = diagnostic_event("telemetry");
         cJSON_AddNumberToObject(e, "free_internal", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
         cJSON_AddNumberToObject(e, "free_psram", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
         if (imu_ready) {
@@ -228,7 +243,7 @@ extern "C" void app_main() {
             cJSON_AddNumberToObject(e, "ina226_bus_v", power_monitor.readBusVoltage());
             cJSON_AddNumberToObject(e, "ina226_shunt_a", power_monitor.readShuntCurrent());
         }
-        emit(e);
+        diagnostic_emit(e);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
