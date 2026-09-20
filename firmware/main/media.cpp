@@ -21,7 +21,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-static bool export_capture(const char* id, const uint8_t* data, size_t size, cJSON* metadata) {
+bool export_diagnostic_capture(const char* id, const uint8_t* data, size_t size, cJSON* metadata) {
     unsigned char digest[32];
     if (mbedtls_sha256(data, size, digest, 0) != 0) {
         cJSON_Delete(metadata);
@@ -136,7 +136,7 @@ void capture_camera(const char* boot_id) {
             cJSON_AddNumberToObject(e, "frame_sequence", buffer.sequence);
             cJSON_AddNumberToObject(e, "dequeue_device_us", esp_timer_get_time());
             cJSON_AddStringToObject(e, "sensor_driver", "SC202CS");
-            bool ok = export_capture(id, video.buffers[buffer.index], buffer.bytesused, e);
+            bool ok = export_diagnostic_capture(id, video.buffers[buffer.index], buffer.bytesused, e);
             diagnostic_check("camera_frame", ok ? "pass" : "fail",
                              "One frame exported; host must independently verify size/hash and visible content.");
         }
@@ -263,7 +263,7 @@ void capture_audio(const char* boot_id, bool playback) {
         cJSON_AddStringToObject(e, "channel_mapping", "TDM slots 0-3; physical mapping not yet verified");
         cJSON_AddStringToObject(e, "processing", "none; speaker muted; driver loss counters not yet instrumented");
         diagnostic_stage("TRICORDER / saving recording\n\nPlease wait for the playback slot labels.");
-        ok = export_capture(id, pcm, bytes, e);
+        ok = export_diagnostic_capture(id, pcm, bytes, e);
         if (ok && playback) play_slots(speaker, reinterpret_cast<const int16_t*>(pcm), frames, id);
     }
     diagnostic_check("audio_capture", ok ? "pass" : "fail",

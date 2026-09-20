@@ -24,7 +24,7 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 | --- | --- | --- | --- | --- |
 | 1 | [Hardware baseline](plans/G-0001.01-hardware-baseline.md) | In progress | None | Actual panel/silicon/camera identity, peripheral ownership, reproducible versions |
 | 2 | [Concurrent workload](plans/G-0001.02-concurrent-workload.md) | Not built | .01 | Rates, buffers, scheduling and memory budget |
-| 3 | [Audio integrity](plans/G-0001.03-audio-integrity.md) | In progress (host fixtures) | .01; repeat under .02 load | Raw measurement and speech-processing separation |
+| 3 | [Audio integrity](plans/G-0001.03-audio-integrity.md) | In progress (synthetic DSP) | .01; repeat under .02 load | Raw measurement and speech-processing separation |
 | 4 | [Agent interaction](plans/G-0001.04-agent-interaction.md) | Not built | .02, .03 | Protocol, latency, cancellation and WebSocket/WebRTC choice |
 | 5 | [Power and recovery](plans/G-0001.05-power-recovery.md) | Not built | .01; repeat with .02/.04 | Power telemetry, wake behavior and recoverable evidence |
 
@@ -41,6 +41,10 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 **Progress — interactive diagnostics.** 2026-09-20: Audible but faint playback recorded; physical slot mapping remains unresolved. Radio startup corrected and Wi-Fi setup prepared; LAN evidence, storage and restart gates remain open. See [.01](plans/G-0001.01-hardware-baseline.md#observed) and [ADR-0005](adrs/ADR-0005-diagnostic-radio-startup.md).
 
 **Progress — LAN verified.** 2026-09-20: [.01](plans/G-0001.01-hardware-baseline.md#observed) records three matched LAN round trips and recognizable raw-slot 0/2 playback. Headphone/physical mapping, storage and restart gates remain open.
+
+**Progress — headphones and software resets.** 2026-09-20: [.01](plans/G-0001.01-hardware-baseline.md#observed) confirms both-ear headphone playback and ten software-reset boots after a display-lock correction. Cold starts, microphone mapping, storage and later gates remain open.
+
+**Progress — device DSP.** 2026-09-20: [.03](plans/G-0001.03-audio-integrity.md#observed) passes twelve on-device synthetic FFT comparisons. Speech separation, continuous acquisition, acoustic/load and SD checks remain open.
 
 ## Later hypotheses to write
 

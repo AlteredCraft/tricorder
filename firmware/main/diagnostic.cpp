@@ -8,6 +8,7 @@
 #include "media.h"
 #include "network.h"
 #include "restart_sequence.h"
+#include "dsp_diagnostic.h"
 #include "esp_attr.h"
 #include <atomic>
 #include "accel_gyro_bmi270.h"
@@ -344,6 +345,7 @@ extern "C" void app_main() {
     diagnostic_stage("Checking radio initialization...");
     diagnostic_check("wifi_initialize",network_prepare(30000) ? "pass" : "fail",
                      "Hosted radio initialization and C6 version query; no network association claim.");
+    run_dsp_fixtures(boot_id);
     if (resuming_restarts) continue_restarts();
     media_idle();
     for (;;) {

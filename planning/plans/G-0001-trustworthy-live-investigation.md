@@ -16,7 +16,7 @@
 - [G-0001.04 Agent interaction](G-0001.04-agent-interaction.md)
 - [G-0001.05 Power and recovery](G-0001.05-power-recovery.md)
 
-**Status.** In progress. Hardware baseline underway; the full investigation and all device acceptance gates remain unverified.
+**Status.** In progress. Hardware baseline and synthetic DSP evidence are recorded; the full investigation and remaining acceptance gates are unverified.
 
 **Progress.** 2026-09-20: Planning only; parent milestone recorded. Next action is G-0001.01's hardware baseline. No outcome evidence exists yet.
 
@@ -31,3 +31,7 @@
 **Progress — host preparation.** 2026-09-20: [.03](G-0001.03-audio-integrity.md#observed) starts deterministic desktop DSP fixtures while .01 operator checks wait. Hardware dependencies and all acceptance thresholds remain unchanged.
 
 **Progress — LAN verified.** 2026-09-20: [.01](G-0001.01-hardware-baseline.md#observed) records three matched LAN round trips and recognizable raw-slot 0/2 playback. Headphone/physical mapping, storage and restart gates remain open.
+
+**Progress — headphones and software resets.** 2026-09-20: [.01](G-0001.01-hardware-baseline.md#observed) confirms both-ear headphone playback and ten software-reset boots after correcting a display race. Cold starts, microphone mapping, storage and later acceptance gates remain open.
+
+**Progress — device DSP.** 2026-09-20: [.03](G-0001.03-audio-integrity.md#observed) passes three repetitions of all four synthetic FFT fixtures on P4. Speech separation, continuous acquisition, acoustic/load and SD checks remain open.
