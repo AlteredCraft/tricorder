@@ -1,4 +1,6 @@
 #include "jpeg_pipeline.h"
+#include "jpeg_guard.h"
+#include "jpeg_timeout_fixture.h"
 #include "owned_frame.h"
 #include "diagnostic_events.h"
 #include "media.h"
@@ -52,6 +54,7 @@ struct JpegPipeline::State {
         if (!slot) return false;
         jpeg_encode_engine_cfg_t config{};config.timeout_ms=500;
         if (jpeg_new_encoder_engine(&config,&engine)!=ESP_OK) return false;
+        jpeg_arm_queue_timeout_fixture();
         return xTaskCreate(task,"jpeg",8192,this,5,&worker)==pdPASS;
     }
     static void task(void* argument) {
@@ -67,7 +70,7 @@ struct JpegPipeline::State {
             jpeg_encode_cfg_t config{};config.width=self.width;config.height=self.height;
             config.src_type=JPEG_ENCODE_IN_FORMAT_RGB565;config.sub_sample=JPEG_DOWN_SAMPLING_YUV420;config.image_quality=75;
             uint32_t size=0;
-            r.result=copied ? jpeg_encoder_process(self.engine,&config,raw,self.bytes,self.output,self.output_capacity,&size):ESP_FAIL;
+            r.result=copied ? jpeg_encode_guarded(self.engine,&config,raw,self.bytes,self.output,self.output_capacity,&size):ESP_FAIL;
             if (!digest(raw,self.bytes,r.after_hash) || strcmp(r.after_hash,stamp.source_sha256)) r.result=ESP_FAIL;
             if (r.result==ESP_OK && (!size || size>self.output_capacity)) r.result=ESP_ERR_INVALID_SIZE;
             if (r.result==ESP_OK && size>pool_capacity-self.used) {++self.pool_overflows;r.result=ESP_ERR_NO_MEM;}

@@ -60,6 +60,8 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 
 **Progress — camera/JPEG regression resolved.** 2026-09-21: [.02](plans/G-0001.02-concurrent-workload.md#observed) passes 30 fps ordered acquisition, 30 fresh JPEG decodes and all sequential/live/synthetic regressions after retaining a four-buffer ordering failure. 103 host tests and P4 compilation pass. [ADR-0007](adrs/ADR-0007-bounded-camera-fifo.md) records the bounded ring/FIFO decision. JPEG queued-timeout ownership needs fault-injection work before preview/concurrency; all combined, storage, interaction and power gates remain open.
 
+**Progress — JPEG error-path protection verified.** 2026-09-21: [.02](plans/G-0001.02-concurrent-workload.md#observed) verifies fail-stop before queued-JPEG error-path unwinding with a user-approved controlled fault, separately retaining the failed ordinary run. Normal firmware is restored and passes all sequential/live/synthetic regressions;112 host tests pass. [ADR-0008](adrs/ADR-0008-jpeg-error-path-fail-stop.md) records the bounded policy. Preview/concurrency, device memory-return and every original full-investigation gate remain open.
+
 ## Later hypotheses to write
 
 A hosted agent-service experiment should test the same device protocol against an internet-accessible deployment without requiring the Mac. Define device authentication, encrypted transport, credential provisioning, capture retention and internet latency/recovery checks before implementation. Hosting and model providers remain open choices.

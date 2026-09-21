@@ -1,0 +1,11 @@
+menu "Tricorder diagnostic fixtures"
+    config TRICORDER_JPEG_QUEUE_TIMEOUT_FIXTURE
+        bool "Inject one JPEG queued timeout and expected panic"
+        default n
+        help
+            Reserve the DMA2D TX reorder channel without starting DMA. The
+            first real JPEG queues and times out. The ownership guard must
+            panic before returning from the driver. Skip the fixture on its
+            panic reboot. This is fault-injection firmware, not acceptance
+            firmware; disable it before collecting normal workload evidence.
+endmenu

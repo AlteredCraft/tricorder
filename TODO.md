@@ -1,6 +1,6 @@
 # Follow-ups for G-0001
 
-**Resumed 2026-09-21:** camera/JPEG and all sequential/live/synthetic regressions pass with four bounded camera buffers and FIFO delivery. Collection has ended. Next engineering task: JPEG queued-timeout ownership and allocation/shutdown tests before preview/concurrency. No physical input is needed for that work; see [HANDOFF.md](HANDOFF.md#next-work).
+**Resumed 2026-09-21:** normal camera/JPEG and all sequential/live/synthetic regressions pass with the JPEG ownership guard. The approved controlled queued-timeout test reached the guard, panicked, and skipped rearming after reboot; normal firmware is restored. All collectors have ended. Next: preview/progressive concurrency and bounded host backpressure. No physical input is needed yet; see [HANDOFF.md](HANDOFF.md#next-work).
 
 The follow-ups below need your participation or equipment. Progress and evidence stay in [planning/milestones.md](planning/milestones.md); this list is only the handoff to you.
 

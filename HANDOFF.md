@@ -1,10 +1,10 @@
 # Tricorder agent handoff
 
-Updated: 2026-09-21, camera/JPEG regression verified
+Updated: 2026-09-21, JPEG queued-timeout fail-stop verified and normal firmware restored
 
 G-0001 is **In progress**. Authoritative gates and concise outcomes are in [milestones](planning/milestones.md) and [G-0001](planning/plans/G-0001-trustworthy-live-investigation.md). .01 hardware, .02 isolated workloads and .03 audio integrity have evidence; full acceptance is unverified. .04/.05 remain Not built. Preserve original thresholds, counts and failed runs. Observed sections are append-only; details belong in commits/private evidence.
 
-**Work resumed at the user’s request.** G-0001 remains active and incomplete. No collector, build, flash or keep-awake process remains active. Next: JPEG queued-timeout ownership and allocation/shutdown fault tests, then preview/concurrency. User/equipment follow-ups are in [TODO.md](TODO.md); no physical input is pending now.
+**Work resumed at the user’s request.** G-0001 remains active and incomplete. No collector, build, flash or keep-awake process remains active. Next: preview/progressive concurrency and bounded host backpressure. JPEG queued-timeout now fails closed before driver unwinding; normal regressions and host allocation/shutdown tests pass. User/equipment follow-ups are in [TODO.md](TODO.md); no physical input is pending now.
 
 ## Device and execution
 
@@ -15,9 +15,21 @@ G-0001 is **In progress**. Authoritative gates and concise outcomes are in [mile
 - **Prevent host sleep during serial runs:** prefix the collector with `/usr/bin/caffeinate -is`; its assertions automatically end with the collector. A sleeping Mac lost whole USB export intervals while the battery-powered Tab5 kept running. Do not infer successful device continuity from a missing host interval.
 - Current diagnostic attempts a 60-second camera+JPEG stage, then sequential audio/motion/display baselines plus short live and synthetic audio fixtures; allow eight minutes for a successful full run. A failed camera check skips the later sustained stages. Manual record/restart/audio controls remain available. Reopening USB can reset the board. Never restart a process merely because an observation timeout expires; inspect its exact handle/state first.
 
-## Current checkpoint: camera/JPEG and sequential regressions pass
+## Current checkpoint: JPEG error-path fail-stop verified
 
-**103 host tests and the P4 build pass.** Current flashed firmware is `8c98c00-dirty`, with exact sources, binary/ELF/map and hashes archived in `.local/runs/20260921-camera/jpeg-fifo-1-artifacts/` and `jpeg-fifo-1-manifest.json`. Archive and current source/build hashes match. Later host-assessor changes did not alter firmware.
+**112 host tests and P4 compilation pass.** Current flashed normal firmware is `9857c89-dirty`, exact sources/config/binary/ELF/map and hashes in `.local/runs/20260921-camera/jpeg-guard-2-artifacts/` and `jpeg-guard-2-manifest.json`. Build and archive binary SHA-256 both `859f2a48288bf52bcaf245a5ce2ecb9210794e3e42ab1124a1a70de73f9a7d12`. Fault injection is disabled in current sdkconfig. Earlier `jpeg-guard-1` artifacts are an unflashed normal build; do not confuse them with this tested image.
+
+Normal `jpeg-guard-2`, boot `ecfb1d7d3fcb637a7db222964855f63e`, collector **31181 terminal**, passes final serial and all nine independent assessments. Camera: 1,800 consecutive frames, 29.999 fps, zero reuse/order/tail/loss; frame p95/max33.335/33.460ms. All30 JPEGs decode and source/copy/post-hashes/raw witness agree; worker p95/max89.136/90.255ms, source hash/copy p9534.305/34.103ms. PSRAM free/largest minima7,289,476/7,208,960B; JPEG stack margin6,256B. Audio6,000 blocks, IMU6,000 polls100Hz, UI1,819 states30.299fps p95/max47.135/49.187ms; live/ingress/synthetic speech and reference-2 FFT pass. Final JPEG is visually readable. Still sequential, not full concurrent or physical-input acceptance.
+
+User explicitly approved the controlled fault test after automatic review initially rejected it. `jpeg-timeout-1`, collector **49086 terminal**, captures boot `92c66a8e4aa0b988fee6372d34c7c759` arming the sole-reorder-channel blocker, real driver timeout, exact guard panic, then boot `c24dfb36d735a09a6336467c44e9e0e2` with reset reason4/PANIC skipping rearming and initializing JPEG. **Ordinary summary remains FAIL**; `expected-fault-assessment.json` separately passes only that ordered sequence. Exact fixture sources/artifacts/manifest, raw logs and callsite symbolization are retained; no unguarded unsafe hardware run was performed.
+
+Normal firmware was then restored with flash hash verification. `jpeg-guard-restored-1`, boot `c98ed075b767f2217f4f3dfd628c1cfb`, collector **20107 terminal**, passes20-second startup checks with no fixture events or panic. This is a startup confirmation of the already-tested image, not another full regression.
+
+The guard tracks the sole encoder task and wraps `dma2d_force_end` before the pinned driver's `err1` returns or touches a stale channel. Other tasks/ISRs delegate unchanged; overlapping encoder calls are rejected. [ADR-0008](planning/adrs/ADR-0008-jpeg-error-path-fail-stop.md) records this fail-stop policy, not recoverable timeout handling. Host tests cover seven resource-failure points, ten lifecycles/300 encodes, retention saturation, source damage/safe codec errors and destruction during active encoding under AddressSanitizer. Mock codec/resource tests do not establish vendor-internal allocation cleanup or device fragmentation/mode-cycle memory return. Full zero-crash combined gates remain unchanged.
+
+## Previous checkpoint: FIFO camera/JPEG and sequential regressions pass
+
+**103 host tests and the P4 build passed.** Previously flashed firmware was `8c98c00-dirty`, with exact sources, binary/ELF/map and hashes archived in `.local/runs/20260921-camera/jpeg-fifo-1-artifacts/` and `jpeg-fifo-1-manifest.json`. Historical archive hashes matched that checkpoint; current firmware adds the guard above.
 
 `jpeg-fifo-1`, boot `0abb801259aea44bed22ee77eef014b3`, collector session **85731 is terminal**, stopped cleanly via STOP. Final serial summary, all four sustained baselines, JPEG, live-audio/ingress, synthetic speech and FFT pass independently. No serial gaps, capture errors or incomplete captures; all 30 JPEGs decode with matching independent source/copy/post-encode hashes and final raw witness. Final JPEG is visually readable. FFT must use `.local/runs/20260920-audio-reference-2`, whose impulse peak is correctly non-unique.
 
@@ -27,7 +39,7 @@ Mechanism: backup is disabled in the pinned CSI configuration. When the queued l
 
 Preserved intermediate failure: `jpeg-ring-1`, boot `0e95de451d730b06f0ad45e1e2c83aa9`, session **54169 terminal**. Four buffers retain all 1,800 frames but reverse queued delivery order; its device summary passes while independent camera and dependent JPEG assessments FAIL. All 30 JPEGs decode. Audio/IMU/UI and live/synthetic speech pass. Its initial `device-spectrum.json` used obsolete reference-1 and fails on the impulse peak; `device-spectrum-corrected.json` separately passes reference-2. Preserve both. Exact ring artifacts/manifests are alongside the FIFO candidate.
 
-**Next ownership issue:** `.local/runs/20260921-camera/jpeg-lifecycle-review.md` records a pinned-driver queued-timeout risk. `jpeg_encoder_process` ignores the result of `dma2d_force_end`; a queued job without an RX channel may not be cancelled, yet our worker currently releases its input slot after the error. Reproduce this path and establish quiescence or fail closed before adding PPA/preview contention. Normal successful runs do not prove error-path safety. Allocation saturation, cleanup and mode-cycle memory return are also open.
+**Ownership issue identified at that checkpoint:** `.local/runs/20260921-camera/jpeg-lifecycle-review.md` records the pinned-driver queued-timeout risk. The current guard and controlled test above resolve unsafe error-path unwinding by failing closed, not cancellation/recovery. Device mode-cycle memory return and combined behavior remain open.
 
 ## Earlier failing JPEG checkpoint (retained)
 
@@ -61,12 +73,12 @@ Audio: repeated6000×480-frame48kHz baselines with raw immutability, separate16k
 
 Physical microphone fixture is complete in `audio-ingress-1/microphone-position.json`: three near-USB/headphone-hole takes favor rawslot2; three farther-hole takes favor rawslot0, with modest margins/cross-pickup. User recognizes slots0/2 (0best) and no phrase in1/3. Keep physical-position names: factory MIC-L/R comments and annotated-photo naming disagree when combined. Earlier batch count mismatch is retained. Headphones reproduce0/2 in both ears at better level; speaker remains faint. Requested gain24dB is not hardware readback; no calibration claim.
 
-ADRs0003–0007 are Active: pinned factory/IDF and BSP ownership, capture completion, radio lifecycle, immutable raw/owned speech, and bounded camera FIFO. Reserved0001/0002 were proposals, not revoked decisions. Do not mistake these bounded decisions for final combined architecture.
+ADRs0003–0008 are Active: pinned factory/IDF and BSP ownership, capture completion, radio lifecycle, immutable raw/owned speech, bounded camera FIFO, and JPEG error-path fail-stop. Reserved0001/0002 were proposals, not revoked decisions. Do not mistake these bounded decisions for final combined architecture.
 
 ## Next work
 
-1. Add a reproducing test for the queued-DMA JPEG timeout in `jpeg-lifecycle-review.md`. Inspect `jpeg_pipeline.cpp`, pinned `jpeg_encode.c` and `dma2d.c`; do not release/reuse/free a potentially pending DMA source. Establish cancellation/quiescence or fail closed, and cover partial allocation and worker shutdown before broader concurrency.
-2. Then add preview and progressive camera/audio/IMU/UI concurrency, explicit bounded queues and counted preview coalescing. Raw-audio loss remains failure. Four buffers do not reduce source hash/copy cost; preserve provenance and measure combined contention/memory. Re-run all regressions after firmware changes. Historical research is in baseline `jpeg-source-notes.md`.
+1. Add preview and progressive camera/audio/IMU/UI concurrency, explicit bounded queues and counted preview coalescing. Raw-audio loss remains failure. Four buffers do not reduce source hash/copy cost; preserve provenance and measure combined contention/memory. Re-run all regressions after firmware changes. Historical research is in baseline `jpeg-source-notes.md`.
+2. Preserve the JPEG guard and default-disabled fixture. Any normal-workload panic fails acceptance; never use successful reboot as a waiver. Record device allocation/minimum-largest-block behavior and quiescent memory return over repeated modes; host mocked lifecycles do not satisfy the5% gate. Review vendor-internal partial-allocation cleanup where needed.
 3. Prepare bounded host backpressure receiver and Mac Python mock-agent protocol while device Wi-Fi waits for user reconnection. Keep configurable endpoint, IDs/deadlines/cancel/idempotency and service-side credentials. .04 mock tests do not substitute for30 live turns or3 guided A/B ratings.
 4. Execute all original .02 gates: isolated stages, three10-minute combined runs,100 physical input events/run,10-second receiver stall, mode cycles and memory return. .01 still needs true cold starts/storage and remaining capability limits; .03 needs acoustic/load/SD evidence; .05 power/wake/recovery is unbuilt. Follow-ups requiring the user are in TODO.md.
 

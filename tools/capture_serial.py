@@ -59,7 +59,7 @@ def main():
                 while b'\n' in pending:
                     line, pending = pending.split(b'\n', 1)
                     decoded = line.decode('utf-8', errors='replace').strip()
-                    if any(marker in decoded for marker in ('Guru Meditation', 'abort() was called', 'assert failed:', 'Task watchdog got triggered')):
+                    if any(marker in decoded for marker in ('Guru Meditation', 'abort() was called', 'assert failed:', 'Task watchdog got triggered', 'JPEG DMA ownership unresolved:')):
                         errors.append(decoded)
                     try:
                         event = parse_event(decoded)
