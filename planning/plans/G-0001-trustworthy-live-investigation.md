@@ -16,7 +16,9 @@
 - [G-0001.04 Agent interaction](G-0001.04-agent-interaction.md)
 - [G-0001.05 Power and recovery](G-0001.05-power-recovery.md)
 
-**Status.** In progress; resumed 2026-09-21. Hardware baseline and isolated live-audio integrity evidence are recorded; the full investigation and remaining acceptance gates are unverified.
+**Status.** In progress; implementation paused at the user's request on 2026-09-21. Hardware baseline and isolated live-audio integrity evidence are recorded; the full investigation and remaining acceptance gates are unverified.
+
+**Relationship to G-0002.** [G-0002](G-0002-thin-investigation-slice.md) is an enabling sibling under M-0001, prioritized next on resumption to establish one usable end-to-end loop. Its shared implementation is then hardened here. G-0001 retains all five specs and the full outcome above; G-0002 completion does not imply G-0001 completion. Partial prerequisites permit the bounded G-0002 experiment, not acceptance of G-0001's dependent specs. Evidence may be reused only when it independently satisfies the original owning spec's checks.
 
 **Progress.** 2026-09-20: Planning only; parent milestone recorded. Next action is G-0001.01's hardware baseline. No outcome evidence exists yet.
 
@@ -55,3 +57,5 @@
 **Progress — JPEG error-path protection verified.** 2026-09-21: [.02](G-0001.02-concurrent-workload.md#observed) reproduces a real queued-JPEG timeout and verifies fail-stop before unsafe driver unwinding. The user-approved expected-panic test is retained separately from normal acceptance. Normal firmware is restored and passes all sequential/live/synthetic regressions;112 host tests pass. [ADR-0008](../adrs/ADR-0008-jpeg-error-path-fail-stop.md) records the bounded policy. Preview/concurrency, device memory-return and all original full-investigation gates remain open.
 
 **Progress — live preview verified.** 2026-09-21: [.02](G-0001.02-concurrent-workload.md#observed) preserves1,800 native frames while displaying an owned, explicitly lossy half-rate preview and encoding30 JPEGs. Core1 rendering and explicit timer wake resolve retained camera-loss/startup failures. All sequential/live/synthetic regressions and121 host tests pass. [ADR-0009](../adrs/ADR-0009-owned-preview-and-render-placement.md) records the bounded choice. Full simultaneous workloads, host backpressure, device memory return and all original investigation/operator gates remain open.
+
+**Progress — vertical-slice sequencing, planning only.** 2026-09-21: User requested [G-0002](G-0002-thin-investigation-slice.md) to establish a thin mock-then-live guided A/B loop before further broad diagnostics. This changes execution order only; .01–.05 remain owned here with unchanged acceptance gates and retained failures. Work remains paused. Next on resumption is G-0002.01, followed by hardening that implementation against this goal; no new implementation or outcome evidence is added.
