@@ -1,10 +1,18 @@
 # Tricorder agent handoff
 
-Updated: 2026-09-21, owned live preview and sequential regressions verified
+Updated: 2026-09-21 10:43 -0700, user-requested pause; checkpoint verified
 
 G-0001 is **In progress**. Authoritative gates and concise outcomes are in [milestones](planning/milestones.md) and [G-0001](planning/plans/G-0001-trustworthy-live-investigation.md). .01 hardware, .02 isolated workloads and .03 audio integrity have evidence; full acceptance is unverified. .04/.05 remain Not built. Preserve original thresholds, counts and failed runs. Observed sections are append-only; details belong in commits/private evidence.
 
-**Work resumed at the user’s request.** G-0001 remains active and incomplete. No collector, build, flash or keep-awake process remains active. Next: progressive simultaneous camera/preview/audio/FFT/IMU/animated-UI work, then bounded host backpressure. Owned preview and JPEG fail-stop are verified for their recorded scopes. User/equipment follow-ups are in [TODO.md](TODO.md); no physical input is pending now.
+**Paused at the user’s request.** G-0001 is incomplete, not blocked or achieved. Do not resume implementation or hardware runs until requested. No Tricorder collector, build, flash or keep-awake process remains active (process table checked during closeout; an unrelated project's timed keep-awake process was left untouched). Owned preview and JPEG fail-stop are verified for their recorded scopes. User/equipment follow-ups are in [TODO.md](TODO.md); no physical input is pending now.
+
+## Resume here
+
+- Latest implementation commit: `11bb278` (owned live preview); preceding checkpoints: `8efbc8c` (JPEG fail-stop), `9857c89` (camera FIFO). Worktree was clean before this documentation-only pause update. No push requested or performed.
+- Closeout rechecked all 59 current firmware/build hashes against `preview-wake-1-manifest.json`, all 11 recorded serial/independent result statuses (PASS), and the saved `preview-tests-final.txt` log (121 tests, OK). No new build, test run, flash or USB reset was performed during closeout. The archived dirty version string predates the implementation commit; hashes identify the tested image.
+- After authorization to resume: read this file, the parent goal and .02 plan; inspect worktree and rediscover USB serial identity before opening the port. Preserve private `.local` evidence and original failures. The approved deliberate fault run is already complete and normal firmware restored; do not repeat it as a startup step.
+- First prepare tests and explicit collector spec/revision metadata, then progressively combine camera/preview with audio/FFT/IMU/animated UI using a shared measurement epoch, owned acquisition workers and deferred export. Existing baselines are sequential; none proves full overlap. See the detailed next-work list below.
+- Before ten-minute runs, replace the diagnostic JPEG retention limit with bounded recycling/streaming: the current 6 MiB pool retaining 30 JPEGs is not evidence for 300 JPEGs. Preserve provenance, backpressure accounting and all original acceptance thresholds. Host mock lifecycles do not establish device memory return.
 
 ## Device and execution
 
@@ -57,7 +65,7 @@ Preserved intermediate failure: `jpeg-ring-1`, boot `0e95de451d730b06f0ad45e1e2c
 
 `jpeg-baseline-1`, boot `efc223ac6c12b69d6a23e3460267c6dd`, session **33205 terminal**, remains FAIL. It delivered 1743 rows versus 1802 callbacks: 57 skipped sequence IDs across 32 gaps plus two completions after the final delivered frame. Its arithmetic `discarded_completed_at_stop=59` is not proof of stop-time discards. All 30 JPEGs decode and match hashes, but later sustained stages were skipped. This is not a preview-drop waiver.
 
-Original firmware/artifacts remain under `.local/runs/20260920-baseline/jpeg-build-2-artifacts/` and `jpeg-build-manifest.json`, binary SHA-256 `6e5ed511639aa0762835b582ded6158d6d07412a36251e4cb8b27ee2c9cb8e8b`. Original capture/assessment and 98-test log are unchanged. The device now runs the FIFO candidate above.
+Original firmware/artifacts remain under `.local/runs/20260920-baseline/jpeg-build-2-artifacts/` and `jpeg-build-manifest.json`, binary SHA-256 `6e5ed511639aa0762835b582ded6158d6d07412a36251e4cb8b27ee2c9cb8e8b`. Original capture/assessment and 98-test log are unchanged. The last flashed image is the owned-preview checkpoint above.
 
 ## Previous passing build (fallback reference)
 
@@ -79,7 +87,7 @@ Display result: 1,819 distinct states in 60 seconds, 30.299 software panel submi
 
 ## Other established evidence
 
-Native camera acquisition:1280×720 RGB565 at~30fps, 60-second runs with observed backup-buffer starvation/completion accounting. Runtime rejects640×480. Camera receive is bounded; the final owned image is exported only after streaming stops. Camera+JPEG now passes with four buffers/FIFO; live preview/network and full combined acceptance remain open.
+Native camera acquisition:1280×720 RGB565 at~30fps, 60-second runs with observed backup-buffer starvation/completion accounting. Runtime rejects640×480. Camera receive is bounded; the final owned image is exported only after streaming stops. Camera+JPEG+owned live preview now passes with four buffers/FIFO for the recorded 60-second scope; network and full combined acceptance remain open.
 
 Audio: repeated6000×480-frame48kHz baselines with raw immutability, separate16kHz speech and FFT2048 every2400frames; isolated read/consumer timing and driver counters pass. Live pairs retain141 block hashes/ranges each; independent derived-reference comparison passes. Synthetic speech has24pairs and FFT12fixtures. Current consumers are synchronous and retain copies, not raw pointers; future asynchronous ownership requires new evidence.
 

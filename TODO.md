@@ -1,6 +1,6 @@
 # Follow-ups for G-0001
 
-**Resumed 2026-09-21:** owned live preview, native camera/JPEG and all sequential/live/synthetic regressions pass. Rendering now runs on the second core; explicit timer wake fixes initial preview delay. The approved JPEG fault test remains retained and its fixture is disabled. All collectors have ended. Next: simultaneous audio/FFT/IMU/animated UI with preview, then bounded host backpressure. No physical input is needed yet; see [HANDOFF.md](HANDOFF.md#next-work).
+**Paused at the user's request, 2026-09-21:** owned live preview, native camera/JPEG and all sequential/live/synthetic regressions pass; implementation is committed as `11bb278`. Rendering now runs on the second core; explicit timer wake fixes initial preview delay. The approved JPEG fault test remains retained and its fixture is disabled. All Tricorder collectors have ended. On resumption: simultaneous audio/FFT/IMU/animated UI with preview, then bounded host backpressure. No physical input is needed now; see [HANDOFF.md](HANDOFF.md#resume-here).
 
 The follow-ups below need your participation or equipment. Progress and evidence stay in [planning/milestones.md](planning/milestones.md); this list is only the handoff to you.
 
