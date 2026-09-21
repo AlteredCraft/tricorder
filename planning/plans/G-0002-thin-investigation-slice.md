@@ -16,6 +16,8 @@ The implementation is shared: build the slice in the existing firmware and Mac s
 
 - [G-0002.01 Guided A/B vertical slice](G-0002.01-guided-ab-slice.md)
 
-**Status.** Not started. Planning only; implementation remains paused at the user's request.
+**Status.** In progress. User authorized implementation to resume on 2026-09-21; first host protocol/mock checkpoint built. Handheld/live acceptance remains untested.
 
 **Progress.** 2026-09-21: User requested this goal and a handoff sequencing change. Next authorized implementation work is G-0002.01: tests and the mock path, then the same path with a live provider and operator feedback. After its outcome is assessed, resume G-0001's full combined-load, interaction, storage, power and recovery gates against the shared implementation. No new build, measurement, completed spec or architectural decision is claimed.
+
+**Progress — 2026-09-21, implementation resumed.** Tests-first host state/evidence contract, bounded WebSocket mock service, and explicit collector spec/revision/workload metadata are implemented. The user selected a steady speaker source; a 20/40 cm fixture is prepared for freezing with the actual source setup before trials. See [protocol checkpoint](../guided-ab-protocol.md). Synthetic host/loopback tests are development evidence only. Firmware transport/UI, three real mock loops, live speech/provider loops and usefulness review remain open. No G-0001 gate is changed.

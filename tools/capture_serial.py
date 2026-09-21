@@ -18,15 +18,22 @@ def main():
     parser.add_argument('--observation-boot', help='Observe this existing boot without claiming startup or continuity before attachment')
     parser.add_argument('--stop-file', type=Path, help='Finish and summarize when this file appears')
     parser.add_argument('--checks', nargs='*', default=[])
+    parser.add_argument('--spec-id', default='G-0001.01')
+    parser.add_argument('--spec-revision', help='Exact dated revision of the owning spec')
+    parser.add_argument('--workload', help='Actual active streams, overlap and fixture scope')
     args = parser.parse_args()
     if args.seconds <= 0:
         parser.error('--seconds must be positive')
     if args.observation_boot and args.reset:
         parser.error('--observation-boot cannot be combined with --reset')
+    if (args.spec_id != 'G-0001.01' or args.spec_revision or args.workload) and not (
+            args.spec_revision and args.spec_revision.strip() and args.workload and args.workload.strip()):
+        parser.error('explicit spec metadata requires both --spec-revision and --workload')
     import serial
     from esptool.reset import HardReset
     args.output.mkdir(parents=True, exist_ok=False)
-    manifest = {'spec_id': 'G-0001.01', 'run_id': args.output.name,
+    manifest = {'spec_id': args.spec_id, 'spec_revision': args.spec_revision,
+                'workload': args.workload, 'run_id': args.output.name,
                 'created_utc': datetime.now(timezone.utc).isoformat(),
                 'port': args.port, 'requested_duration_s': args.seconds,
                 'host_clock': 'time.monotonic_ns; never subtract from device_us',

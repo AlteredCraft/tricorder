@@ -1,0 +1,13 @@
+{
+  "question": "How does the recorded steady speaker tone change between 20 cm and 40 cm?",
+  "variable": "Distance from the same stationary speaker playing a continuous 1000 Hz tone at a fixed output level",
+  "placement_a": "20 cm from speaker to farther microphone hole; hole facing speaker; same height and orientation",
+  "placement_b": "40 cm from speaker to farther microphone hole; hole facing speaker; same height and orientation",
+  "expected": "B has lower digital RMS than A; test this hypothesis, retain contrary or inconclusive results; no calibrated SPL claim",
+  "sample_rate_hz": 48000,
+  "frames": 144000,
+  "channels": 4,
+  "gain_db": 24,
+  "source_slot": 0,
+  "physical_slot": "farther-hole"
+}

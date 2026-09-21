@@ -10,6 +10,27 @@ from tools.capture_serial import main
 
 
 class CaptureSerialTests(unittest.TestCase):
+    def test_explicit_spec_revision_and_workload_reach_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);stop=root/'stop';stop.touch();port=MagicMock()
+            modules={'serial':SimpleNamespace(Serial=lambda:port),
+                     'esptool.reset':SimpleNamespace(HardReset=MagicMock())}
+            argv=['capture','--port','test','--output',str(root/'run'),'--stop-file',str(stop),
+                  '--spec-id','G-0002.01','--spec-revision','2026-09-21',
+                  '--workload','explicit-turn A/B; audio only']
+            with patch.object(sys,'argv',argv),patch.dict(sys.modules,modules):main()
+            manifest=json.loads((root/'run/manifest.json').read_text())
+            self.assertEqual(manifest['spec_id'],'G-0002.01')
+            self.assertEqual(manifest['spec_revision'],'2026-09-21')
+            self.assertEqual(manifest['workload'],'explicit-turn A/B; audio only')
+
+    def test_new_spec_requires_revision_and_workload_before_opening_port(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            argv=['capture','--port','test','--output',str(root/'run'),'--spec-id','G-0002.01']
+            with patch.object(sys,'argv',argv),self.assertRaises(SystemExit):main()
+            self.assertFalse((root/'run').exists())
+
     def test_guard_panic_is_failure_even_without_standard_abort_message(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);stop=root/'stop';port=MagicMock()

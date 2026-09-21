@@ -4,7 +4,7 @@ Date: 2026-09-20
 
 ## M-0001: Validate the handheld investigation
 
-**Status:** In progress; implementation paused at the user's request. On resumption, prioritize G-0002's thin slice, then harden the same implementation under G-0001; see [HANDOFF.md](../HANDOFF.md).
+**Status:** In progress; implementation resumed at the user's request on 2026-09-21. Prioritize G-0002's thin slice, then harden the same implementation under G-0001; see [HANDOFF.md](../HANDOFF.md).
 
 **Scope:** One trustworthy handheld A/B investigation using built-in camera, audio, motion, touch and spoken guidance, with the agent service on the Mac over the local network. Hosted deployment is deferred.
 
@@ -66,13 +66,15 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 
 ### G-0002: One usable end-to-end investigation
 
-**Goal:** [G-0002](plans/G-0002-thin-investigation-slice.md) — Not started; planning only, implementation paused.
+**Goal:** [G-0002](plans/G-0002-thin-investigation-slice.md) — In progress; host protocol/mock checkpoint built, handheld acceptance open.
 
-**Serving spec:** [G-0002.01 Guided A/B vertical slice](plans/G-0002.01-guided-ab-slice.md) — Not built.
+**Serving spec:** [G-0002.01 Guided A/B vertical slice](plans/G-0002.01-guided-ab-slice.md) — In progress; device integration remains unbuilt.
 
 **Sequence and ownership:** G-0001 and G-0002 are sibling goals under M-0001. Reuse the verified G-0001 foundation to build G-0002's mock-then-live ask → measure → feedback → adjust → compare loop next. Then harden that same implementation under G-0001's five unchanged specs. G-0002 does not inherit or reparent .04, lower its thresholds, or require finishing every diagnostic before its bounded experiment. G-0001 remains the full trustworthy-product acceptance goal.
 
 **Progress — 2026-09-21, planning only:** User requested the vertical slice to validate usefulness earlier. New goal/spec record its bounded checks and the handback to reliability work. No code, hardware run, architectural adoption or acceptance result is added. Prior G-0001 progress and failed evidence remain unchanged.
+
+**Progress — 2026-09-21, G-0002 resumed:** Tests-first host protocol/evidence reducer, bounded WebSocket mock service and collector metadata are implemented. The operator selected a steady speaker fixture. Synthetic host and loopback tests do not count as physical or live-provider acceptance; all G-0001 gates remain unchanged. See the [checkpoint](guided-ab-protocol.md).
 
 ## Later hypotheses to write
 

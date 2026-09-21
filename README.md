@@ -52,3 +52,12 @@ Generate synthetic desktop FFT references with `python3 -m tools.audio_reference
 ## License
 
 [MIT](LICENSE)
+
+## Guided A/B mock development
+
+G-0002 implementation has started with a tested host state/evidence contract and
+bounded Mac WebSocket mock service. See the [protocol and run instructions](planning/guided-ab-protocol.md).
+The prepared fixture compares a steady speaker sound at 20 cm and 40 cm. Device
+transport/UI and live speech/provider integration are next; host synthetic tests
+do not establish handheld acceptance. The previously verified diagnostic firmware
+is unchanged by this checkpoint.
