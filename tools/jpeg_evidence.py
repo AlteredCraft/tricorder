@@ -7,6 +7,7 @@ import struct
 import subprocess
 from tools.inspect_capture import load_verified
 from tools.audio_baseline_evidence import distribution
+from tools.camera_baseline_evidence import compare_camera
 
 
 def assess_records(meta,camera):
@@ -22,10 +23,11 @@ def assess_records(meta,camera):
         errors.append('Source extent mismatch')
     records=meta.get('records',[])
     if len(records)!=30:errors.append('Expected 30 fresh JPEG results')
-    used=0;prior=0;durations=[];delays=[]
+    used=0;prior=0;durations=[];delays=[];source_hashes=[];source_copies=[]
     for index,r in enumerate(records,1):
         required=('index','source_sequence','source_completed_us','dequeued_us','copied_us','encode_start_us','encode_end_us',
-                  'source_sha256','copy_sha256','after_sha256','jpeg_bytes','result')
+                  'source_sha256','copy_sha256','after_sha256','jpeg_bytes','result',
+                  'source_hash_start_us','source_hash_end_us','copy_start_us')
         if any(key not in r for key in required):missing.append('JPEG record fields');continue
         if r['index']!=index or r['source_sequence']<=prior or r['result']!=0:errors.append('Invalid result or source identity')
         prior=r['source_sequence']
@@ -33,6 +35,10 @@ def assess_records(meta,camera):
         times=[r[key] for key in ('source_completed_us','dequeued_us','copied_us','encode_start_us','encode_end_us')]
         if times!=sorted(times) or times[0]<index*2000000-100000 or times[1]<index*2000000 or times[-1]>(index+1)*2000000:
             errors.append('Stale source or encode deadline missed')
+        source_times=[r[key] for key in ('dequeued_us','source_hash_start_us','source_hash_end_us','copy_start_us','copied_us')]
+        if source_times!=sorted(source_times):errors.append('Invalid source hash/copy timing')
+        source_hashes.append(r['source_hash_end_us']-r['source_hash_start_us'])
+        source_copies.append(r['copied_us']-r['copy_start_us'])
         hashes=[r[key] for key in ('source_sha256','copy_sha256','after_sha256')]
         if len(set(hashes))!=1 or any(not isinstance(h,str) or len(h)!=64 or any(c not in '0123456789abcdef' for c in h) for h in hashes):
             errors.append('Owned source hash/mutation mismatch')
@@ -41,7 +47,19 @@ def assess_records(meta,camera):
     if 'pool_capacity' in meta and used>meta['pool_capacity']:errors.append('Retention pool overflow')
     result={'status':'fail' if errors else ('inconclusive' if missing else 'pass'),'errors':errors,'missing':missing,
             'scope':'Camera plus owned-frame JPEG encoder; no network, preview, audio or full combined-load acceptance.'}
-    if not errors and not missing:result.update(encode_worker_us=distribution(durations),source_to_encoded_us=distribution(delays),jpeg_bytes=used)
+    if not errors and not missing:result.update(encode_worker_us=distribution(durations),source_to_encoded_us=distribution(delays),jpeg_bytes=used,
+                                               source_hash_us=distribution(source_hashes),source_copy_us=distribution(source_copies))
+    return result
+
+
+def assess_run(meta,camera_meta,camera_data,summary):
+    camera={r[0]:(r[1],r[2]) for r in struct.iter_unpack('<5Q',camera_data)}
+    result=assess_records(meta,camera)
+    result['camera_assessment']=compare_camera(camera_meta,camera_data)
+    if result['camera_assessment']['status']!='pass':
+        result['errors'].append('Independent camera baseline did not pass');result['status']='fail'
+    if summary['status']!='pass':
+        result['errors'].append('Final run did not pass');result['status']='fail'
     return result
 
 
@@ -85,10 +103,8 @@ def main():
     camera_path=run/'captures'/f"{meta['boot_id']}-camera-baseline.json"
     camera_meta,camera_data=load_verified(camera_path)
     if camera_meta['acquisition_start_us']!=meta['epoch_start_us']:raise ValueError('Camera epoch mismatch')
-    camera={r[0]:(r[1],r[2]) for r in struct.iter_unpack('<5Q',camera_data)}
-    result=assess_records(meta,camera);result['decoded']=[]
     original=json.loads((run/'summary.json').read_text())
-    if original['status']!='pass':result['errors'].append('Final run did not pass');result['status']='fail'
+    result=assess_run(meta,camera_meta,camera_data,original);result['decoded']=[]
     for record in meta.get('records',[]):
         capture_id=f"{meta['boot_id']}-jpeg-{record['index']}";path=run/'captures'/f'{capture_id}.json'
         try:

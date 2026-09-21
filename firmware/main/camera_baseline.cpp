@@ -28,7 +28,7 @@ bool run_camera_baseline(int fd,const v4l2_format& format,uint8_t* const* buffer
     bool ok=saved.rows && saved.memory && jpeg.ready();
     auto dequeue=[&](v4l2_buffer& buffer) {
         buffer={};buffer.type=V4L2_BUF_TYPE_VIDEO_CAPTURE;buffer.memory=V4L2_MEMORY_MMAP;
-        return ioctl(fd,VIDIOC_DQBUF,&buffer)==0 && buffer.index<2 && buffer.bytesused && buffer.bytesused<=lengths[buffer.index];
+        return ioctl(fd,VIDIOC_DQBUF,&buffer)==0 && buffer.index<camera_capture_buffer_count && buffer.bytesused && buffer.bytesused<=lengths[buffer.index];
     };
     for (unsigned i=0;ok && i<10;++i) {
         v4l2_buffer buffer;
@@ -41,22 +41,32 @@ bool run_camera_baseline(int fd,const v4l2_format& format,uint8_t* const* buffer
     jpeg.begin(started);
     int64_t next_jpeg=2000000;
     bool jpeg_pending=false;
+    bool final_jpeg=false;
+    CameraFrameEvidence final_frame;
     size_t count=0;
+    uint64_t previous_sequence=before.finished,order_errors=0;
     while (ok && count<4096) {
         v4l2_buffer buffer;
         if (!dequeue(buffer)) {ok=false;break;}
         const int64_t dequeued=esp_timer_get_time();
         CameraFrameEvidence frame;
         if (!camera_frame_evidence(buffers[buffer.index],frame) || frame.bytes!=buffer.bytesused) {ok=false;break;}
+        if (frame.sequence!=previous_sequence+1) ++order_errors;
+        previous_sequence=frame.sequence;
         auto* row=saved.rows+count*5;
         row[0]=frame.sequence;row[1]=frame.finished_us-started;row[2]=dequeued-started;row[4]=buffer.bytesused;
         ++count;last=buffer;last_dequeue_us=dequeued;
-        if (dequeued-started>=next_jpeg) {
+        bool done=dequeued-started>=60000000;
+        if (done) {
+            // Stop acquisition promptly at the epoch boundary. Hash the final
+            // retained source only after STREAMOFF, so its hash/copy work
+            // cannot leave already-completed frames queued before the stop.
+            final_jpeg=dequeued-started>=next_jpeg;final_frame=frame;
+        } else if (dequeued-started>=next_jpeg) {
             jpeg_pending=jpeg.submit(buffers[buffer.index],buffer.bytesused,frame,dequeued);
             next_jpeg+=2000000;
         }
         // Keep the final image owned until STREAMOFF; no writer can reuse it.
-        bool done=dequeued-started>=60000000;
         if (!done && ioctl(fd,VIDIOC_QBUF,&buffer)) {ok=false;break;}
         row[3]=esp_timer_get_time()-started;
         if (!done && jpeg_pending) {jpeg.dispatch();jpeg_pending=false;}
@@ -70,8 +80,11 @@ bool run_camera_baseline(int fd,const v4l2_format& format,uint8_t* const* buffer
         if (done) break;
     }
     int type=V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    const auto stop_request=camera_ingress_snapshot();
     bool stopped=ioctl(fd,VIDIOC_STREAMOFF,&type)==0;
     const int64_t ended=esp_timer_get_time();
+    if (stopped && final_jpeg)
+        jpeg_pending=jpeg.submit(buffers[last.index],last.bytesused,final_frame,last_dequeue_us);
     if (jpeg_pending) jpeg.dispatch();
     if (count) saved.rows[(count-1)*5+3]=ended-started;
     auto after=camera_ingress_snapshot();
@@ -79,6 +92,7 @@ bool run_camera_baseline(int fd,const v4l2_format& format,uint8_t* const* buffer
     const uint64_t completed=after.finished-before.finished;
     ok=ok && stopped && count && ended-started>=60000000 && count<4096 && completed>=count && completed-count<=2
         && after.missing_buffers==before.missing_buffers && after.untracked_buffers==before.untracked_buffers;
+    ok=ok && after.reused_completions==before.reused_completions && !order_errors;
     auto* meta=diagnostic_event("capture_start");
     cJSON_AddStringToObject(meta,"format","camera_baseline_u64le");
     cJSON_AddStringToObject(meta,"workload","camera plus JPEG every two seconds");
@@ -86,13 +100,17 @@ bool run_camera_baseline(int fd,const v4l2_format& format,uint8_t* const* buffer
     cJSON_AddNumberToObject(meta,"rows",count);cJSON_AddNumberToObject(meta,"columns",5);
     cJSON_AddNumberToObject(meta,"width",format.fmt.pix.width);cJSON_AddNumberToObject(meta,"height",format.fmt.pix.height);
     cJSON_AddNumberToObject(meta,"frame_bytes",before.expected_bytes);
+    cJSON_AddNumberToObject(meta,"capture_buffer_count",camera_capture_buffer_count);
     cJSON_AddNumberToObject(meta,"duration_us",ended-started);cJSON_AddNumberToObject(meta,"acquisition_start_us",started);
     cJSON_AddNumberToObject(meta,"completed_before",before.finished);cJSON_AddNumberToObject(meta,"completed_after",after.finished);
     cJSON_AddNumberToObject(meta,"missing_buffers",after.missing_buffers-before.missing_buffers);
     cJSON_AddNumberToObject(meta,"untracked_buffers",after.untracked_buffers-before.untracked_buffers);
+    cJSON_AddNumberToObject(meta,"reused_completions",after.reused_completions-before.reused_completions);
+    cJSON_AddNumberToObject(meta,"delivery_order_errors",order_errors);
+    cJSON_AddNumberToObject(meta,"completed_at_stop_request",stop_request.finished);
     cJSON_AddNumberToObject(meta,"completed_bytes",after.bytes-before.bytes);
     cJSON_AddNumberToObject(meta,"buffer_requests",after.requests-before.requests);
-    cJSON_AddNumberToObject(meta,"discarded_completed_at_stop",int64_t(completed)-int64_t(count));
+    cJSON_AddNumberToObject(meta,"discarded_completed_at_stop",after.finished-stop_request.finished);
     auto* samples=cJSON_AddArrayToObject(meta,"memory_samples");
     for (size_t i=0;saved.memory && i<count/30;++i) {
         const auto& m=saved.memory[i];auto* item=cJSON_CreateObject();

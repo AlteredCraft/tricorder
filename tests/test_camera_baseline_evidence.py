@@ -9,7 +9,8 @@ class CameraBaselineEvidenceTests(unittest.TestCase):
         self.rows=[(11+i,(i+1)*33334,(i+1)*33334+50,(i+1)*33334+80,1843200) for i in range(1800)]
         self.meta={'format':'camera_baseline_u64le','rows':1800,'columns':5,'width':1280,'height':720,
                    'frame_bytes':1843200,'duration_us':60002000,'completed_before':10,'completed_after':1810,
-                   'missing_buffers':0,'untracked_buffers':0,'completed_bytes':1800*1843200,
+                   'missing_buffers':0,'untracked_buffers':0,'reused_completions':0,'completed_bytes':1800*1843200,
+                   'completed_at_stop_request':1810,
                    'discarded_completed_at_stop':0,'cpu_before':{'total_ticks':1,'tasks':[{'id':1,'name':'main','ticks':1,'stack_margin_bytes':2000}]},
                    'cpu_after':{'total_ticks':60000001,'tasks':[{'id':1,'name':'main','ticks':600001,'stack_margin_bytes':1800}]},
                    'memory_samples':[{'frame_index':(n+1)*30,'free_internal':200000,'free_psram':20000000,
@@ -19,7 +20,7 @@ class CameraBaselineEvidenceTests(unittest.TestCase):
         return compare_camera(self.meta if meta is None else meta,b''.join(struct.pack('<5Q',*r) for r in (self.rows if rows is None else rows)))
     def test_complete(self):self.assertEqual(self.result()['status'],'pass')
     def test_missing_is_inconclusive(self):
-        for key in ('missing_buffers','cpu_before','memory_samples'):
+        for key in ('missing_buffers','cpu_before','memory_samples','reused_completions','completed_at_stop_request'):
             meta=copy.deepcopy(self.meta);del meta[key]
             self.assertEqual(self.result(meta)['status'],'inconclusive',key)
     def test_hidden_loss_and_frame_gaps_fail(self):
@@ -34,6 +35,14 @@ class CameraBaselineEvidenceTests(unittest.TestCase):
         meta=copy.deepcopy(self.meta);meta['completed_after']+=1;meta['discarded_completed_at_stop']=1;meta['completed_bytes']+=1843200
         self.assertEqual(self.result(meta)['status'],'pass')
         meta['completed_after']+=5;meta['discarded_completed_at_stop']+=5;meta['completed_bytes']+=5*1843200
+        self.assertEqual(self.result(meta)['status'],'fail')
+
+    def test_reused_completion_and_pre_stop_tail_are_not_waived(self):
+        meta=copy.deepcopy(self.meta);meta['reused_completions']=1
+        self.assertEqual(self.result(meta)['status'],'fail')
+        meta=copy.deepcopy(self.meta)
+        meta.update(completed_after=1811,completed_at_stop_request=1811,
+                    discarded_completed_at_stop=1,completed_bytes=1801*1843200)
         self.assertEqual(self.result(meta)['status'],'fail')
 
     def test_resource_evidence_cannot_be_placeholder(self):

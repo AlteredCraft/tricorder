@@ -103,7 +103,11 @@ bool JpegPipeline::submit(const uint8_t* source,size_t bytes,const CameraFrameEv
     FrameStamp stamp;stamp.index=s.attempts;stamp.sequence=frame.sequence;stamp.completed=frame.finished_us;stamp.dequeued=dequeued;
     record.stamp=stamp;record.result=ESP_FAIL;
     if (!s.slot->idle()) {++s.busy_drops;return false;}
-    if (bytes!=s.bytes || !digest(source,bytes,stamp.source_sha256)) return false;
+    if (bytes!=s.bytes || !source) return false;
+    stamp.source_hash_start=esp_timer_get_time();
+    if (!digest(source,bytes,stamp.source_sha256)) return false;
+    stamp.source_hash_end=esp_timer_get_time();
+    stamp.copy_start=esp_timer_get_time();
     if (!s.slot->copy(source,bytes,stamp,esp_timer_get_time)) {++s.busy_drops;return false;}
     return true;
 }
@@ -131,6 +135,9 @@ bool JpegPipeline::export_results(const char* boot_id) {
         cJSON_AddNumberToObject(row,"index",i+1);cJSON_AddNumberToObject(row,"source_sequence",r.stamp.sequence);
         cJSON_AddNumberToObject(row,"source_completed_us",r.stamp.completed-s.epoch);
         cJSON_AddNumberToObject(row,"dequeued_us",r.stamp.dequeued-s.epoch);cJSON_AddNumberToObject(row,"copied_us",r.stamp.copied-s.epoch);
+        cJSON_AddNumberToObject(row,"source_hash_start_us",r.stamp.source_hash_start-s.epoch);
+        cJSON_AddNumberToObject(row,"source_hash_end_us",r.stamp.source_hash_end-s.epoch);
+        cJSON_AddNumberToObject(row,"copy_start_us",r.stamp.copy_start-s.epoch);
         cJSON_AddNumberToObject(row,"encode_start_us",r.started-s.epoch);cJSON_AddNumberToObject(row,"encode_end_us",r.ended-s.epoch);
         cJSON_AddStringToObject(row,"source_sha256",r.stamp.source_sha256);cJSON_AddStringToObject(row,"copy_sha256",r.copied_hash);
         cJSON_AddStringToObject(row,"after_sha256",r.after_hash);cJSON_AddNumberToObject(row,"jpeg_bytes",r.size);

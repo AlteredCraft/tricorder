@@ -16,7 +16,7 @@
 - [G-0001.04 Agent interaction](G-0001.04-agent-interaction.md)
 - [G-0001.05 Power and recovery](G-0001.05-power-recovery.md)
 
-**Status.** In progress; work paused at the user’s request. Hardware baseline and isolated live-audio integrity evidence are recorded; the full investigation and remaining acceptance gates are unverified.
+**Status.** In progress; resumed 2026-09-21. Hardware baseline and isolated live-audio integrity evidence are recorded; the full investigation and remaining acceptance gates are unverified.
 
 **Progress.** 2026-09-20: Planning only; parent milestone recorded. Next action is G-0001.01's hardware baseline. No outcome evidence exists yet.
 
@@ -49,3 +49,5 @@
 **Progress — animated display.** 2026-09-20: [.02](G-0001.02-concurrent-workload.md#observed) passes an isolated 30.30 fps display-submission baseline after correcting timer drift and retaining a failed capture affected by host sleep. Camera/audio/motion regressions pass; JPEG/network, combined loads and the guided investigation remain open.
 
 **Progress — stopping checkpoint.** 2026-09-20: Camera+JPEG candidate builds and decodes 30 images but fails camera completion accounting; later sustained regressions are skipped. 98 host tests pass. Collection is stopped and failed evidence retained. Resume with the [.02 regression](G-0001.02-concurrent-workload.md#observed), using [HANDOFF.md](../../HANDOFF.md); user/equipment follow-ups remain in [TODO.md](../../TODO.md). Full G-0001 acceptance remains open.
+
+**Progress — camera/JPEG regression resolved.** 2026-09-21: [.02](G-0001.02-concurrent-workload.md#observed) passes 1,800 ordered camera frames and 30 independently decoded JPEGs, plus all sequential audio/IMU/UI and live/synthetic regressions. Source hashing/copying needs a bounded four-buffer ring and FIFO completion delivery, recorded in [ADR-0007](../adrs/ADR-0007-bounded-camera-fifo.md). 103 host tests and P4 compilation pass; failed runs remain retained. JPEG queued-timeout ownership is the next engineering task before preview/concurrency. Full G-0001 and operator/storage gates remain open.

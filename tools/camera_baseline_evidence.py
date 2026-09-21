@@ -12,7 +12,7 @@ def compare_camera(meta,data):
     errors=[];missing=[]
     required=('rows','columns','width','height','frame_bytes','duration_us','completed_before','completed_after',
               'missing_buffers','untracked_buffers','completed_bytes','discarded_completed_at_stop',
-              'cpu_before','cpu_after','memory_samples')
+              'cpu_before','cpu_after','memory_samples','reused_completions','completed_at_stop_request')
     missing=[key for key in required if key not in meta]
     if meta.get('format')!='camera_baseline_u64le' or meta.get('columns')!=5:
         return {'status':'fail','errors':['Invalid timing format'],'missing':missing}
@@ -31,12 +31,15 @@ def compare_camera(meta,data):
         previous_sequence=sequence;previous_done=done
     if duration is not None and (type(duration) is not int or duration<60000000 or duration<rows[-1][3]):
         errors.append('Incomplete/invalid 60-second window')
-    for key in ('missing_buffers','untracked_buffers'):
+    for key in ('missing_buffers','untracked_buffers','reused_completions'):
         if key in meta and meta[key]!=0:errors.append('Observed '+key)
     if all(key in meta for key in ('completed_before','completed_after','discarded_completed_at_stop','completed_bytes','frame_bytes')):
         tail=meta['discarded_completed_at_stop'];completed=meta['completed_after']-meta['completed_before']
         if type(tail) is not int or not 0<=tail<=2 or completed!=count+tail or meta['completed_bytes']!=completed*size:
             errors.append('Unaccounted camera completions/bytes')
+        if 'completed_at_stop_request' in meta and (meta['completed_at_stop_request']!=rows[-1][0]
+                or tail!=meta['completed_after']-meta['completed_at_stop_request']):
+            errors.append('Completion tail predates stop request or disagrees with stop snapshot')
     cpu,cpu_errors,cpu_missing=assess_cpu(meta)
     errors.extend(cpu_errors);missing.extend(cpu_missing)
     samples=meta.get('memory_samples')

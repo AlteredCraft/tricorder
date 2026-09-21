@@ -63,13 +63,13 @@ bool export_diagnostic_capture(const char* id, const uint8_t* data, size_t size,
 struct VideoSession {
     int fd = -1;
     bool streaming = false;
-    uint8_t* buffers[2]{};
-    size_t lengths[2]{};
+    uint8_t* buffers[camera_capture_buffer_count]{};
+    size_t lengths[camera_capture_buffer_count]{};
     ~VideoSession() {
         if (fd < 0) return;
         int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         if (streaming) ioctl(fd, VIDIOC_STREAMOFF, &type);
-        for (int i=0; i<2; ++i)
+        for (unsigned i=0; i<camera_capture_buffer_count; ++i)
             if (buffers[i]) munmap(buffers[i], lengths[i]);
         close(fd);
     }
@@ -132,12 +132,12 @@ void capture_camera(const char* boot_id) {
     format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if (ioctl(video.fd, VIDIOC_G_FMT, &format)) return fail("final video format read failed");
     v4l2_requestbuffers request{};
-    request.count = 2;
+    request.count = camera_capture_buffer_count;
     request.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     request.memory = V4L2_MEMORY_MMAP;
-    if (ioctl(video.fd, VIDIOC_REQBUFS, &request) || request.count != 2)
+    if (ioctl(video.fd, VIDIOC_REQBUFS, &request) || request.count != camera_capture_buffer_count)
         return fail("request video buffers failed");
-    for (int i=0; i<2; ++i) {
+    for (unsigned i=0; i<camera_capture_buffer_count; ++i) {
         v4l2_buffer buffer{};
         buffer.type = request.type;
         buffer.memory = request.memory;

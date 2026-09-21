@@ -7,6 +7,7 @@
 struct FrameStamp {
     uint64_t sequence=0;
     int64_t completed=0,dequeued=0,copied=0;
+    int64_t source_hash_start=0,source_hash_end=0,copy_start=0;
     unsigned index=0;
     char source_sha256[65]{};
 };
