@@ -7,6 +7,7 @@
 #include "diagnostic_events.h"
 #include "media.h"
 #include "network.h"
+#include "investigation.h"
 #include "audio_devices.h"
 #include "restart_sequence.h"
 #include "dsp_diagnostic.h"
@@ -245,6 +246,7 @@ static void media_idle() {
         lv_obj_remove_state(record_button, LV_STATE_DISABLED);
         lv_obj_remove_state(restart_button, LV_STATE_DISABLED);
         lv_obj_remove_state(baseline_button, LV_STATE_DISABLED);
+        investigation_ui_enable(true);
         bsp_display_unlock();
     }
     diagnostic_emit(diagnostic_event("audio_test_ready"));
@@ -361,6 +363,7 @@ extern "C" void app_main() {
     lv_label_set_text(baseline_label,"Audio baseline 60s");
     lv_obj_center(baseline_label);
     network_ui_init(screen, boot_id);
+    investigation_ui_init(screen, media_commands);
     bsp_display_brightness_set(50);
     bsp_display_unlock();
     auto* panel = diagnostic_event("display_initialized");
@@ -376,21 +379,34 @@ extern "C" void app_main() {
         ? "pass" : "fail", "Seconds register advances; calendar accuracy is not established.");
     sd_roundtrip();
     diagnostic_emit(diagnostic_event("ready"));
-    capture_camera(boot_id);
-    // Three isolated live raw/speech comparisons, without operator input.
-    for (unsigned repetition=0;repetition<3;++repetition) capture_audio(boot_id);
-    diagnostic_stage("Checking radio initialization...");
-    diagnostic_check("wifi_initialize",network_prepare(30000) ? "pass" : "fail",
-                     "Hosted radio initialization and C6 version query; no network association claim.");
-    run_dsp_fixtures(boot_id);
-    run_speech_fixtures(boot_id);
-    // Autonomous isolated baseline while the operator is away.
-    if (!resuming_restarts && !initialization_failed.load()) {
-        run_audio_baseline(boot_id);
-        if (imu_ready) run_imu_baseline(boot_id);
-        run_ui_baseline(boot_id);
+#ifdef CONFIG_TRICORDER_GUIDED_AB_STARTUP
+    constexpr bool guided_startup=true;
+#else
+    constexpr bool guided_startup=false;
+#endif
+    if (guided_startup && !resuming_restarts) {
+        diagnostic_check("wifi_initialize",network_prepare(30000) ? "pass" : "fail",
+                         "Guided A/B startup; radio only, no automatic media diagnostics.");
+        auto* mode=diagnostic_event("investigation_startup");
+        cJSON_AddStringToObject(mode,"workload","manual A/B raw audio; automatic diagnostic stages skipped");
+        diagnostic_emit(mode);
+    } else {
+        capture_camera(boot_id);
+        // Three isolated live raw/speech comparisons, without operator input.
+        for (unsigned repetition=0;repetition<3;++repetition) capture_audio(boot_id);
+        diagnostic_stage("Checking radio initialization...");
+        diagnostic_check("wifi_initialize",network_prepare(30000) ? "pass" : "fail",
+                         "Hosted radio initialization and C6 version query; no network association claim.");
+        run_dsp_fixtures(boot_id);
+        run_speech_fixtures(boot_id);
+        // Autonomous isolated baseline while the operator is away.
+        if (!resuming_restarts && !initialization_failed.load()) {
+            run_audio_baseline(boot_id);
+            if (imu_ready) run_imu_baseline(boot_id);
+            run_ui_baseline(boot_id);
+        }
+        if (resuming_restarts) continue_restarts();
     }
-    if (resuming_restarts) continue_restarts();
     media_idle();
     for (;;) {
         uint8_t command;
@@ -398,7 +414,8 @@ extern "C" void app_main() {
             if (command==2) {
                 restart_sequence.start(esp_random());
                 continue_restarts();
-            } else if (command==3) run_audio_baseline(boot_id);
+            } else if (command==4) investigation_run(boot_id);
+            else if (command==3) run_audio_baseline(boot_id);
             else capture_audio(boot_id, true);
             media_idle();
         }

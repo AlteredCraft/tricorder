@@ -25,7 +25,7 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 | 1 | [Hardware baseline](plans/G-0001.01-hardware-baseline.md) | In progress | None | Actual panel/silicon/camera identity, peripheral ownership, reproducible versions |
 | 2 | [Concurrent workload](plans/G-0001.02-concurrent-workload.md) | In progress (camera/JPEG/preview passes; combined work open) | .01 | Rates, buffers, scheduling and memory budget |
 | 3 | [Audio integrity](plans/G-0001.03-audio-integrity.md) | In progress (isolated live integrity) | .01; repeat under .02 load | Raw measurement and speech-processing separation |
-| 4 | [Agent interaction](plans/G-0001.04-agent-interaction.md) | Not built | .02, .03 | Protocol, latency, cancellation and WebSocket/WebRTC choice |
+| 4 | [Agent interaction](plans/G-0001.04-agent-interaction.md) | In progress (shared mock under G-0002) | .02, .03 | Protocol, latency, cancellation and WebSocket/WebRTC choice |
 | 5 | [Power and recovery](plans/G-0001.05-power-recovery.md) | Not built | .01; repeat with .02/.04 | Power telemetry, wake behavior and recoverable evidence |
 
 **Architecture under investigation:** The [hardware-baseline spec](plans/G-0001.01-hardware-baseline.md#candidate-native-stack) owns the native-stack research; the [agent-interaction spec](plans/G-0001.04-agent-interaction.md#candidate-service-architecture) owns the device/service candidates. [ADR-0003](adrs/ADR-0003-tab5-diagnostic-foundation.md) records the reproduced diagnostic foundation; broader choices remain under investigation. The [hardware-baseline spec](plans/G-0001.01-hardware-baseline.md#shared-run-evidence) also owns the shared evidence format.
@@ -66,9 +66,9 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 
 ### G-0002: One usable end-to-end investigation
 
-**Goal:** [G-0002](plans/G-0002-thin-investigation-slice.md) — In progress; host protocol/mock checkpoint built, handheld acceptance open.
+**Goal:** [G-0002](plans/G-0002-thin-investigation-slice.md) — In progress; mock trial checkpoint recorded, live work deferred and full acceptance incomplete.
 
-**Serving spec:** [G-0002.01 Guided A/B vertical slice](plans/G-0002.01-guided-ab-slice.md) — In progress; device integration remains unbuilt.
+**Serving spec:** [G-0002.01 Guided A/B vertical slice](plans/G-0002.01-guided-ab-slice.md) — In progress; device integration built, physical/live acceptance open.
 
 **Sequence and ownership:** G-0001 and G-0002 are sibling goals under M-0001. Reuse the verified G-0001 foundation to build G-0002's mock-then-live ask → measure → feedback → adjust → compare loop next. Then harden that same implementation under G-0001's five unchanged specs. G-0002 does not inherit or reparent .04, lower its thresholds, or require finishing every diagnostic before its bounded experiment. G-0001 remains the full trustworthy-product acceptance goal.
 
@@ -81,3 +81,18 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 A hosted agent-service experiment should test the same device protocol against an internet-accessible deployment without requiring the Mac. Define device authentication, encrypted transport, credential provisioning, capture retention and internet latency/recovery checks before implementation. Hosting and model providers remain open choices.
 
 Choose later milestones and their goals from what M-0001 teaches, then write specs under those goals. Candidates include local ESP-DL inference, full-duplex speech/AEC tuning, wake words, higher-resolution video, USB peripherals, RS-485 fixtures, external environmental sensors, and additional radio protocols where board/firmware support is established. Each needs a bounded hypothesis and budget; none is a committed implementation feature.
+
+
+**Progress — 2026-09-21, G-0002 device integration:** [G-0002.01](plans/G-0002.01-guided-ab-slice.md#observed) now has a compiled/booted device client and manual A/B flow, with 168 passing host tests. Operator trials are being prepared. No physical A/B or live-provider acceptance is established, and G-0001's thresholds and earlier evidence remain unchanged.
+
+
+**Progress — 2026-09-21, first physical G-0002 exchange:** The on-device loop completes with verified raw evidence/ACK joins, but startup transients refute the steady-tone interpretation. The failed run is preserved; an explicit settling-prefix correction is built/flashed with 172 passing tests and awaits a repeat. [ADR-0010](adrs/ADR-0010-device-owned-ab-lan-experiment.md) records the bounded mock architecture, not acoustic/live acceptance. No G-0001 gate or parent goal is completed.
+
+
+**Disposition — 2026-09-21:** The user paused remaining G-0002 physical trials because of an outdoor lawnmower and separately deferred live-provider work. All host trial processes are stopped. Resume the remaining mock repeats/failure checks and fixture characterization when requested in stable conditions. G-0002, G-0001 and M-0001 remain incomplete; acceptance requirements are unchanged.
+
+
+**Progress — 2026-09-21, physical work resumed:** The user reports mowing stopped and completed two additional corrected mock loops. Three developmental loops now pass technical evidence checks; fixture characterization and controlled failure checks remain. Live-provider work is still deferred. No parent goal or full G-0001 gate is complete.
+
+
+**Progress — 2026-09-21, mock trial closeout:** G-0002 now retains three corrected developmental loops, delayed/cancelled reply evidence, and a controlled service outage followed by fresh recording/guidance and successful cancellation. All trial processes are stopped. Fixture and timing limits remain explicit; serial attachment failures are preserved. Live-provider/speech/usefulness work is deferred; no parent goal or full G-0001 gate is complete.

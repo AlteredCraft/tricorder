@@ -8,4 +8,17 @@ menu "Tricorder diagnostic fixtures"
             panic before returning from the driver. Skip the fixture on its
             panic reboot. This is fault-injection firmware, not acceptance
             firmware; disable it before collecting normal workload evidence.
+    config TRICORDER_GUIDED_AB_STARTUP
+        bool "Start in manual guided A/B mode without automatic media diagnostics"
+        default n
+        help
+            Initialize the board/display/radio and offer the manual guided A/B
+            flow. Skip automatic camera/audio/DSP/baseline stages. This bounded
+            experiment mode is not evidence for any skipped diagnostic gate.
+    config TRICORDER_INVESTIGATION_ENDPOINT
+        string "Initial guided A/B LAN service endpoint (editable on device)"
+        default ""
+        help
+            Optional development default such as ws://192.168.0.2:8765/.
+            No credentials. Endpoint edits remain RAM-only.
 endmenu

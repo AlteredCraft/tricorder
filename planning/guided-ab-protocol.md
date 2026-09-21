@@ -1,10 +1,13 @@
 # G-0002.01 mock protocol checkpoint
 
-2026-09-21. Experimental version 1, implementing the first host-side slice of
-[G-0002.01](plans/G-0002.01-guided-ab-slice.md). Firmware transport/UI and live
-speech/provider integration are not built. The host state reducer is a reference
-for those device checks; passing it does not measure handheld responsiveness.
-No new architecture ADR or acceptance result is claimed.
+2026-09-21. Experimental version 1 implements the shared host/device mock slice of
+[G-0002.01](plans/G-0002.01-guided-ab-slice.md). Three settling-corrected developmental
+A/B loops and controlled delay/cancellation/disconnect/recovery checks have scoped
+evidence. The current trial session is closed and all host trial processes are
+stopped. Live model/speech integration remains deferred by the user and is not built.
+See the [current handoff](../HANDOFF.md) and the slice requirement disposition for
+fixture/timing limits. [ADR-0010](adrs/ADR-0010-device-owned-ab-lan-experiment.md)
+records the bounded mock architecture; no parent-goal acceptance is claimed.
 
 ## Run and verify
 
@@ -17,10 +20,10 @@ python3 -m venv .tools/investigation-env
 .tools/investigation-env/bin/python -m tools.investigation_service --output .local/runs/ab-mock
 ```
 
-The default endpoint is `ws://127.0.0.1:8765`. For a future device trial, use
+The default endpoint is `ws://127.0.0.1:8765`. For a device trial, use
 `--host <Mac-LAN-IP>` and configure that endpoint on the device. The prototype
 has no authentication/TLS and belongs on the experiment LAN, as scoped by .04.
-The device client does not exist yet. Use `--delay-seconds 5` for the controlled
+The device client is available under **Guided A/B** after initialization. Use `--delay-seconds 5` for the controlled
 mock-delay experiment. Ctrl-C closes the listener and retains incomplete data.
 No provider credentials are required; no captures are sent to a cloud service.
 
@@ -33,7 +36,7 @@ Loopback tests upload synthetic PCM explicitly; they are not handheld runs.
 
 The operator selected **a speaker playing a steady sound** on 2026-09-21.
 [Prepared fixture](fixtures/G-0002.01-speaker-distance.json): continuous 1000 Hz,
-20 cm then 40 cm, fixed source level/orientation, three seconds of four-slot
+8 inches then 16 inches, fixed source level/orientation, three seconds of four-slot
 48 kHz signed 16-bit little-endian raw audio, requested gain 24 dB, measurement
 slot 0 (farther microphone hole, from the retained microphone-position fixture).
 Only distance changes. RMS includes DC and is expressed in raw digital counts
@@ -46,7 +49,8 @@ configuration, not a claim that this physical setup has already been verified.
 Check that the chosen level neither clips nor disappears into the background;
 retain/repeat any unsuitable trial. Stop moving before each capture. The
 Tricorder speaker must be silent during both measurement windows; camera/IMU
-are outside this initial workload. Actual on-device overlap remains unmeasured.
+are outside this workload. The implemented flow uses sequential capture then upload;
+full concurrent sensor operation remains unmeasured.
 
 ## States and identity
 
@@ -59,7 +63,8 @@ A disconnect enters `offline`; expiry enters `incomplete`. None automatically
 restarts a capture. A reconnect requires a fresh session ID. The UI must expose
 these states and perform cancel locally before sending a network message.
 `Investigation` in `tools/investigation.py` exercises that reference contract;
-the future C++ device reducer must enforce it independently.
+the C++ `InvestigationProtocol` enforces it independently and also waits for
+the service acknowledgement before enabling adjustment/completion.
 
 Every control message carries `version: 1`, `type`, `boot_id`, `session_id`.
 IDs are 1–96 ASCII alphanumeric/underscore/hyphen characters. The service
@@ -169,10 +174,101 @@ to run the host tests above.
 
 ## Remaining integration
 
-Implement the C++ state/deadline/identity guard with tests, a configurable
-device-initiated WebSocket client, and on-device controls that preserve the
-existing codec owner and immutable raw capture boundary. Integrate capture
-completion without delaying cancel or including playback in measurement windows.
-Then build/flash and record the three real mock loops and delay/cancel/reconnect
-trials. Live spoken input/guidance, provider selection/credentials and three
-operator-rated live loops remain required. G-0002 and G-0001 are both incomplete.
+The device mock is built, flashed and physically exercised. Preserve the three
+corrected developmental loops, controlled failure/recovery evidence and original
+failures. Formal fixture notes and actual panel/pending-turn cancellation timing
+still have the limits documented in the slice. Live spoken input/guidance, provider
+selection/credentials and three operator-rated live loops remain required but
+explicitly deferred. G-0002 and G-0001 remain incomplete.
+
+
+## Device integration checkpoint — 2026-09-21
+
+The existing media-owner task runs the A/B flow. LVGL callbacks enqueue one
+operator action; Cancel sets an atomic flag and updates the visible state
+locally before network cleanup. The worker checks cancel again after blocking
+reads and before accepting replies. Captures never start from a remote message.
+A fresh random session is required after completion, cancel, offline or expiry.
+
+One 1,152,000-byte raw PCM buffer is allocated in PSRAM for a capture. RX is
+closed before JSON generation/upload. Per-block ingress hashes, read timestamps,
+exact frame coverage and before/after driver counters accompany each capture;
+the service independently verifies these against retained bytes. One buffer is
+released after its matching hash/completion acknowledgement, before B is captured.
+The device retains at most two metadata/measurement snapshots and compares the
+service's structured results with its own raw slot-0 RMS/peak/clipping values.
+Legacy synthetic tests without ingress proofs remain explicitly synthetic.
+
+The pinned IDF `tcp_transport` WebSocket layer connects to a RAM-only
+`ws://host:port/path` endpoint. No new dependency, TLS, authentication, provider
+key or automatic reconnect is introduced. IPv6, query strings and endpoint
+credentials are unsupported in this LAN experiment. Incoming text is capped at
+32 KiB; split reads/continuations are assembled in one fixed buffer. Binary,
+wrong-state, stale, duplicate and unbacked replies fail closed. Control frames
+are handled by IDF. Individual connect/send/read bounds are 3/2/1 seconds;
+visible cancel does not wait for those operations. Partial-header read behavior
+and DNS timing still need hardware failure evidence; these are not .04 latency
+claims. Upload has a 30-second total budget, individual capture ACKs 5 seconds,
+and inference plus acknowledgement 15 seconds. The host's existing 30-second
+application idle limit also applies while the operator is positioning the unit.
+
+`CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` skips automatic camera/audio/DSP/baseline
+stages for manual trials. It is off by default; the private trial sdkconfig and
+binary are archived together. Startup identity/display/RTC/storage/radio checks
+still run. The current prepared speaker fixture is embedded directly by CMake
+from its JSON source, avoiding a second handwritten fixture in firmware.
+
+Setup: join Wi-Fi, open **Guided A/B**, enter the Mac endpoint and choose
+**Start mock**. At 8 inches choose **Record A**; after guidance move to 16 inches and
+choose **Confirm position B**, then **Record B**. The confirmation records the preset
+actual-adjustment assertion; do not confirm it if the source/settings or placement
+differ. Read the comparison on the scrollable transcript. Cancel/Back and a fresh
+Start are available for subsequent sessions. This remains preset/text-only mock
+bootstrap; spoken ask/guidance and live-provider usefulness are not implemented.
+
+Current checkpoint: 172 host tests pass, including ASan C++ state, framing and
+capture-owner tests and two real localhost WebSocket tests. P4 compilation and
+trial startup pass. Logs, exact firmware sources/config/binary and retained trial
+evidence are under `.local/runs/20260921-g0002-device/`; no physical A/B pass is
+claimed by these software/startup results.
+
+
+2026-09-21 fixture revision: the user requested imperial measurements and 30%
+MacBook system volume going forward. Use 8-inch/16-inch positions from a fixed
+speaker reference to the farther microphone hole. This supersedes the prepared
+20/40 cm configuration (no A/B captures were taken with it). Device question,
+placements and recorded adjustment now come from the embedded shared fixture.
+The optional `CONFIG_TRICORDER_INVESTIGATION_ENDPOINT` sets an editable initial
+address; the trial uses a private sdkconfig. The keyboard now uses explicit
+top-left anchoring, with its resolved bounds checked at startup.
+
+
+## Settling prefix and independent assessment
+
+The first real loop retained valid bytes but produced a misleading steady-tone
+comparison because codec-startup transients dominated both recordings. The tested correction
+drains 24,000 frames (0.5 seconds) before the three-second retained raw
+window, without restarting RX at the boundary. `warmup_frames: 24000` and
+`epoch_start_us` declare this prefix. Driver before/after counters cover
+1,344,000 bytes (prefix plus the 1,152,000 retained raw bytes); ingress block
+hashes/timestamps cover only the retained three seconds. Old raw data is preserved.
+
+`python -m tools.investigation_evidence <session-directory>` independently
+recomputes slot measurements, source/ingress hashes, driver extents, settings,
+A/B order and transcript request/reply/ACK joins. A passing technical assessment
+does not establish physical stationarity or usefulness, as the first retained
+failure demonstrates. Local cancel now retains request and media-owner-stop
+monotonic timestamps; neither is a claim about actual panel submission timing.
+
+
+2026-09-21 final mock closeout: three settling-enabled loops have verified raw
+windows and no original startup spikes, with B/A −6.9860, −7.5752 and −9.9557
+digital dB. The user confirmed measured 8/16-inch distances and no noticeable
+background noise for the two resumed repeats. Five-second replies, pending-turn
+cancellation and fresh recording/guidance after a controlled outage are recorded.
+Capture cancellation stopped its owner in 15.921 ms; pending-turn device timing
+and actual panel latency remain unmeasured. Serial attachment errors and original
+FAIL summaries are retained separately from scoped parsed-event assessments.
+All trial processes are stopped, 172 tests pass, and trial-4 artifacts remain
+unchanged. Live-provider/speech/usefulness work remains deferred; see the handoff
+for the evidence index and precise acceptance limitations.

@@ -83,6 +83,42 @@ class Fixture:
         require(item.to_dict()['settings'] == expected, 'capture settings differ from frozen fixture')
 
 
+def verify_ingress(meta, raw):
+    """When supplied, independently join complete firmware ingress proofs."""
+    keys = {'ingress_before', 'ingress_after', 'ingress_blocks'}
+    if not keys.intersection(meta):
+        return  # Existing explicitly synthetic/legacy fixtures have no driver proof.
+    require(keys <= meta.keys(), 'incomplete ingress proof')
+    before, after = meta['ingress_before'], meta['ingress_after']
+    require(isinstance(before, dict) and isinstance(after, dict), 'invalid ingress counters')
+    counters = ('read_bytes', 'dma_bytes', 'overflows', 'overwritten_bytes', 'short_reads', 'read_errors')
+    for key in counters:
+        integer(before.get(key), 0, 2**53-1)
+        integer(after.get(key), before[key], 2**53-1)
+    warmup = 0
+    if 'warmup_frames' in meta or 'epoch_start_us' in meta:
+        warmup = integer(meta.get('warmup_frames'), 24000, 24000)
+        integer(meta.get('epoch_start_us'), 0, meta['acquisition_start_us']-1)
+    extent = len(raw)+warmup*8
+    require(after['read_bytes']-before['read_bytes'] == extent, 'ingress byte extent')
+    require(after['dma_bytes']-before['dma_bytes'] >= extent, 'ingress DMA extent')
+    require(all(before[k] == after[k] for k in counters[2:]), 'ingress driver loss/error')
+    blocks = meta['ingress_blocks']
+    require(isinstance(blocks, list) and 0 < len(blocks) <= 144, 'ingress proof count')
+    offset = 0
+    previous = meta['acquisition_start_us']
+    for block in blocks:
+        require(isinstance(block, dict), 'invalid ingress block')
+        integer(block.get('source_start_frame'), offset, offset)
+        frames = integer(block.get('frames'), 1, 1024)
+        previous = integer(block.get('read_end_us'), previous, meta['acquisition_end_us'])
+        require(offset+frames <= meta['frames'], 'ingress block extent')
+        require(hashlib.sha256(raw[offset*8:(offset+frames)*8]).hexdigest() == block.get('sha256'),
+                'ingress block digest mismatch')
+        offset += frames
+    require(offset == meta['frames'], 'incomplete ingress frames')
+
+
 class CaptureEvidence:
     """Own checked raw bytes and snapshots; accessors never expose mutable state."""
     def __init__(self, metadata, raw, measurement):
@@ -114,6 +150,7 @@ class CaptureEvidence:
         require(meta.get('speaker_active') is False, 'speaker must be inactive throughout measurement')
         start = integer(meta.get('acquisition_start_us'), 0, 2**53-1)
         integer(meta.get('acquisition_end_us'), start+1, 2**53-1)
+        verify_ingress(meta, raw)
         # Stream four-slot frames: do not expand a full capture to millions of Python objects.
         squared = peak = clipped = 0
         for frame in struct.iter_unpack('<hhhh', raw):
