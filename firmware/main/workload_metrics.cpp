@@ -18,8 +18,9 @@ cJSON* workload_cpu_snapshot() {
         cJSON_AddStringToObject(task,"name",tasks[i].pcTaskName);
         cJSON_AddNumberToObject(task,"ticks",tasks[i].ulRunTimeCounter);
         cJSON_AddNumberToObject(task,"stack_margin_bytes",tasks[i].usStackHighWaterMark);
+        cJSON_AddNumberToObject(task,"core_affinity",tasks[i].xCoreID);
+        cJSON_AddNumberToObject(task,"base_priority",tasks[i].uxBasePriority);
         cJSON_AddItemToArray(list,task);
     }
     free(tasks);return result;
 }
-

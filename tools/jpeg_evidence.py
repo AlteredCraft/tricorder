@@ -93,6 +93,11 @@ def decode_jpeg(path,meta,output):
                     '-frames:v','1',str(output)],check=True,capture_output=True)
 
 
+def is_camera_witness(meta,boot_id):
+    return (meta.get('format')=='rgb565le' and meta.get('boot_id')==boot_id
+            and meta.get('capture_id')==boot_id+'-camera')
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('run',type=Path)
     args=parser.parse_args();run=args.run
@@ -116,7 +121,7 @@ def main():
     witnesses=[]
     for path in (run/'captures').glob('*.json'):
         candidate=json.loads(path.read_text())
-        if candidate.get('format')=='rgb565le' and candidate.get('boot_id')==meta['boot_id']:
+        if is_camera_witness(candidate,meta['boot_id']):
             witnesses.append(path)
     try:
         if len(witnesses)!=1:raise ValueError('Expected one retained raw source witness')

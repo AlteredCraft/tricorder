@@ -70,6 +70,7 @@ void run_ui_baseline(const char* boot_id) {
     auto* timer=lv_timer_create(animation_tick,33,&context);
     configASSERT(timer);
     bsp_display_unlock();
+    configASSERT(lvgl_port_task_wake(LVGL_PORT_EVENT_USER,nullptr)==ESP_OK);
     TickType_t wake=xTaskGetTickCount();
     for (size_t second=0;second<60;++second) {
         vTaskDelayUntil(&wake,pdMS_TO_TICKS(1000));

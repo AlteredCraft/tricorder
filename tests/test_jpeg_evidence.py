@@ -48,6 +48,14 @@ class JpegEvidenceTests(unittest.TestCase):
         self.assertIn('Independent camera baseline did not pass',result['errors'])
 
 class JpegProvenanceTests(unittest.TestCase):
+    def test_preview_derivative_is_not_the_native_camera_witness(self):
+        from tools.jpeg_evidence import is_camera_witness
+        raw=dict(format='rgb565le',boot_id='boot',capture_id='boot-camera')
+        self.assertTrue(is_camera_witness(raw,'boot'))
+        for identity in ('boot-preview-last','other-camera'):
+            self.assertFalse(is_camera_witness(dict(raw,capture_id=identity),'boot'))
+        self.assertFalse(is_camera_witness(dict(raw,boot_id='old'),'boot'))
+
     def test_settings_identity_and_retained_source_witness(self):
         import hashlib
         from tools.jpeg_evidence import verify_image_record,verify_witness

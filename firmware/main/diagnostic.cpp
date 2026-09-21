@@ -304,6 +304,9 @@ extern "C" void app_main() {
     // uses a small internal allocation whose rotation buffer fails PPA alignment.
     bsp_display_cfg_t display_config{};
     display_config.lvgl_port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    // Preview rendering must not preempt the core-0 camera-buffer owner.
+    // Explicit placement also survives automatic coprocessor task affinity.
+    display_config.lvgl_port_cfg.task_affinity = 1;
     display_config.buffer_size = BSP_LCD_H_RES * BSP_LCD_V_RES;
     display_config.double_buffer = true;
     display_config.flags.buff_dma = true;

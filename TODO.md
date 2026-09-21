@@ -1,6 +1,6 @@
 # Follow-ups for G-0001
 
-**Resumed 2026-09-21:** normal camera/JPEG and all sequential/live/synthetic regressions pass with the JPEG ownership guard. The approved controlled queued-timeout test reached the guard, panicked, and skipped rearming after reboot; normal firmware is restored. All collectors have ended. Next: preview/progressive concurrency and bounded host backpressure. No physical input is needed yet; see [HANDOFF.md](HANDOFF.md#next-work).
+**Resumed 2026-09-21:** owned live preview, native camera/JPEG and all sequential/live/synthetic regressions pass. Rendering now runs on the second core; explicit timer wake fixes initial preview delay. The approved JPEG fault test remains retained and its fixture is disabled. All collectors have ended. Next: simultaneous audio/FFT/IMU/animated UI with preview, then bounded host backpressure. No physical input is needed yet; see [HANDOFF.md](HANDOFF.md#next-work).
 
 The follow-ups below need your participation or equipment. Progress and evidence stay in [planning/milestones.md](planning/milestones.md); this list is only the handoff to you.
 

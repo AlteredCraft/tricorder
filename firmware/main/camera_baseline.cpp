@@ -1,6 +1,7 @@
 #include "camera_baseline.h"
 #include "camera_ingress.h"
 #include "jpeg_pipeline.h"
+#include "camera_preview.h"
 #include "diagnostic_events.h"
 #include "workload_metrics.h"
 #include "media.h"
@@ -25,7 +26,9 @@ bool run_camera_baseline(int fd,const v4l2_format& format,uint8_t* const* buffer
     CameraRunStorage saved;
     JpegPipeline jpeg(format.fmt.pix.width,format.fmt.pix.height);
     diagnostic_check("jpeg_initialize",jpeg.ready() ? "pass":"fail","Owned source/output/pool, bounded codec and JPEG worker initialization.");
-    bool ok=saved.rows && saved.memory && jpeg.ready();
+    CameraPreview preview(format.fmt.pix.width,format.fmt.pix.height);
+    diagnostic_check("preview_initialize",preview.ready() ? "pass":"fail","Three fixed owned preview buffers and synchronous LVGL source lifetime.");
+    bool ok=saved.rows && saved.memory && jpeg.ready() && preview.ready();
     auto dequeue=[&](v4l2_buffer& buffer) {
         buffer={};buffer.type=V4L2_BUF_TYPE_VIDEO_CAPTURE;buffer.memory=V4L2_MEMORY_MMAP;
         return ioctl(fd,VIDIOC_DQBUF,&buffer)==0 && buffer.index<camera_capture_buffer_count && buffer.bytesused && buffer.bytesused<=lengths[buffer.index];
@@ -39,9 +42,11 @@ bool run_camera_baseline(int fd,const v4l2_format& format,uint8_t* const* buffer
     auto before=camera_ingress_snapshot();
     int64_t started=esp_timer_get_time();
     jpeg.begin(started);
+    preview.begin(started);
     int64_t next_jpeg=2000000;
     bool jpeg_pending=false;
     bool final_jpeg=false;
+    bool final_preview=false;
     CameraFrameEvidence final_frame;
     size_t count=0;
     uint64_t previous_sequence=before.finished,order_errors=0;
@@ -61,11 +66,12 @@ bool run_camera_baseline(int fd,const v4l2_format& format,uint8_t* const* buffer
             // Stop acquisition promptly at the epoch boundary. Hash the final
             // retained source only after STREAMOFF, so its hash/copy work
             // cannot leave already-completed frames queued before the stop.
-            final_jpeg=dequeued-started>=next_jpeg;final_frame=frame;
+            final_jpeg=dequeued-started>=next_jpeg;final_preview=count%2==0;final_frame=frame;
         } else if (dequeued-started>=next_jpeg) {
             jpeg_pending=jpeg.submit(buffers[buffer.index],buffer.bytesused,frame,dequeued);
             next_jpeg+=2000000;
         }
+        if (!done && count%2==0) ok=preview.offer(buffers[buffer.index],buffer.bytesused,frame,dequeued) && ok;
         // Keep the final image owned until STREAMOFF; no writer can reuse it.
         if (!done && ioctl(fd,VIDIOC_QBUF,&buffer)) {ok=false;break;}
         row[3]=esp_timer_get_time()-started;
@@ -86,16 +92,18 @@ bool run_camera_baseline(int fd,const v4l2_format& format,uint8_t* const* buffer
     if (stopped && final_jpeg)
         jpeg_pending=jpeg.submit(buffers[last.index],last.bytesused,final_frame,last_dequeue_us);
     if (jpeg_pending) jpeg.dispatch();
+    if (stopped && final_preview)
+        ok=preview.offer(buffers[last.index],last.bytesused,final_frame,last_dequeue_us) && ok;
     if (count) saved.rows[(count-1)*5+3]=ended-started;
     auto after=camera_ingress_snapshot();
-    jpeg.wait_idle();saved.cpu_after=workload_cpu_snapshot();
+    jpeg.wait_idle();preview.finish();saved.cpu_after=workload_cpu_snapshot();
     const uint64_t completed=after.finished-before.finished;
     ok=ok && stopped && count && ended-started>=60000000 && count<4096 && completed>=count && completed-count<=2
         && after.missing_buffers==before.missing_buffers && after.untracked_buffers==before.untracked_buffers;
     ok=ok && after.reused_completions==before.reused_completions && !order_errors;
     auto* meta=diagnostic_event("capture_start");
     cJSON_AddStringToObject(meta,"format","camera_baseline_u64le");
-    cJSON_AddStringToObject(meta,"workload","camera plus JPEG every two seconds");
+    cJSON_AddStringToObject(meta,"workload","camera plus JPEG every two seconds and owned half-size preview");
     cJSON_AddStringToObject(meta,"layout","completion_sequence,completed_us,dequeued_us,released_us,bytes; relative epoch times; final buffer released by STREAMOFF");
     cJSON_AddNumberToObject(meta,"rows",count);cJSON_AddNumberToObject(meta,"columns",5);
     cJSON_AddNumberToObject(meta,"width",format.fmt.pix.width);cJSON_AddNumberToObject(meta,"height",format.fmt.pix.height);
@@ -128,5 +136,6 @@ bool run_camera_baseline(int fd,const v4l2_format& format,uint8_t* const* buffer
     } else cJSON_Delete(meta);
     diagnostic_check("camera_baseline",ok ? "pass":"fail","60-second camera completion/backup-buffer accounting; independent host timing check required.");
     jpeg.export_results(boot_id);
+    preview.export_results(boot_id,count);
     return stopped && count && last.bytesused;
 }

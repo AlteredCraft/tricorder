@@ -23,7 +23,7 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 | Order | Spec | Status | Depends on | Decision informed |
 | --- | --- | --- | --- | --- |
 | 1 | [Hardware baseline](plans/G-0001.01-hardware-baseline.md) | In progress | None | Actual panel/silicon/camera identity, peripheral ownership, reproducible versions |
-| 2 | [Concurrent workload](plans/G-0001.02-concurrent-workload.md) | In progress (camera/JPEG passes; combined work open) | .01 | Rates, buffers, scheduling and memory budget |
+| 2 | [Concurrent workload](plans/G-0001.02-concurrent-workload.md) | In progress (camera/JPEG/preview passes; combined work open) | .01 | Rates, buffers, scheduling and memory budget |
 | 3 | [Audio integrity](plans/G-0001.03-audio-integrity.md) | In progress (isolated live integrity) | .01; repeat under .02 load | Raw measurement and speech-processing separation |
 | 4 | [Agent interaction](plans/G-0001.04-agent-interaction.md) | Not built | .02, .03 | Protocol, latency, cancellation and WebSocket/WebRTC choice |
 | 5 | [Power and recovery](plans/G-0001.05-power-recovery.md) | Not built | .01; repeat with .02/.04 | Power telemetry, wake behavior and recoverable evidence |
@@ -61,6 +61,8 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 **Progress — camera/JPEG regression resolved.** 2026-09-21: [.02](plans/G-0001.02-concurrent-workload.md#observed) passes 30 fps ordered acquisition, 30 fresh JPEG decodes and all sequential/live/synthetic regressions after retaining a four-buffer ordering failure. 103 host tests and P4 compilation pass. [ADR-0007](adrs/ADR-0007-bounded-camera-fifo.md) records the bounded ring/FIFO decision. JPEG queued-timeout ownership needs fault-injection work before preview/concurrency; all combined, storage, interaction and power gates remain open.
 
 **Progress — JPEG error-path protection verified.** 2026-09-21: [.02](plans/G-0001.02-concurrent-workload.md#observed) verifies fail-stop before queued-JPEG error-path unwinding with a user-approved controlled fault, separately retaining the failed ordinary run. Normal firmware is restored and passes all sequential/live/synthetic regressions;112 host tests pass. [ADR-0008](adrs/ADR-0008-jpeg-error-path-fail-stop.md) records the bounded policy. Preview/concurrency, device memory-return and every original full-investigation gate remain open.
+
+**Progress — live preview verified.** 2026-09-21: [.02](plans/G-0001.02-concurrent-workload.md#observed) retains all native camera frames with an owned half-rate preview and30 JPEGs, preserving the two failed scheduling/startup comparisons. All sequential/live/synthetic regressions and121 host tests pass. [ADR-0009](adrs/ADR-0009-owned-preview-and-render-placement.md) records buffer ownership and core1 rendering. Full simultaneous workloads, host backpressure, device memory return and every original investigation/operator gate remain open.
 
 ## Later hypotheses to write
 
