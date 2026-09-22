@@ -15,3 +15,6 @@ struct InvestigationCapture {
 // Only the existing sequential media owner may call this. No speaker playback.
 bool investigation_capture(const char* boot,const char* session,const char* id,
                            const std::atomic<bool>& cancel,InvestigationCapture& output);
+// Read only a committed SD pair; verify exact extent, identity and digest.
+// Never opens codecs or synthesizes acquisition timestamps.
+bool investigation_load_capture(const char* base,const char* id,InvestigationCapture& output);

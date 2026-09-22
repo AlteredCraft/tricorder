@@ -272,3 +272,105 @@ FAIL summaries are retained separately from scoped parsed-event assessments.
 All trial processes are stopped, 172 tests pass, and trial-4 artifacts remain
 unchanged. Live-provider/speech/usefulness work remains deferred; see the handoff
 for the evidence index and precise acceptance limitations.
+
+
+## SD-assisted testing — 2026-09-22
+
+The diagnostic now mounts the supplied microSD card without formatting it. USB
+provisioning saves the Wi-Fi name/password and optional Mac endpoint under
+`/sdcard/tricorder/`. On the next ordinary boot, it loads those settings and joins
+Wi-Fi; the software-reset acceptance fixture still does not auto-join. Manual
+Wi-Fi UI edits remain temporary. The SD card contains plaintext credentials;
+keep it private. Neither the firmware binary nor Git contains those credentials.
+
+Rediscover the verified Tab5 USB identity, stop any serial collector using that
+port, then provision from a local environment file (both `WIFI_NAME` and
+`WIFI_SSID` are accepted, along with `WIFI_PASSWORD`). This workspace's supplied
+file is `env.local.northbank`, without a leading dot. Values are parsed literally,
+without shell expansion. Use the Mac's current LAN address for the endpoint:
+
+```sh
+/usr/bin/caffeinate -is .tools/python-env/bin/python -m tools.provision_device \
+  --env env.local.northbank --port /dev/cu.usbmodem1101 \
+  --endpoint ws://MAC_LAN_IP:8765/ --output .local/runs/NEW-provision
+```
+
+The tool verifies USB serial `E8:F6:0A:E2:E0:0E`, sends credentials through the
+bounded USB command reader, and records only selected non-secret status events.
+It requires both a successful save and a subsequent IP event. A save may succeed
+while association fails; its timeout must not be called a connected result.
+Reprovisioning can update settings: a verified staged file replaces the current
+configuration, with a previous valid file retained for boot fallback. Staged
+files are never boot configuration. Host tests cover interrupted rename states;
+physical power-loss durability has not been established.
+
+Each completed A/B recording is saved before upload to
+`/sdcard/tricorder/captures/<capture_id>.raw` and `.json`. The original metadata
+contains SHA-256, ingress block proofs, boot/session identity and acquisition
+timestamps. Writes use exclusive `.part` files, sync and exact readback; metadata
+is published last. A raw file without metadata is incomplete. Existing capture
+files are never overwritten or automatically deleted. SD failure is visible and
+logged; the existing verified LAN upload remains usable without SD. Acquisition
+still starts only through the local Record button. No sensor runs during the
+storage self-test; its 1,152,000 bytes are labeled `synthetic_storage_test` and
+must never be treated as an acoustic recording.
+
+Between trials, download and independently verify public capture files:
+
+```sh
+.tools/investigation-env/bin/python -m tools.download_storage \
+  --url http://DEVICE_IP --output .local/runs/NEW-sd-download
+```
+
+`/test-files` lists at most 128 public names and explicitly reports truncation.
+`/test-file/<basename>` permits only capture `.raw`/`.json` files, excluding
+credentials, path traversal and partial files. The downloader rejects mismatched
+identities, lengths and SHA-256, and reports orphaned raw files or truncated
+listings as incomplete. Download between trials: bulk serving shares the small
+HTTP server with echo probes, so simultaneous transfer is not an echo-latency
+acceptance fixture. This remains a trusted-LAN development service.
+
+G-0002 remains in progress. SD persistence/byte integrity does not establish a
+new physical A/B loop, recovery from power loss during an SD write, live model or
+speech integration, or combined-workload acceptance.
+
+Measured storage cost on this card is approximately 3.01 seconds for write plus
+readback of a 1,152,000-byte raw capture. This is extra post-acquisition time,
+not improved audio or agent latency. The gain is avoiding repeated setup and
+retaining evidence independently of the Mac upload.
+## Replaying an archived A/B pair
+
+Use replay to test transfer/guidance with an existing committed pair. It never
+starts the microphone or writes replacement capture files. Original identities,
+acquisition timestamps, hashes and ingress proofs stay unchanged. The server
+must explicitly accept replay; normal mock mode rejects it. Replays are not new
+physical A/B trials and cannot repair a failed original transcript.
+
+Start a fresh private output directory on the Mac's specific test LAN address:
+
+```sh
+.tools/investigation-env/bin/python -m tools.investigation_service \
+  --host MAC_LAN_IP --port 8765 --output .local/runs/replay-NEW/mock --replay-only
+```
+
+With the saved endpoint pointing there, use one serial owner to reset, collect
+startup evidence and send the fixed USB replay command after SD/network readiness:
+
+```sh
+/usr/bin/caffeinate -is .tools/python-env/bin/python -m tools.capture_serial \
+  --port /dev/cu.usbmodem1101 --output .local/runs/replay-NEW/serial \
+  --seconds 90 --reset --replay-session ab-EXACT_32_LOWERCASE_HEX \
+  --checks sd_roundtrip wifi_initialize storage_http \
+  --spec-id G-0002.01 --spec-revision 2026-09-22 \
+  --workload 'SD transport replay; no new sensor acquisition'
+```
+
+Match the USB identity before using that example port. The command loads
+`SESSION-a` and `SESSION-b`; missing, corrupt or mismatched files fail closed.
+Cancel still works locally. The UI and server manifest mark the replay explicitly.
+Assess the saved mock session with `tools.investigation_evidence`, then compare
+both received raw files and original metadata with the downloaded SD pair.
+The collector's summary alone does not establish content/protocol correctness.
+Stop the listener after the bounded trial. Numeric `investigation_transport`
+events include requested/sent byte counts, errno and elapsed send time, never
+payloads or credentials.

@@ -2,6 +2,7 @@
 #include "investigation_protocol.h"
 #include "investigation_wire.h"
 #include "investigation_capture.h"
+#include "test_storage.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_transport.h"
@@ -18,6 +19,7 @@
 #include <memory>
 #include <string>
 #include <algorithm>
+#include <cerrno>
 
 extern const uint8_t fixture_start[] asm("_binary_guided_ab_fixture_json_start");
 extern const uint8_t fixture_end[] asm("_binary_guided_ab_fixture_json_end");
@@ -28,6 +30,7 @@ std::atomic<bool> cancelled{false};
 std::atomic<int64_t> cancel_requested_us{0};
 bool running=false; // Access only under the display lock.
 char endpoint_text[241]{};
+char replay_session_text[40]{};
 uint64_t now_ms(){return esp_timer_get_time()/1000;}
 
 void open(lv_event_t*) {lv_obj_remove_flag(panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(panel);}
@@ -101,10 +104,20 @@ public:
     }
     bool send(cJSON* object) {
         if(!object)return false;
+        auto* type=cJSON_GetObjectItemCaseSensitive(object,"type");
+        const std::string kind=cJSON_IsString(type)?type->valuestring:"unknown";
         char* data=cJSON_PrintUnformatted(object);cJSON_Delete(object);
         if(!data)return false;
         size_t n=strlen(data);
-        bool ok=n<=32768 && esp_transport_ws_send_raw(ws,static_cast<ws_transport_opcodes_t>(0x81),data,n,2000)==static_cast<int>(n);
+        int64_t started=esp_timer_get_time();errno=0;
+        int sent=n<=32768?esp_transport_ws_send_raw(ws,static_cast<ws_transport_opcodes_t>(0x81),data,n,2000):-1;
+        int error=errno;bool ok=sent==static_cast<int>(n);
+        if(!ok || kind!="capture_chunk") {
+            auto* e=diagnostic_event("investigation_transport");
+            cJSON_AddStringToObject(e,"message_type",kind.c_str());cJSON_AddNumberToObject(e,"requested_bytes",n);
+            cJSON_AddNumberToObject(e,"sent_bytes",sent);cJSON_AddNumberToObject(e,"errno",error);
+            cJSON_AddNumberToObject(e,"duration_us",esp_timer_get_time()-started);diagnostic_emit(e);
+        }
         cJSON_free(data);return ok;
     }
     // 0 idle, 1 complete message, -1 protocol/connection error. No network
@@ -227,9 +240,10 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
 void investigation_ui_enable(bool enabled) {
     if(enabled)lv_obj_remove_state(launch,LV_STATE_DISABLED);else lv_obj_add_state(launch,LV_STATE_DISABLED);
 }
-void investigation_run(const char* boot) {
+static void run_investigation(const char* boot,const char* replay=nullptr) {
     InvestigationEndpoint endpoint;char session[40];
-    snprintf(session,sizeof(session),"ab-%08lx%08lx%08lx%08lx",static_cast<unsigned long>(esp_random()),
+    if(replay)strcpy(session,replay);
+    else snprintf(session,sizeof(session),"ab-%08lx%08lx%08lx%08lx",static_cast<unsigned long>(esp_random()),
              static_cast<unsigned long>(esp_random()),static_cast<unsigned long>(esp_random()),static_cast<unsigned long>(esp_random()));
     // Heap-owned reducer keeps fixed text/identity buffers off the 8 KiB main stack.
     auto p=std::make_unique<InvestigationProtocol>(boot,session);p->ask(now_ms());
@@ -245,20 +259,27 @@ void investigation_run(const char* boot) {
     if(!active(*p) || !endpoint.parse(endpoint_text) || !socket.connect(endpoint))p->disconnect();
     else if(active(*p)) {
         auto* hello=p->envelope("hello");
+        if(replay)cJSON_AddBoolToObject(hello,"replay",true);
         cJSON_AddItemToObject(hello,"fixture",cJSON_Duplicate(fixture.get(),true));
         if(!socket.send(hello))p->disconnect();else wait_reply(socket,*p);
     }
     for(unsigned index=0;index<2 && active(*p);++index) {
         const std::string prompt=question+"\n\n"+(index==0?placement_a:placement_b)+
             "\nStop moving before recording. Three seconds; device speaker stays silent.";
-        show(*p,prompt.c_str(),index==0?"Record A":"Record B");
-        if(!wait_action(socket,*p) || !p->start_capture())break;
-        show(*p,index==0?"Settling 0.5s, then recording A / 3s\nHold still; speaker silent.":"Settling 0.5s, then recording B / 3s\nHold still; speaker silent.");
+        show(*p,replay?"SD REPLAY: loading original recordings. No new sensor acquisition.":prompt.c_str(),replay?nullptr:index==0?"Record A":"Record B");
+        if((!replay && !wait_action(socket,*p)) || !p->start_capture())break;
+        if(!replay)show(*p,index==0?"Settling 0.5s, then recording A / 3s\nHold still; speaker silent.":"Settling 0.5s, then recording B / 3s\nHold still; speaker silent.");
         {
             InvestigationCapture capture;char id[48];snprintf(id,sizeof(id),"%s-%c",session,index?'b':'a');
-            if(!investigation_capture(boot,session,id,cancelled,capture) || !active(*p) ||
+            const bool loaded=replay?test_storage_load_capture(id,capture):investigation_capture(boot,session,id,cancelled,capture);
+            if(!loaded || !active(*p) ||
                !p->captured(capture.metadata,capture.measurement,now_ms())){p->fail();break;}
-            show(*p,"Uploading the verified recording...");
+            if(replay)show(*p,"SD REPLAY: uploading original verified recording...");
+            else {
+                show(*p,"Saving the verified recording to SD...");
+                const bool saved=test_storage_archive(capture.bytes,capture.size,capture.metadata);
+                show(*p,saved?"Saved to SD. Uploading the verified recording...":"SD save unavailable. Uploading the verified recording...");
+            }
             if(!upload(socket,*p,capture,index)){p->fail();break;}
         } // Free raw PCM only after the service's matching completion/hash ACK.
         if(!active(*p))break;
@@ -269,8 +290,8 @@ void investigation_run(const char* boot) {
         if(!socket.send(p->ack())){p->disconnect();break;}
         if(!wait_reply(socket,*p))break;
         if(index==0) {
-            show(*p,p->text(),"Confirm position B");
-            if(!wait_action(socket,*p) || !p->adjust(("Moved to "+placement_b+"; same source level").c_str()))break;
+            show(*p,p->text(),replay?nullptr:"Confirm position B");
+            if((!replay && !wait_action(socket,*p)) || !p->adjust(replay?"SD replay of original recorded A/B adjustment; no new movement":("Moved to "+placement_b+"; same source level").c_str()))break;
         }
     }
     if(cancelled.load()) {
@@ -286,11 +307,59 @@ void investigation_run(const char* boot) {
     const char* final_text=p->state()==InvestigationProtocol::State::Complete?p->text():
         p->state()==InvestigationProtocol::State::Offline?"Offline. Check Wi-Fi and the Mac service. Start a new investigation; this session cannot resume.":
         "Incomplete. No valid comparison. Check the retained run evidence, then start a new investigation.";
-    show(*p,final_text);
+    const std::string displayed=replay?std::string("SD REPLAY (no new acquisition)\n")+final_text:final_text;
+    show(*p,displayed.c_str());
     if(bsp_display_lock(1000)) {
         running=false;
         for(auto* b:{start_button,back_button,endpoint_field})lv_obj_remove_state(b,LV_STATE_DISABLED);
         lv_obj_add_state(cancel_button,LV_STATE_DISABLED);
+        bsp_display_unlock();
+    }
+}
+
+void investigation_run(const char* boot) {run_investigation(boot);}
+bool investigation_request_replay(const char* session) {
+    if(!investigation_replay_session(session) || !media_queue || !bsp_display_lock(1000))return false;
+    InvestigationEndpoint endpoint;bool ok=!running && endpoint.parse(lv_textarea_get_text(endpoint_field));
+    if(ok) {
+        strcpy(endpoint_text,lv_textarea_get_text(endpoint_field));strcpy(replay_session_text,session);
+        cancel_requested_us.store(0);cancelled.store(false);xQueueReset(actions);
+        uint8_t command=5;ok=xQueueSend(media_queue,&command,0)==pdTRUE;
+        if(ok) {
+            running=true;lv_obj_remove_flag(panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(panel);
+            lv_obj_add_flag(keyboard,LV_OBJ_FLAG_HIDDEN);
+            for(auto* b:{start_button,back_button,endpoint_field})lv_obj_add_state(b,LV_STATE_DISABLED);
+            lv_obj_remove_state(cancel_button,LV_STATE_DISABLED);
+            lv_label_set_text(label,"SD REPLAY: checking saved recording identity...");
+        }
+    }
+    bsp_display_unlock();return ok;
+}
+void investigation_run_replay() {
+    std::string boot;bool valid=false;
+    {
+        InvestigationCapture first;
+        if(test_storage_load_capture((std::string(replay_session_text)+"-a").c_str(),first)) {
+            auto* b=cJSON_GetObjectItemCaseSensitive(first.metadata,"boot_id");
+            auto* s=cJSON_GetObjectItemCaseSensitive(first.metadata,"session_id");
+            valid=cJSON_IsString(b) && cJSON_IsString(s) && !strcmp(s->valuestring,replay_session_text);
+            if(valid)boot=b->valuestring;
+        }
+    }
+    auto* e=diagnostic_event("investigation_replay");cJSON_AddBoolToObject(e,"source_valid",valid);
+    cJSON_AddStringToObject(e,"source_session_id",replay_session_text);
+    cJSON_AddStringToObject(e,"source_boot_id",boot.c_str());diagnostic_emit(e);
+    if(valid){run_investigation(boot.c_str(),replay_session_text);return;}
+    if(bsp_display_lock(1000)) {
+        running=false;lv_label_set_text(label,"SD REPLAY failed: saved recording missing or invalid.");
+        for(auto* b:{start_button,back_button,endpoint_field})lv_obj_remove_state(b,LV_STATE_DISABLED);
+        lv_obj_add_state(cancel_button,LV_STATE_DISABLED);bsp_display_unlock();
+    }
+}
+
+void investigation_set_endpoint(const char* endpoint) {
+    if(bsp_display_lock(1000)) {
+        if(!running)lv_textarea_set_text(endpoint_field,endpoint);
         bsp_display_unlock();
     }
 }

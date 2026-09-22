@@ -7,6 +7,7 @@
 #include "diagnostic_events.h"
 #include "media.h"
 #include "network.h"
+#include "test_storage.h"
 #include "investigation.h"
 #include "audio_devices.h"
 #include "restart_sequence.h"
@@ -130,12 +131,12 @@ static int rtc_second() {
     return (value >> 4)*10 + (value & 15);
 }
 
-static void sd_roundtrip() {
+static bool sd_roundtrip() {
     char mount[] = "/sdcard";
-    auto result = bsp_sdcard_init(mount, 3); // Vendor mount never formats on failure.
+    auto result = bsp_sdcard_init(mount, 5); // Vendor mount never formats on failure.
     if (result != ESP_OK) {
         diagnostic_check("sd_roundtrip", "inconclusive", esp_err_to_name(result));
-        return;
+        return false;
     }
     char path[96];
     snprintf(path, sizeof(path), "/sdcard/tri-%s.bin", boot_id);
@@ -161,6 +162,7 @@ static void sd_roundtrip() {
     if (ok) cJSON_AddNumberToObject(e, "read_crc32", esp_rom_crc32_le(0, readback, sizeof(readback)));
     diagnostic_emit(e);
     diagnostic_check("sd_roundtrip", ok ? "pass" : "fail", "Exclusive new file; fsync, reopen, byte comparison and CRC32.");
+    return ok;
 }
 
 static void touch_event(lv_event_t* ev) {
@@ -241,7 +243,7 @@ static void volume_changed(lv_event_t* event) {
 }
 
 static void media_idle() {
-    diagnostic_stage("TRICORDER / hardware diagnostic\n\nTap Record & play when ready.\nWait for RECORDING, then say the test phrase.\nListen to slots 0, 1, 2 and 3.\n\nStorage checks await a microSD card.");
+    diagnostic_stage("TRICORDER / hardware diagnostic\n\nTap Record & play when ready.\nWait for RECORDING, then say the test phrase.\nListen to slots 0, 1, 2 and 3.\n\nGuided A/B saves captures when SD is available.");
     if (bsp_display_lock(1000)) {
         lv_obj_remove_state(record_button, LV_STATE_DISABLED);
         lv_obj_remove_state(restart_button, LV_STATE_DISABLED);
@@ -377,7 +379,7 @@ extern "C" void app_main() {
     int elapsed = (end_second-start_second+60)%60;
     diagnostic_check("rtc_advance", start_second >= 0 && end_second >= 0 && elapsed >= 1 && elapsed <= 2
         ? "pass" : "fail", "Seconds register advances; calendar accuracy is not established.");
-    sd_roundtrip();
+    const bool sd_ready=sd_roundtrip();
     diagnostic_emit(diagnostic_event("ready"));
 #ifdef CONFIG_TRICORDER_GUIDED_AB_STARTUP
     constexpr bool guided_startup=true;
@@ -407,6 +409,7 @@ extern "C" void app_main() {
         }
         if (resuming_restarts) continue_restarts();
     }
+    test_storage_init(boot_id,sd_ready,!resuming_restarts);
     media_idle();
     for (;;) {
         uint8_t command;
@@ -415,6 +418,7 @@ extern "C" void app_main() {
                 restart_sequence.start(esp_random());
                 continue_restarts();
             } else if (command==4) investigation_run(boot_id);
+            else if (command==5) investigation_run_replay();
             else if (command==3) run_audio_baseline(boot_id);
             else capture_audio(boot_id, true);
             media_idle();

@@ -40,6 +40,7 @@ inline int mbedtls_sha256(const unsigned char* p,size_t n,unsigned char* out,int
 #include <cassert>
 #include <cstring>
 #include <cstdio>
+#include <string>
 static int opens=0,closes=0,reads=0,mode=0;
 static AudioIngressSnapshot counters;
 static std::atomic<bool> cancel_flag{false};
@@ -61,7 +62,8 @@ int esp_codec_dev_read(void*,void* target,int size){
 AudioIngressSnapshot audio_ingress_snapshot(){return counters;}
 bool begin_audio_epoch(AudioIngressSnapshot& before){before=counters;return true;}
 int64_t esp_timer_get_time(){static int64_t t=0;return ++t;}
-int main(){
+int main(int argc,char** argv){
+ assert(argc==2);
  for(mode=0;mode<5;++mode){
   opens=closes=reads=0;cancel_flag=false;
   InvestigationCapture capture;
@@ -78,6 +80,22 @@ int main(){
    assert(cJSON_GetObjectItem(capture.measurement,"rms_counts")->valuedouble==1000);
    assert(cJSON_GetObjectItem(capture.measurement,"frames")->valuedouble==144000);
    auto* wire=cJSON_PrintUnformatted(capture.metadata);assert(strlen(wire)<32000);cJSON_free(wire);
+   std::string base=std::string(argv[1])+"/saved";
+   FILE* file=fopen((base+".raw").c_str(),"wb");assert(file);assert(fwrite(capture.bytes,1,capture.size,file)==capture.size);fclose(file);
+   wire=cJSON_PrintUnformatted(capture.metadata);
+   file=fopen((base+".json").c_str(),"wb");assert(file);fputs(wire,file);fclose(file);cJSON_free(wire);
+   { InvestigationCapture replay;assert(investigation_load_capture(base.c_str(),"take",replay));
+     assert(replay.size==capture.size && !memcmp(replay.bytes,capture.bytes,replay.size));
+     assert(cJSON_GetObjectItem(replay.measurement,"rms_counts")->valuedouble==1000);
+     assert(!investigation_load_capture(base.c_str(),"take",replay)); }
+   { InvestigationCapture wrong;assert(!investigation_load_capture(base.c_str(),"other",wrong)); }
+   file=fopen((base+".raw").c_str(),"r+b");fputc(capture.bytes[0]^1,file);fclose(file);
+   { InvestigationCapture corrupt;assert(!investigation_load_capture(base.c_str(),"take",corrupt)); }
+   file=fopen((base+".raw").c_str(),"r+b");fputc(capture.bytes[0],file);fclose(file);
+   file=fopen((base+".raw").c_str(),"ab");fputc(1,file);fclose(file);
+   { InvestigationCapture extra;assert(!investigation_load_capture(base.c_str(),"take",extra)); }
+   file=fopen((base+".raw").c_str(),"wb");fputc(1,file);fclose(file);
+   { InvestigationCapture short_file;assert(!investigation_load_capture(base.c_str(),"take",short_file)); }
    // Reusing a live output would overwrite its owned allocation: rejected.
    assert(!investigation_capture("boot","session","take",cancel_flag,capture));
   } else assert(!ok);
@@ -91,7 +109,7 @@ int main(){
             self.assertEqual(r.returncode,0,r.stderr)
             r=subprocess.run(['clang++','-std=c++17','-Wall','-Wextra','-Werror','-fsanitize=address',
                               '-I',str(p),'-I','firmware/main','-I',str(cjson),str(p/'driver.cpp'),
-                              'firmware/main/investigation_capture.cpp',str(p/'json.o'),'-o',str(p/'test')],capture_output=True,text=True)
+                              'firmware/main/investigation_capture.cpp','firmware/main/investigation_replay.cpp',str(p/'json.o'),'-o',str(p/'test')],capture_output=True,text=True)
             self.assertEqual(r.returncode,0,r.stderr)
-            r=subprocess.run([str(p/'test')],capture_output=True,text=True,timeout=15)
+            r=subprocess.run([str(p/'test'),str(p)],capture_output=True,text=True,timeout=15)
             self.assertEqual(r.returncode,0,r.stderr)

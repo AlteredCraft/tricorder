@@ -3,6 +3,12 @@
 #include <cstddef>
 #include <initializer_list>
 
+inline bool investigation_replay_session(const char* id) {
+    if(!id || strlen(id)!=35 || strncmp(id,"ab-",3))return false;
+    for(const char* p=id+3;*p;++p)if(!((*p>='0' && *p<='9') || (*p>='a' && *p<='f')))return false;
+    return true;
+}
+
 // Experiment LAN endpoint only; explicit ws://host:port/path, no credentials,
 // query, fragments or IPv6. Nothing is persisted and no cloud keys reach device.
 struct InvestigationEndpoint {

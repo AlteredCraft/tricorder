@@ -20,7 +20,11 @@ class DeviceProtocolTests(unittest.TestCase):
 #include "investigation_protocol.h"
 #include <iostream>
 #include <string>
+#include <cstdlib>
+static size_t allocated=0;
+static void* tracked_malloc(size_t n){allocated+=n;return malloc(n);}
 int main() {
+ cJSON_Hooks hooks{tracked_malloc,free};cJSON_InitHooks(&hooks);
  InvestigationProtocol p("boot", "session", 960);
  std::string line;
  while(std::getline(std::cin,line)) {
@@ -28,7 +32,7 @@ int main() {
   auto* op=cJSON_GetObjectItemCaseSensitive(cmd,"op");
   auto* now=cJSON_GetObjectItemCaseSensitive(cmd,"now");
   uint64_t t=now?static_cast<uint64_t>(now->valuedouble):100;
-  bool ok=false; cJSON* out=nullptr;
+  bool ok=false; cJSON* out=nullptr;size_t capture_allocated=0;
   std::string action=op->valuestring;
   if(action=="ask") {ok=p.ask(t);}
   else if(action=="receive") {
@@ -38,7 +42,7 @@ int main() {
   else if(action=="captured") {
    auto* m=cJSON_GetObjectItemCaseSensitive(cmd,"metadata");
    auto* v=cJSON_GetObjectItemCaseSensitive(cmd,"measurement");
-   ok=p.captured(m,v,t);
+   size_t before=allocated;ok=p.captured(m,v,t);capture_allocated=allocated-before;
   } else if(action=="uploaded") {out=p.turn(t);ok=out;}
   else if(action=="adjust") ok=p.adjust("Moved to 40 cm");
   else if(action=="cancel") {p.cancel();ok=true;}
@@ -47,6 +51,7 @@ int main() {
   else if(action=="ack") {out=p.ack();ok=out;}
   auto* result=cJSON_CreateObject();
   cJSON_AddBoolToObject(result,"ok",ok);
+  cJSON_AddNumberToObject(result,"capture_allocated",capture_allocated);
   cJSON_AddStringToObject(result,"state",p.state_name());
   cJSON_AddStringToObject(result,"text",p.text());
   if(out)cJSON_AddItemToObject(result,"out",out);
@@ -110,6 +115,17 @@ int main() {
         self.assertEqual(rows[-2]['state'],'complete')
         self.assertFalse(rows[-1]['ok'])
         self.assertEqual(rows[12]['out']['capture_ids'],['take-a','take-b'])
+
+    def test_capture_snapshot_does_not_duplicate_large_ingress_proofs(self):
+        commands,_=self.prefix()
+        commands[3]['metadata']['ingress_blocks']=[
+            dict(source_start_frame=i,frames=1,read_end_us=1001+i,sha256='a'*64)
+            for i in range(141)]
+        rows=self.run_commands(commands)
+        self.assertTrue(rows[3]['ok'])
+        self.assertLess(rows[3]['capture_allocated'],2048)
+        # The command metadata is freed before turn(), so the ID must be owned.
+        self.assertEqual(rows[4]['out']['capture_ids'],['take-a'])
 
     def test_wrong_identity_order_deadline_and_unbacked_values_rejected(self):
         prefix,a=self.prefix();good=self.reply([a])

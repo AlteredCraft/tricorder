@@ -37,11 +37,12 @@ def decode_message(wire):
 
 
 class MockSession:
-    def __init__(self, root, send, *, provider=None, delay_s=0):
+    def __init__(self, root, send, *, provider=None, delay_s=0, replay_only=False):
         self.root=Path(root)
         self.send=send
         self.provider=provider or MockProvider()
         self.delay_s=delay_s
+        self.replay_only=replay_only
         self.archive=self.store=self.pending=self.task=None
         self.phase='new'
         self.ids=[]
@@ -70,15 +71,23 @@ class MockSession:
             'ack':{'request_id'}, 'cancel':set()}
         require(isinstance(kind,str) and kind in fields,'unknown message type')
         allowed={'version','type','boot_id','session_id'}|fields[kind]
+        if kind=='hello' and self.replay_only:allowed.add('replay')
         require(set(message)==allowed or (kind=='turn' and set(message)==allowed|{'adjustment'}), 'message fields')
         require(self.messages<640,'message budget exhausted')
         self.messages+=1
         if kind=='hello':
             require(self.phase=='new','duplicate hello')
+            require(message.get('replay',False) is self.replay_only,'replay mode mismatch')
             try:fixture=Fixture(**message['fixture'])
             except (TypeError,KeyError) as error:raise ProtocolError('invalid fixture') from error
             boot,session=identity(message['boot_id']),identity(message['session_id'])
             self.archive=RunArchive(self.root/f'{boot}-{session}',boot,session,fixture)
+            if self.replay_only:
+                path=self.archive.root/'manifest.json'
+                manifest=json.loads(path.read_text())
+                manifest.update(replay=True,workload='SD replay; no new sensor acquisition',
+                                scope='Transport replay of stored evidence; not a new physical A/B run')
+                path.write_text(json.dumps(manifest,indent=2)+'\n')
             self.store=CaptureStore(self.archive.root/'captures')
             self.store.MAX_BYTES=MAX_CAPTURE_BYTES
             self.store.MAX_ACTIVE=1
@@ -211,7 +220,7 @@ class MockSession:
             self.archive.record({'type':'closed','state':self.phase,'incomplete_captures':incomplete})
 
 
-async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32):
+async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_only=False):
     from websockets.asyncio.server import serve
     from websockets.exceptions import ConnectionClosed
     output=Path(output)
@@ -224,13 +233,16 @@ async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32):
         active=True
         async def send(message):
             await asyncio.wait_for(socket.send(json.dumps(message,allow_nan=False)),timeout=2)
-        session=MockSession(output,send,delay_s=delay_s)
+        session=MockSession(output,send,delay_s=delay_s,replay_only=replay_only)
         try:
             while True:
                 wire=await asyncio.wait_for(socket.recv(),timeout=30)
                 await session.receive(decode_message(wire))
-        except ConnectionClosed:
-            pass
+        except ConnectionClosed as error:
+            if session.archive:
+                session.archive.record({'type':'transport_closed',
+                    'received_code':error.rcvd.code if error.rcvd else None,
+                    'sent_code':error.sent.code if error.sent else None})
         except (ValueError,TypeError,KeyError,TimeoutError,OSError,RecursionError):
             # Do not echo payloads, credentials or exception text into public logs.
             if session.archive:
@@ -251,10 +263,11 @@ def main():
     parser.add_argument('--port',type=int,default=8765)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--delay-seconds',type=float,default=0,help='Controlled mock-response delay, 0–30')
+    parser.add_argument('--replay-only',action='store_true',help='Require labeled SD replay; no new physical trial')
     args=parser.parse_args()
     if not 0<=args.delay_seconds<=30:parser.error('delay must be 0–30 seconds')
     async def run():
-        server=await serve_mock(args.host,args.port,args.output,delay_s=args.delay_seconds)
+        server=await serve_mock(args.host,args.port,args.output,delay_s=args.delay_seconds,replay_only=args.replay_only)
         print(f'Mock ready at ws://{args.host}:{args.port}; private evidence: {args.output}',flush=True)
         async with server:await server.serve_forever()
     try:asyncio.run(run())

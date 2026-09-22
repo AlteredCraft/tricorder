@@ -101,8 +101,15 @@ bool InvestigationProtocol::captured(const cJSON* m,const cJSON* v,uint64_t now)
     for(const char* p=hash->valuestring;*p;++p)if(!((*p>='0' && *p<='9') || (*p>='a' && *p<='f')))return false;
     if(count_ && (!strcmp(key->valuestring,capture_id(0)) ||
        field(m,"acquisition_start_us")->valuedouble<field(captures_[0],"acquisition_end_us")->valuedouble))return false;
-    auto* meta=cJSON_Duplicate(m,true);auto* values=cJSON_Duplicate(v,true);
-    if(!meta || !values){cJSON_Delete(meta);cJSON_Delete(values);fail();return false;}
+    // Raw capture ownership retains the full ingress proof through SD commit
+    // and upload ACK. The reducer only needs identity and the previous end
+    // timestamp; copying 141 proof blocks here consumed ~62 KiB per capture
+    // and starved hosted Wi-Fi's DMA heap while saving B to SD.
+    auto* meta=cJSON_CreateObject();auto* values=cJSON_Duplicate(v,true);
+    if(!meta || !values || !cJSON_AddStringToObject(meta,"capture_id",key->valuestring) ||
+       !cJSON_AddNumberToObject(meta,"acquisition_end_us",field(m,"acquisition_end_us")->valuedouble)) {
+        cJSON_Delete(meta);cJSON_Delete(values);fail();return false;
+    }
     captures_[count_]=meta;measurements_[count_]=values;++count_;
     deadline_=now+30000;state_=State::Uploading;return true;
 }

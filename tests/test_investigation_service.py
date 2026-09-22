@@ -11,6 +11,18 @@ from test_investigation import evidence, fixture
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_sd_replay_requires_explicit_server_mode_and_is_labeled(self):
+        async def send(_):pass
+        hello=dict(version=1,type='hello',boot_id='oldboot',session_id='saved',fixture=fixture().to_dict(),replay=True)
+        ordinary=MockSession(self.root/'ordinary',send)
+        with self.assertRaises(ProtocolError):await ordinary.receive(hello)
+        replay=MockSession(self.root/'replay',send,replay_only=True)
+        with self.assertRaises(ProtocolError):await replay.receive({k:v for k,v in hello.items() if k!='replay'})
+        await replay.receive(hello)
+        manifest=json.loads((replay.archive.root/'manifest.json').read_text())
+        self.assertEqual(manifest['workload'],'SD replay; no new sensor acquisition')
+        self.assertTrue(manifest['replay'])
+        await replay.close()
     async def asyncSetUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

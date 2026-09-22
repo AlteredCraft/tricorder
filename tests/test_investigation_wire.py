@@ -12,6 +12,8 @@ class InvestigationWireTests(unittest.TestCase):
 #include <cassert>
 #include <cstring>
 int main() {
+ assert(investigation_replay_session("ab-0123456789abcdef0123456789abcdef"));
+ for(const char* s:{"../wifi","ab-x","ab-0123456789abcdef0123456789abcdeg","ab-0123456789abcdef0123456789abcdef/a"})assert(!investigation_replay_session(s));
  InvestigationEndpoint e;
  assert(e.parse("ws://192.168.1.8:8765/"));assert(e.port==8765);
  assert(!strcmp(e.host,"192.168.1.8") && !strcmp(e.path,"/"));

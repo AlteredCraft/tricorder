@@ -1,4 +1,5 @@
 #include "network.h"
+#include "test_storage.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_event.h"
@@ -93,6 +94,7 @@ void wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
             config.max_open_sockets = 2;
             config.recv_wait_timeout = 3;
             config.send_wait_timeout = 3;
+            config.uri_match_fn = httpd_uri_match_wildcard;
             auto result = httpd_start(&server, &config);
             if (result == ESP_OK) {
                 httpd_uri_t route{};
@@ -100,6 +102,7 @@ void wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
                 route.method = HTTP_POST;
                 route.handler = echo;
                 result = httpd_register_uri_handler(server, &route);
+                test_storage_http(server);
             }
             diagnostic_check("wifi_echo_server", result==ESP_OK ? "pass" : "fail",
                              "Listener startup only; host challenge exchange required.");
@@ -243,7 +246,7 @@ void network_ui_init(lv_obj_t* screen, const char* boot_id) {
     lv_textarea_set_placeholder_text(password_field,"Password");
     lv_textarea_set_max_length(password_field,63);
     auto* hint=lv_label_create(panel);
-    lv_label_set_text(hint,"1# opens symbols (including !); abc returns to letters. Credentials stay in RAM.");
+    lv_label_set_text(hint,"1# opens symbols; abc returns to letters. Manual entries are temporary; SD settings reload at boot.");
     lv_obj_set_pos(hint,15,114);
     keyboard=lv_keyboard_create(panel);
     lv_obj_set_size(keyboard,1040,300);
@@ -254,4 +257,13 @@ void network_ui_init(lv_obj_t* screen, const char* boot_id) {
     button(panel,"Connect",15,140,connect_clicked);
     button(panel,"Cancel",225,140,close_panel);
     configASSERT(xTaskCreate(network_task,"network",6144,nullptr,5,nullptr)==pdPASS);
+}
+
+bool network_connect_saved(const char* ssid,const char* password) {
+    if(!ssid || !password || !strlen(ssid) || strlen(ssid)>32 || strlen(password)>63)return false;
+    Credentials credentials{};strcpy(credentials.ssid,ssid);strcpy(credentials.password,password);
+    bool ok=xQueueSend(requests,&credentials,0)==pdTRUE;
+    volatile unsigned char* p=reinterpret_cast<volatile unsigned char*>(&credentials);
+    for(size_t i=0;i<sizeof(credentials);++i)p[i]=0;
+    return ok;
 }

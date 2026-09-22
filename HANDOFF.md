@@ -1,8 +1,102 @@
 # Tricorder agent handoff
 
-Updated: 2026-09-21 — G-0002 device mock checkpoint and physical trial closeout.
+Updated: 2026-09-22 — SD-assisted testing and persistent Wi-Fi configuration.
 
 ## Current checkpoint
+
+**Latest physical retry:** the memory-fixed image stayed running, saved A and B
+to SD, then displayed **Incomplete** while starting B's upload. The mock received
+A and its guidance/ACK, but no B metadata. Both SD recordings independently pass
+raw/hash/141-block ingress checks; the original exchange remains incomplete.
+Evidence: `.local/runs/20260922-sd-ab-2/`, source boot
+`b936e25692766aba3758affc26b1bd55`, session
+`ab-2f45739e04fe71cdd5302938fec1a3b7`. The ordinary serial summary retains one
+malformed instrumentation line; named startup checks pass and no reboot/panic was
+observed. The overall SD downloader retains an unrelated older synthetic-file
+HTTP failure; `sd-recovery-assessment.json` is scoped to the two verified real files.
+
+**SD replay now exercises the same device upload/guidance/comparison flow without
+new acquisition.** The replay-only server and independent assessor explicitly
+label it; original boot/session/timestamps/proofs and raw bytes are preserved.
+Normal and deliberately slowed (45 ms/chunk) device replays completed with
+byte-for-byte original SD agreement: `.local/runs/20260922-sd-replay-{1,2}/`.
+Replay 1 serial summary passes; replay 2 retains an attachment-line FAIL despite
+its independently passing complete A/B transcript. Replay 3 verifies the reusable
+collector command (`20260922-sd-replay-3/assessment.json`), also with a passing
+independent transcript and a retained attachment-line serial FAIL.
+These do not turn the failed
+physical run into a pass. The recorded digital RMS ratio is +0.9380 dB B/A,
+contrary to the distance hypothesis; approximate phone-gauge placement and
+unreported noise/source audibility do not support an acoustic acceptance claim.
+
+The original restart remains separately retained under `20260922-sd-ab-1`.
+Its fix reduces reducer metadata retention from 62,643 bytes to under 2 KiB and
+uses PSRAM for SD/HTTP scratch. That crash did not recur in the physical retry.
+The newer diagnostic firmware adds replay and numeric send-result logging;
+`20260922-sd-ab-2/replay-manifest.json` / `replay-artifacts/` identify its P4
+build/flash. **180 host tests pass** after the reusable collector and independent
+replay-label checks. See `tests-final.txt` and the final checkpoint manifest.
+The original B upload failure was not reproduced by the three replays; its exact
+transport cause is still open. Do not claim a connection fix or change deadlines.
+No further physical repeat is requested at this checkpoint. Test processes are
+stopped; the tone is off. The user requested review and a local commit; no push.
+The tested image was built from parent `7bd5211` with uncommitted changes;
+the archived hashes identify it independently of the eventual commit ID.
+The earlier SD setup evidence below remains valid for its original bounded scope.
+
+### Earlier SD setup validation
+
+The installed microSD card now supports **persistent Wi-Fi/endpoint setup, verified
+local A/B capture archives and LAN downloads**. Credentials from the user's
+`env.local.northbank` (no leading dot) were sent over USB, saved on SD and loaded
+successfully after reboot. The Tab5 joined at **10.0.13.116**; Mac **10.0.13.37**.
+The saved mock endpoint is `ws://10.0.13.37:8765/`. Rediscover addresses before
+future trials. No Mac hotspot was needed. The source file and all `.env.*` /
+`env.local.*` files are ignored; credentials were not embedded in firmware or
+found in retained logs. SD config and its previous-version fallback are plaintext.
+
+**175 host tests pass**, including native ASan file/config recovery checks and
+real localhost WebSocket tests. P4 builds and flashes pass. The final storage
+implementation passes startup SD/radio/HTTP checks, three isolated LAN challenges,
+five full-size synthetic SD downloads with matching SHA-256, and five negative
+HTTP checks excluding credentials, traversal and partial files. SD write plus
+readback is about **3.01 seconds per 1,152,000-byte capture**; larger buffers did
+not materially improve this. Downloads are intended between trials.
+
+All evidence is under `.local/runs/20260922-sd-testing/`: `tests-4.txt`,
+`build-5.txt`, `flash-2.txt`, `final-boot/summary.json`, `lan-final/summary.json`,
+`download-final/summary.json`, `route-isolation.json`. `final-manifest.json` and
+`final-artifacts/` identify that tested image and 146 source/config/build files.
+A subsequent **text-only** correction removed the stale no-SD screen message and
+clarified manual Wi-Fi edits; `build-6.txt` / `flash-3.txt` and `final-ui-manifest.json` / `final-ui-artifacts/` identify that earlier image. No functional SD/network change followed
+the passing tests above at that earlier checkpoint. These artifacts precede the
+memory fix and replay image identified above. `final-ui-boot/summary.json` confirms that
+image's startup checks and saved Wi-Fi reconnect (boot
+`851cfd27dd926f582bac30a28b9c1e83`); its full-size save took 2.50 seconds.
+`checkpoint.json` records final artifact agreement. No trial processes remain running.
+
+Retain the initial failed attempts: `provision-1/events.json` saves successfully
+but sees transient AP-not-found; `reboot-1` reconnects using saved settings but
+its ordinary summary fails due to a serial line interrupted by the reset banner.
+`lan-1` is unreachable; `lan-2` has one timeout during concurrent bulk download.
+Do not replace them with later passes.
+
+**G-0002 remains In progress.** Neither new physical SD-backed attempt completed the A/B protocol.
+The existing local Record controls now archive raw bytes and original metadata
+before upload; completed SD files survive a later network failure. No overwrite
+or automatic capture deletion occurs. Metadata commits last; raw-only and `.part`
+files do not establish completion. Config recovery is host-tested for interrupted
+rename states and corrupt-current fallback, not verified through physical power
+loss. Live-provider/speech work remains deferred. See the [SD setup and export
+procedure](planning/guided-ab-protocol.md#sd-assisted-testing--2026-09-22).
+
+Next investigation: use the retained SD pair and transport diagnostics to isolate
+the intermittent B upload failure. A later physical retry needs confirmation that
+the source tone is audible and the placement/noise conditions are controlled.
+Keep all original failures and the three earlier successful physical loops distinct.
+Replay does not operate the microphones; fresh captures still require local Record.
+
+## Previous checkpoint — 2026-09-21
 
 The Tab5 now runs a preset, text-only **Guided A/B** investigation through the Mac mock service: capture A → evidence-linked guidance → operator adjustment → capture B → verified comparison. Three settling-corrected developmental loops completed. Delayed replies, cancellation, service disconnection and fresh-session recording/guidance recovery have retained evidence. All trial services, serial collectors and tone players are stopped; trial-4 firmware remains flashed. No push was requested or performed.
 
@@ -42,13 +136,13 @@ Detailed chronology, session IDs, limitations and architecture disposition remai
 
 ## Device and execution
 
-- Correct Tab5 USB serial **E8:F6:0A:E2:E0:0E**, last found at `/dev/cu.usbmodem101`, P4 v1.3, 16 MB flash, 32 MB PSRAM, ST7121. Rediscover with `.tools/python-env/bin/python -m serial.tools.list_ports -v` and match identity before opening. `/dev/cu.usbmodem11101` is another board.
-- **Opening USB serial can reset the Tab5**, even without an explicit reset. Keep one collector open through an operator trial and use a suitable bounded duration. Rejoin Wi-Fi after reset; credentials and endpoint edits are RAM-only. Prior LAN addresses: Mac `192.168.0.61`, Tab5 `192.168.0.66`; recheck before use.
+- Correct Tab5 USB serial **E8:F6:0A:E2:E0:0E**, last found at `/dev/cu.usbmodem1101`, P4 v1.3, 16 MB flash, 32 MB PSRAM, ST7121. Rediscover with `.tools/python-env/bin/python -m serial.tools.list_ports -v` and match identity before opening. `/dev/cu.usbmodem11101` is another board.
+- **Opening USB serial can reset the Tab5**, even without an explicit reset. Keep one collector open through an operator trial and use a suitable bounded duration. SD-provisioned Wi-Fi/endpoint settings reload after ordinary reset; manual screen edits are temporary. Latest LAN addresses: Mac `10.0.13.37`, Tab5 `10.0.13.116`; recheck before use.
 - Current private sdkconfig has `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` and an editable initial endpoint. This skips automatic media diagnostics and waits for manual A/B after board/display/radio startup. Skipped stages do not pass diagnostic gates. JPEG fault injection stays disabled. The default build option remains off.
 - Start the mock using a new evidence directory, join Wi-Fi and open Guided A/B. **Start mock connects; the separate Record A button starts acquisition.** After guidance, Confirm position B enables the separate Record B button. Follow [protocol/setup](planning/guided-ab-protocol.md) for exact commands and bounds.
 - Full host tests: `.tools/investigation-env/bin/python -m unittest discover -s tests -q` (this environment includes the pinned WebSocket dependency). Build: `tools/idf.sh -C firmware build`. Bootstrap: `python3 tools/bootstrap.py`. USB, localhost listeners and builds may need sandbox escalation. Do not rebuild/reflash just to identify the current checkpoint.
 - Prefix physical collectors with `/usr/bin/caffeinate -is` and set explicit spec/revision/workload metadata. Host sleep previously lost USB export intervals; missing intervals cannot establish continuity.
-- Battery pack installed; microSD unavailable. Verified full flash backups and restore procedure remain in `.local/runs/20260920-baseline/`. Keep captures/backups/secrets private. User/equipment follow-ups are in [TODO.md](TODO.md).
+- Battery pack and microSD installed. Verified full flash backups and restore procedure remain in `.local/runs/20260920-baseline/`. Keep captures/backups/secrets private. User/equipment follow-ups are in [TODO.md](TODO.md).
 
 The sections below are historical checkpoints, not current process or firmware state.
 

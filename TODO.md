@@ -1,11 +1,11 @@
 # Follow-ups for G-0001 and G-0002
 
-**Mock trial checkpoint closed, 2026-09-21:** three corrected developmental loops, delayed replies, cancellation and fresh-session recovery are recorded. All trial processes are stopped. Use MacBook speakers at 30% and measured imperial 8-inch/16-inch positions for future acoustic trials. Live-provider work remains deferred. Fixture/timing limits and exact evidence are in [HANDOFF.md](HANDOFF.md#resume-here).
+**SD-assisted checkpoint, 2026-09-22:** persistent Wi-Fi, verified real recording archives and three complete SD replays are recorded. The two new physical attempts remain incomplete; the latest failed during B upload without restarting. No immediate operator repeat is requested. All trial processes are stopped. Use MacBook speakers at 30% and measured imperial 8-inch/16-inch positions for future acoustic trials. Live-provider work remains deferred. Fixture/timing limits and exact evidence are in [HANDOFF.md](HANDOFF.md#current-checkpoint).
 
 The follow-ups below need your participation or equipment. Progress and evidence stay in [planning/milestones.md](planning/milestones.md); this list is only the handoff to you.
 
-- **Wi-Fi:** after firmware resets, reconnect the Tab5 to the working 2.4 GHz network through its setup screen. Credentials are RAM-only. Needed for device-to-Mac streaming and agent tests; please do not put the password in this file or chat.
-- **microSD:** provide a card that may hold disposable test captures. Storage checks, checksum readback and interrupted-write recovery remain untested without one.
+- **Wi-Fi:** SD provisioning and automatic reconnect after reset are implemented and exercised. Reprovision from the private local environment file when changing networks; do not put the password in this file or chat.
+- **microSD:** card supplied; real write/readback and independent LAN download checks pass. Two physical attempts saved both real A/B recordings, but neither completed the protocol. SD replays complete; the intermittent B upload failure and physical interrupted-write/power-loss recovery remain open. Keep the card private because it holds Wi-Fi credentials.
 - **Cold starts:** help with ten real power-off/on cycles. We will distinguish these from the ten software restarts already passed. Wait for a prepared capture procedure before starting.
 - **Audio fixture:** help with repeatable stationary sound/speech tests, including device playback, after the combined workload is ready. Confirm speaker/headphone levels after output adjustments; speaker playback was still faint. The six microphone-position takes are complete; no need to repeat them now.
 - **Live agent provider (deferred by the user, 2026-09-21):** when resuming this phase, choose the model/speech provider and make its credentials available to the Mac service through a local secret/environment configuration. Keep keys out of Git and this file. Mock-provider work can proceed first.

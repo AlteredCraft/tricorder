@@ -40,6 +40,20 @@ class InvestigationEvidenceTests(unittest.IsolatedAsyncioTestCase):
         capture=next((self.run/'captures').glob('*.bin'));capture.write_bytes(b'bad')
         self.assertEqual(assess_run(self.run)['status'],'fail')
 
+    async def test_replay_label_must_match_hello_and_survive_assessment(self):
+        manifest=self.run/'manifest.json';value=json.loads(manifest.read_text())
+        value['replay']=True;manifest.write_text(json.dumps(value))
+        self.assertEqual(assess_run(self.run)['status'],'fail')
+        path=self.run/'transcript.jsonl';rows=[json.loads(line) for line in path.read_text().splitlines()]
+        rows[0]['message']['payload']['replay']=True
+        path.write_text(''.join(json.dumps(row)+'\n' for row in rows))
+        result=assess_run(self.run)
+        self.assertEqual(result['status'],'pass',result)
+        self.assertTrue(result['replay'])
+        self.assertIn('no new sensor acquisition',result['scope'])
+        value.pop('replay');manifest.write_text(json.dumps(value))
+        self.assertEqual(assess_run(self.run)['status'],'fail')
+
     async def test_wrong_reply_measurement_and_missing_ack_rejected(self):
         path=self.run/'transcript.jsonl'
         original=path.read_text()

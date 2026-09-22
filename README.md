@@ -15,7 +15,7 @@ Hold it, point it, move it, and ask questions. The goal is to learn what the dev
 
 ## Status
 
-G-0001 is in progress, beginning with the [hardware baseline](planning/plans/G-0001.01-hardware-baseline.md#observed). The connected Tab5 identifies as ESP32-P4 revision 1.3 with 16 MB flash. Both clean factory builds booted; native diagnostics retain physical input, camera and raw audio evidence. Isolated camera/audio/motion/display baselines, LAN exchanges and ten software restarts are verified. Work is paused at a documented checkpoint: the latest camera+JPEG candidate builds and decodes all 30 images, but fails camera completion accounting. See [HANDOFF.md](HANDOFF.md) for the first resume task and [TODO.md](TODO.md) for user follow-ups. Combined workload, storage, cold-start, calibration and full-investigation acceptance remain open. The starting direction is C++/ESP-IDF with LVGL and a Python agent service on the Mac, first mocked and then provider-backed.
+G-0001 and G-0002 are in progress. The Tab5 runs a device-owned, text-only Guided A/B investigation against the Mac mock service. Three developmental physical loops and bounded failure/recovery trials are retained. SD-backed Wi-Fi provisioning now avoids re-entering settings after resets, and completed A/B captures can be archived on the card and downloaded with independent SHA-256 verification. Live-provider and speech work remain deferred. See [HANDOFF.md](HANDOFF.md) for current evidence and [TODO.md](TODO.md) for remaining operator fixtures.
 
 Run host checks with `python3 -m unittest discover -s tests -v`. Toolchains, private flash backups and run captures stay in ignored `.tools/` and `.local/` directories.
 
@@ -33,11 +33,11 @@ tools/idf.sh -C firmware build
 
 Rediscover the port after reconnecting. Flash with `tools/idf.sh -C firmware -p PORT flash` only after verifying the connected board and preserving its recovery image. Raw serial data, events and summaries are kept together in each new run directory. Missing checks remain inconclusive; these summaries do not establish full G-0001 acceptance.
 
-Startup attempts a 60-second camera+JPEG stage followed by sequential audio, motion and animated-display baselines, plus short live and synthetic audio fixtures. The current camera failure skips the later sustained stages. Allow eight minutes for a successful full capture; this is a diagnostic build, not the final startup experience. Assess each timing capture with `python3 -m tools.camera_baseline_evidence METADATA.json`, `tools.audio_baseline_evidence`, `tools.imu_baseline_evidence`, or `tools.ui_baseline_evidence`. Camera checks count missing application buffers, motion checks retain every latest-register polling attempt, and display checks join animation state IDs to actual panel submissions. Software submission timestamps do not measure physical screen presentation. Assess JPEG provenance/independent decoding with `python3 -m tools.jpeg_evidence RUN_DIRECTORY` on a finalized run; it preserves overall failure even if the images decode. Passing isolated stages does not establish combined-load behavior. No microSD is currently installed, so `sd_roundtrip` remains inconclusive.
+Default diagnostic startup attempts a 60-second camera+JPEG stage followed by sequential audio, motion and animated-display baselines, plus short live and synthetic audio fixtures. The current private trial configuration uses Guided A/B startup, which skips those automatic media stages and waits for local Record controls. Allow eight minutes when collecting the full default diagnostic sequence. Assess each timing capture with `python3 -m tools.camera_baseline_evidence METADATA.json`, `tools.audio_baseline_evidence`, `tools.imu_baseline_evidence`, or `tools.ui_baseline_evidence`. Camera checks count missing application buffers, motion checks retain every latest-register polling attempt, and display checks join animation state IDs to actual panel submissions. Software submission timestamps do not measure physical screen presentation. Assess JPEG provenance/independent decoding with `python3 -m tools.jpeg_evidence RUN_DIRECTORY` on a finalized run; it preserves overall failure even if the images decode. Passing isolated stages does not establish combined-load behavior. A microSD card is installed; the SD read/write checks have passed. Physical interrupted-write recovery remains untested.
 
 Capture runs also retain checked raw media in `captures/`; incomplete exports stay explicitly incomplete. Run `python3 -m tools.inspect_capture PATH_TO_CAPTURE.json` to verify bytes and create a camera PNG or per-slot WAV files (camera conversion requires `ffmpeg`). Physical channel mapping and calibration are separate checks.
 
-The diagnostic has **Record & play** for a countdown, three-second raw recording, and four separately labeled playback slots. **Wi-Fi setup** accepts the local network name/password on the device; credentials are RAM-only. Once its address appears, run `python3 -m tools.network_probe --url http://DEVICE_IP --boot-id BOOT_ID --output .local/runs/lan-001` for three fresh echo exchanges. Audible playback, physical channel mapping and LAN round trips remain separate evidence.
+The diagnostic has **Record & play** for a countdown, three-second raw recording, and four separately labeled playback slots. **Wi-Fi setup** accepts the local network name/password on the device; manual UI credentials are RAM-only. USB provisioning can persist settings on SD (see below). Once its address appears, run `python3 -m tools.network_probe --url http://DEVICE_IP --boot-id BOOT_ID --output .local/runs/lan-001` for three fresh echo exchanges. Audible playback, physical channel mapping and LAN round trips remain separate evidence.
 
 **Test 10 restarts** starts a bounded software-reset sequence after the diagnostic is ready. Keep a single serial collector attached from the initial boot through completion; each boot exports camera/PCM and repeats radio initialization without joining Wi-Fi. Run `python3 -m tools.restart_evidence RUN_DIRECTORY` after capture finalization to check all ten software-reset boots. Cold starts and SD checks require their separate fixtures. Reopening the USB port can itself reset this board; `--observation-boot BOOT_ID` makes an unexpected boot explicit and does not claim continuity before attachment.
 
@@ -55,9 +55,8 @@ Generate synthetic desktop FFT references with `python3 -m tools.audio_reference
 
 ## Guided A/B mock development
 
-G-0002 implementation has started with a tested host state/evidence contract and
-bounded Mac WebSocket mock service. See the [protocol and run instructions](planning/guided-ab-protocol.md).
-The prepared fixture compares a steady speaker sound at 20 cm and 40 cm. Device
-transport/UI and live speech/provider integration are next; host synthetic tests
-do not establish handheld acceptance. The previously verified diagnostic firmware
-is unchanged by this checkpoint.
+G-0002 has a working device UI/transport and a bounded Mac WebSocket mock service.
+See the [protocol, SD provisioning and download instructions](planning/guided-ab-protocol.md#sd-assisted-testing--2026-09-22).
+The fixture compares a steady speaker sound at 8 inches and 16 inches, using
+MacBook built-in speakers at 30% system volume. Explicitly labeled SD replay can retest uploads and comparisons without new recordings. Saved SD bytes do not replace
+operator fixture notes or establish live-provider acceptance.

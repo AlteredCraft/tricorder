@@ -21,6 +21,10 @@ def assess_run(root):
         fixture=manifest['fixture'];boot=manifest['boot_id'];session=manifest['session_id']
         rows=[json.loads(line)['message'] for line in (root/'transcript.jsonl').read_text().splitlines()]
         traffic=[r['payload'] for r in rows if 'payload' in r]
+        replay=manifest.get('replay',False)
+        check(type(replay) is bool and traffic and traffic[0].get('replay',False) is replay,'replay label mismatch')
+        result['replay']=replay
+        if replay:result['scope']='SD transport replay; no new sensor acquisition or physical/live acceptance'
         check(all(m.get('version')==1 and m.get('boot_id')==boot and m.get('session_id')==session for m in traffic),'wire identity mismatch')
         expected=['hello','ready']+['capture_start','capture_ack','capture_end','capture_ack','turn','guidance','ack','acknowledged']+['capture_start','capture_ack','capture_end','capture_ack','turn','comparison','ack','acknowledged']
         check([m['type'] for m in traffic]==expected,'incomplete/out-of-order exchange')

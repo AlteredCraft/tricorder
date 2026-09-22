@@ -9,3 +9,5 @@ firmware/sdkconfig
 managed_components/
 .DS_Store
 .env
+.env.*
+.env.local.*

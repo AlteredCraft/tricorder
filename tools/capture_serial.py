@@ -1,6 +1,7 @@
 """Capture a bounded serial run, retaining raw output and strict evidence summaries."""
 import argparse
 import json
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seconds', type=float, default=30)
     parser.add_argument('--reset', action='store_true')
+    parser.add_argument('--replay-session', help='After reset/SD/network readiness, replay this saved ab-<32 lowercase hex> session; no new acquisition')
     parser.add_argument('--observation-boot', help='Observe this existing boot without claiming startup or continuity before attachment')
     parser.add_argument('--stop-file', type=Path, help='Finish and summarize when this file appears')
     parser.add_argument('--checks', nargs='*', default=[])
@@ -26,6 +28,9 @@ def main():
         parser.error('--seconds must be positive')
     if args.observation_boot and args.reset:
         parser.error('--observation-boot cannot be combined with --reset')
+    if args.replay_session and (not re.fullmatch(r'ab-[0-9a-f]{32}',args.replay_session) or
+                               not args.reset or args.spec_id!='G-0002.01'):
+        parser.error('--replay-session requires a valid saved session, --reset and --spec-id G-0002.01')
     if (args.spec_id != 'G-0001.01' or args.spec_revision or args.workload) and not (
             args.spec_revision and args.spec_revision.strip() and args.workload and args.workload.strip()):
         parser.error('explicit spec metadata requires both --spec-revision and --workload')
@@ -40,12 +45,17 @@ def main():
                 'device_clock': 'esp_timer_get_time microseconds since boot',
                 'required_checks': args.checks, 'reset_requested': args.reset,
                 'observation_boot': args.observation_boot}
+    if args.replay_session:
+        manifest.update(replay=True,source_session_id=args.replay_session,
+                        replay_scope='SD transport replay; no new sensor acquisition')
     (args.output/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     events, errors = [], []
+    replay_boot=None;replay_sd=replay_network=replay_http=replay_sent=False;replay_state=None
     captures = CaptureStore(args.output/'captures')
     port = serial.Serial()
     port.port, port.baudrate, port.timeout = args.port, 115200, .2
     port.dtr, port.rts = False, False
+    if args.replay_session:port.write_timeout=2
     try:
         port.open()
         with port, (args.output/'serial.log').open('xb') as raw, (args.output/'events.jsonl').open('x') as out:
@@ -78,6 +88,19 @@ def main():
                         events.append(event)
                         out.write(json.dumps(event)+'\n')
                         out.flush()
+                        if args.replay_session:
+                            if event['event']=='boot':
+                                replay_boot=event['boot_id'];replay_sd=replay_network=replay_http=False
+                            if event['boot_id']==replay_boot:
+                                if event['event']=='storage_ready':replay_sd=event.get('mounted') is True
+                                if event['event']=='wifi_address':replay_network=True
+                                if event['event']=='check' and event.get('check')=='storage_http':replay_http=event.get('result')=='pass'
+                                if replay_sd and replay_network and replay_http and not replay_sent:
+                                    command=('TRICORDER_REPLAY '+args.replay_session+'\n').encode()
+                                    if port.write(command)!=len(command):raise OSError('short replay command write')
+                                    port.flush();replay_sent=True
+                                if event['event']=='investigation_state' and event.get('session_id')==args.replay_session:
+                                    replay_state=event.get('state')
                         try:
                             captures.consume(event)
                         except ValueError as error:
@@ -91,6 +114,9 @@ def main():
     if summary['incomplete_captures']:
         errors.append('unfinished captures retained as incomplete')
     summary['capture_errors'] = errors
+    if args.replay_session:
+        summary.update(replay=True,replay_command_sent=replay_sent,replay_state=replay_state)
+        if not replay_sent or replay_state!='complete':errors.append('SD replay did not reach complete in this collection window')
     if errors:
         summary['status'] = 'fail'
     (args.output/'summary.json').write_text(json.dumps(summary, indent=2)+'\n')

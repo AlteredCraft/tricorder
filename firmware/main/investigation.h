@@ -8,3 +8,8 @@ void investigation_ui_enable(bool enabled);
 // Called by the existing media owner for command 4. Returns after a terminal
 // state. UI cancel takes effect locally without waiting for this task/network.
 void investigation_run(const char* boot);
+
+void investigation_set_endpoint(const char* endpoint);
+// USB-only replay of committed SD bytes; never starts sensors.
+bool investigation_request_replay(const char* session);
+void investigation_run_replay();
