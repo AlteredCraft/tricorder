@@ -8,7 +8,7 @@ The goal is to learn about both the physical world and the device itself by givi
 
 > “I learned something about this object—and something about what my device can do.”
 
-**Status:** planning and research. The experiences below describe intended behavior, not implemented features. The agreed starting stack for experiments is C++/ESP-IDF with LVGL and a Python agent service; exact dependencies and hardware support still require validation. See the [milestones](planning/milestones.md).
+**Status:** in development. The experiences below describe intended behavior; see [HANDOFF.md](HANDOFF.md) for what works today and the [milestones](planning/milestones.md) for the plan.
 
 ## The experience
 
@@ -133,10 +133,6 @@ The milestone is successful when the interaction is understandable, responsive, 
 - **Object memory:** identify an object and retrieve its earlier measurements, photographs, and notes during an active investigation.
 
 These are possible extensions. The initial focus stays on a realtime, handheld Tricorder and learning the built-in capabilities.
-
-## Next step
-
-Establish a reproducible hardware baseline on the connected Tab5 using the agreed starting stack. Follow [M-0001 and its goal/specs](planning/milestones.md#m-0001-validate-the-handheld-investigation) for the experiments and linked decisions that establish driver, version and interaction suitability. No firmware scaffold, dependencies, or backend implementation exists yet.
 
 ## Hardware references
 

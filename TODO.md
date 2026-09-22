@@ -1,15 +1,11 @@
-# Follow-ups for G-0001 and G-0002
+# Operator follow-ups
 
-**Checkpoint, 2026-09-22:** the fresh physical 8-inch/16-inch mock loop completed with verified recordings/ACK joins and B/A −3.89 dB. Bounded TCP completion passes native tests and normal device replay; the original B failure's exact cause remains unproven, and a deliberately slowed receiver still times out explicitly. Two approved OpenRouter `openai/gpt-5.6-sol` summary probes pass; speech and three rated live handheld loops remain open. Trial processes are stopped. Use audible MacBook speakers at 30% and measured imperial positions for future acoustic trials. Exact evidence and limits are in [HANDOFF.md](HANDOFF.md#current-checkpoint).
+Things that need the user's hands or equipment. Wait for a prepared procedure before starting any of them.
 
-The follow-ups below need your participation or equipment. Progress and evidence stay in [planning/milestones.md](planning/milestones.md); this list is only the handoff to you.
-
-- **Wi-Fi:** SD provisioning and automatic reconnect after reset are implemented and exercised. Reprovision from the private local environment file when changing networks; do not put the password in this file or chat.
-- **microSD:** card supplied; real write/readback and independent LAN download checks pass. Earlier incomplete physical attempts saved both recordings; the latest physical mock loop and normal SD replays complete; the intermittent B upload failure and physical interrupted-write/power-loss recovery remain open. Keep the card private because it holds Wi-Fi credentials.
-- **Cold starts:** help with ten real power-off/on cycles. We will distinguish these from the ten software restarts already passed. Wait for a prepared capture procedure before starting.
-- **Audio fixture:** help with repeatable stationary sound/speech tests, including device playback, after the combined workload is ready. Confirm speaker/headphone levels after output adjustments; speaker playback was still faint. The six microphone-position takes are complete; no need to repeat them now.
-- **Live agent provider:** OpenRouter `openai/gpt-5.6-sol` selected and local credentials supplied. Live summary probes pass. Speech integration and operator-rated handheld live loops remain open; keys stay on the Mac and outside Git.
-- **Handheld interaction:** no immediate repeat is requested. Before future acceptance runs, freeze full fixture notes and instrument pending-turn cancel/panel timing; the current developmental mock trial results are retained. Live loops and responsiveness/usefulness feedback remain pending after speech integration. Confirm the exact measuring tool and full fixture notes before formal repeats. Later supply G-0001's combined-run touch events, supported touch/motion wake trials and full guided-investigation acceptance runs. Early slice evidence counts toward those only if it meets their original checks.
-- **Battery session:** help with the controlled USB disconnect/power fixtures and a representative 30-minute handheld battery session, including comfort observations. The rear battery is installed; endurance and power-sign/rail checks remain open.
-
-Isolated camera, audio, 100 Hz motion and 30 fps animated-display baselines have passed, along with repeated live raw/speech integrity checks. Full G-0001 acceptance is still in progress.
+- **Speech provider:** choose one (text provider is OpenRouter `openai/gpt-5.6-sol`).
+- **Live loops:** three handheld Guided A/B sessions with 1–5 responsiveness/usefulness ratings, after the UI and speech work.
+- **Cold starts:** ten real power-off/on cycles (G-0001.01).
+- **Speaker level:** built-in speaker playback is faint; recheck after output changes. Headphones are fine.
+- **SD power loss:** interrupted-write recovery test (G-0001.05).
+- **Battery:** USB disconnect/power fixtures and one 30-minute handheld session with comfort notes (G-0001.05).
+- **Wi-Fi change:** reprovision from a local `.env.local.*` file. Keep the SD card private because it holds credentials.

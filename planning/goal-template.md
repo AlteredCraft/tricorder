@@ -1,15 +1,17 @@
-## G-NNNN. Title
+# G-NNNN. Title
 
-**Milestone.** Link to the one parent M-NNNN section in `planning/milestones.md`.
+**Milestone:** [M-NNNN](../milestones.md#anchor)
 
-**Outcome.** One sentence: what is true, for whom, when this goal is met. No implementation detail.
+**Outcome:** One sentence: what is true, for whom, when this goal is met.
 
-**Driver.** The user or project need it serves; link the relevant context.
+**Driver:** (optional) The need or request behind it.
 
-**Measure.** How we would know, from the platform's own records or an outcome metric.
+**Measure:** How we'll know.
 
-**Specs.** Links to serving G-NNNN.nn specs. One hypothesis each; a goal may need several.
+**Specs:**
 
-**Status.** Not started | In progress | Met | Partly met. Explain briefly from spec evidence and the outcome measure; a completed experiment does not necessarily achieve the goal.
+| Spec | Status | State |
+| --- | --- | --- |
+| [.01 Title](G-NNNN.01-title.md) | Proposed | One line |
 
-**Progress.** Append dated entries when status, scope or disposition changes. Link evidence for closure; record remaining work and its next action, or the reason for deferral/cancellation. Maintain the parent milestone in the same update.
+**Status:** Not started | In progress | Met | Partly met. One line.

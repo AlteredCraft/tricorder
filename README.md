@@ -2,80 +2,59 @@
 
 A handheld, agent-assisted instrument for exploring the physical world with the M5Stack Tab5 (ESP32-P4).
 
-**This project is co-developed with OpenAI Codex.**
-
-Hold it, point it, move it, and ask questions. The goal is to learn what the device can do while a person and an agent investigate something together in real time.
+Hold it, point it, move it, and ask questions. The goal is to learn what the device can do while a person and an agent investigate something together in real time. Co-developed with OpenAI Codex and Claude Code.
 
 ## Start here
 
-- [Vision](vision.md) — the complete product concept, interaction loop, modes and hardware roles.
-- [Planning guidelines](planning/README.md) — goals, hypothesis-driven specs and architecture decision records.
-- [Milestones](planning/milestones.md) — Milestone → Goal → Spec, with links to architecture decisions and validation work.
-- [Agent handoff](HANDOFF.md) — current state and how to continue locally.
+- [Vision](vision.md): the product concept.
+- [Handoff](HANDOFF.md): current state, next steps, device setup.
+- [Milestones](planning/milestones.md): Milestone → Goal → Spec, plus [ADRs](planning/adrs/).
+- [Planning guidelines](planning/README.md): how the docs are kept.
+- [Guided A/B protocol](planning/guided-ab-protocol.md): wire protocol and trial/replay commands.
+- [TODO](TODO.md): tasks that need the operator.
 
-## Status
+## Layout
 
-G-0001 and G-0002 are in progress. The Tab5 runs a device-owned Guided A/B flow with SD-backed Wi-Fi setup and verified recording archives. Bounded TCP write completion now passes native tests and device replay; a fresh 8-inch/16-inch physical mock loop completed with B 3.89 dB quieter. An OpenRouter text adapter using `openai/gpt-5.6-sol` passes two approved live calls over saved summaries. Speech and three operator-rated live handheld loops remain open, as do full reliability gates and the historical upload failure's exact cause. **192 host tests pass; P4 build/flash pass.** See [HANDOFF.md](HANDOFF.md) for evidence and [TODO.md](TODO.md) for operator follow-ups.
-
-Run full host checks with `.tools/investigation-env/bin/python -m unittest discover -s tests -v` after installing `tools/openai-requirements.txt` in that isolated environment. Toolchains, private flash backups and run captures stay in ignored `.tools/` and `.local/` directories.
+| Path | Contents |
+| --- | --- |
+| `firmware/` | ESP-IDF 5.4.2 app (`main/`): diagnostics, media owner, Guided A/B client, SD, Wi-Fi |
+| `tools/` | Mac-side Python: serial collector, investigation service, provisioning, evidence assessors |
+| `tests/` | Host tests (Python + native C++ under ASan) |
+| `planning/` | Milestones, goals/specs, ADRs, fixtures |
+| `.tools/`, `.local/` | Ignored: toolchains, private runs, captures, backups |
 
 ## Development
 
-Requires Git, `uv`, and Python 3. Run `python3 tools/bootstrap.py` to install pinned vendor sources and the ESP32-P4 toolchain locally, then:
+Requires Git, `uv` and Python 3.
 
 ```sh
+python3 tools/bootstrap.py                     # pinned vendor sources + ESP32-P4 toolchain
 tools/idf.sh -C firmware build
-.tools/python-env/bin/python -m serial.tools.list_ports -v
-.tools/python-env/bin/python -m tools.capture_serial --port /dev/cu.usbmodem4 \
-  --output .local/runs/diagnostic-001 --seconds 360 --reset \
-  --checks imu_id ina226_manufacturer camera_driver_id rtc_advance sd_roundtrip
+tools/idf.sh -C firmware -p PORT flash         # confirm the board's USB identity first
+python3 -m venv .tools/investigation-env
+.tools/investigation-env/bin/python -m pip install -r tools/investigation-requirements.txt -r tools/openai-requirements.txt
+.tools/investigation-env/bin/python -m unittest discover -s tests -q
 ```
 
-Rediscover the port after reconnecting. Flash with `tools/idf.sh -C firmware -p PORT flash` only after verifying the connected board and preserving its recovery image. Raw serial data, events and summaries are kept together in each new run directory. Missing checks remain inconclusive; these summaries do not establish full G-0001 acceptance.
+Serial capture of a diagnostic run (see `--help` for `--checks`, `--stop-file`, `--spec-id`):
 
-Default diagnostic startup attempts a 60-second camera+JPEG stage followed by sequential audio, motion and animated-display baselines, plus short live and synthetic audio fixtures. The current private trial configuration uses Guided A/B startup, which skips those automatic media stages and waits for local Record controls. Allow eight minutes when collecting the full default diagnostic sequence. Assess each timing capture with `python3 -m tools.camera_baseline_evidence METADATA.json`, `tools.audio_baseline_evidence`, `tools.imu_baseline_evidence`, or `tools.ui_baseline_evidence`. Camera checks count missing application buffers, motion checks retain every latest-register polling attempt, and display checks join animation state IDs to actual panel submissions. Software submission timestamps do not measure physical screen presentation. Assess JPEG provenance/independent decoding with `python3 -m tools.jpeg_evidence RUN_DIRECTORY` on a finalized run; it preserves overall failure even if the images decode. Passing isolated stages does not establish combined-load behavior. A microSD card is installed; the SD read/write checks have passed. Physical interrupted-write recovery remains untested.
+```sh
+.tools/python-env/bin/python -m tools.capture_serial --port PORT --output .local/runs/NEW --seconds 360 --reset
+```
 
-Capture runs also retain checked raw media in `captures/`; incomplete exports stay explicitly incomplete. Run `python3 -m tools.inspect_capture PATH_TO_CAPTURE.json` to verify bytes and create a camera PNG or per-slot WAV files (camera conversion requires `ffmpeg`). Physical channel mapping and calibration are separate checks.
+Evidence assessors (`python3 -m tools.<name> RUN_DIR`): `camera_baseline_evidence`, `audio_baseline_evidence`, `imu_baseline_evidence`, `ui_baseline_evidence`, `jpeg_evidence`, `preview_evidence`, `restart_evidence`, `device_spectrum`, `investigation_evidence`. `tools.inspect_capture` converts a capture to PNG/WAV.
 
-The diagnostic has **Record & play** for a countdown, three-second raw recording, and four separately labeled playback slots. **Wi-Fi setup** accepts the local network name/password on the device; manual UI credentials are RAM-only. USB provisioning can persist settings on SD (see below). Once its address appears, run `python3 -m tools.network_probe --url http://DEVICE_IP --boot-id BOOT_ID --output .local/runs/lan-001` for three fresh echo exchanges. Audible playback, physical channel mapping and LAN round trips remain separate evidence.
+## Live text provider
 
-**Test 10 restarts** starts a bounded software-reset sequence after the diagnostic is ready. Keep a single serial collector attached from the initial boot through completion; each boot exports camera/PCM and repeats radio initialization without joining Wi-Fi. Run `python3 -m tools.restart_evidence RUN_DIRECTORY` after capture finalization to check all ten software-reset boots. Cold starts and SD checks require their separate fixtures. Reopening the USB port can itself reset this board; `--observation-boot BOOT_ID` makes an unexpected boot explicit and does not claim continuity before attachment.
+Put `OPENROUTER_API_KEY` in the ignored `.env.local.openrouter` (parsed literally, never sourced), then:
 
-Synthetic DSP diagnostics export three repetitions of four full spectra at startup. Generate the independent desktop reference with `python3 -m tools.audio_reference --output REFERENCE_DIRECTORY`, then assess the finalized device run with `python3 -m tools.device_spectrum --reference REFERENCE_DIRECTORY --run RUN_DIRECTORY`. Regenerate the embedded PCM header with `python3 -m tools.audio_reference --header firmware/main/dsp_fixtures.generated.h`. These fixtures validate synthetic arithmetic and input immutability, not acoustic calibration or continuous acquisition.
+```sh
+.tools/investigation-env/bin/python -m tools.investigation_service --host MAC_LAN_IP --port 8765 \
+  --output .local/runs/NEW --provider openrouter --model openai/gpt-5.6-sol --env .env.local.openrouter
+```
 
-On the Mac, prefix long serial runs with `caffeinate -is` to prevent host sleep for the collector’s lifetime. A sleeping host can lose USB events even while the battery-powered Tab5 continues running.
-
-For a longer operator session, add `--stop-file .local/STOP` to serial capture and create that file when finished; the collector closes partials and writes its summary. Use a fresh stop-file path or remove your previous stop request before starting.
-
-Generate synthetic desktop FFT references with `python3 -m tools.audio_reference --output .local/runs/audio-reference-001`. These use a direct DFT and explicit periodic-Hann amplitude normalization; they are preparation for device comparisons, not device DSP acceptance.
+Only verified measurement summaries and fixture notes go to the provider. Raw recordings stay local.
 
 ## License
 
 [MIT](LICENSE)
-
-## Guided A/B mock development
-
-G-0002 has a working device UI/transport and a bounded Mac WebSocket mock service.
-See the [protocol, SD provisioning and download instructions](planning/guided-ab-protocol.md#sd-assisted-testing--2026-09-22).
-The fixture compares a steady speaker sound at 8 inches and 16 inches, using
-MacBook built-in speakers at 30% system volume. Explicitly labeled SD replay can retest uploads and comparisons without new recordings. Saved SD bytes do not replace
-operator fixture notes or establish live-provider acceptance.
-
-## Live text service
-
-The same service can use the selected OpenRouter text model. Keep its key in an
-ignored local file containing `OPENROUTER_API_KEY`; the file is parsed literally,
-not sourced by a shell. Install `tools/openai-requirements.txt` in the host virtual
-environment, then run with a fresh evidence directory and the current Mac LAN IP:
-
-```sh
-.tools/investigation-env/bin/python -m tools.investigation_service \
-  --host MAC_LAN_IP --port 8765 --output .local/runs/live-text-001 \
-  --provider openrouter --model openai/gpt-5.6-sol --env .env.local.openrouter
-```
-
-Live mode sends verified measurement summaries and fixture notes to OpenRouter
-and its serving provider, using API credit. Raw recordings stay local. The host
-constructs measurement values and validates capture references; the model supplies
-prose. The default service remains mock. This command enables text responses;
-spoken input/output and handheld live acceptance are still pending.
