@@ -66,7 +66,7 @@ The user has agreed to start with C++/ESP-IDF, LVGL and a Python agent service. 
 
 ### G-0002: One usable end-to-end investigation
 
-**Goal:** [G-0002](plans/G-0002-thin-investigation-slice.md) — In progress; mock trial checkpoint recorded, live work deferred and full acceptance incomplete.
+**Goal:** [G-0002](plans/G-0002-thin-investigation-slice.md) — In progress; fresh physical mock trial and two live text summary probes pass; speech and full acceptance incomplete.
 
 **Serving spec:** [G-0002.01 Guided A/B vertical slice](plans/G-0002.01-guided-ab-slice.md) — In progress; device integration built, physical/live acceptance open.
 
@@ -96,3 +96,8 @@ Choose later milestones and their goals from what M-0001 teaches, then write spe
 
 
 **Progress — 2026-09-21, mock trial closeout:** G-0002 now retains three corrected developmental loops, delayed/cancelled reply evidence, and a controlled service outage followed by fresh recording/guidance and successful cancellation. All trial processes are stopped. Fixture and timing limits remain explicit; serial attachment failures are preserved. Live-provider/speech/usefulness work is deferred; no parent goal or full G-0001 gate is complete.
+
+**Progress — 2026-09-22, four-stage continuation:** User resumed transport diagnosis, fresh physical verification, OpenAI live speech/guidance and original G-0001 hardening. G-0002 remains In progress. The earlier live deferral is superseded; acceptance still requires all original physical, live, usefulness, concurrency, storage and power evidence.
+
+
+**Progress — 2026-09-22, commit checkpoint:** bounded TCP completion passes native tests and normal SD replay; a fresh physical mock loop completes (B/A −3.89 dB), while the prior B failure's cause remains unproven. Two approved OpenRouter text calls pass over stored evidence summaries. 192 host tests and P4 build/flash pass. [ADR-0011](adrs/ADR-0011-bounded-tcp-write-completion.md) and [ADR-0012](adrs/ADR-0012-live-prose-over-verified-summaries.md) record the bounded decisions. Speech, three rated live loops, formal fixture/timing gaps and all remaining G-0001 gates stay open. Trial processes are stopped; no milestone is complete.

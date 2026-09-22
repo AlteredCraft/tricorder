@@ -11,6 +11,29 @@ from test_investigation import evidence, fixture
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_async_provider_uses_same_service_path_and_records_identity(self):
+        class LiveFixture:
+            name='test-async-provider'
+            model='test-model'
+            async def respond(_,request):
+                from tools.investigation import MockProvider
+                await asyncio.sleep(0)
+                reply=MockProvider().respond(request)
+                reply['text']='Asynchronous provider result'
+                return reply
+        self.service.provider=LiveFixture()
+        await self.capture()
+        reply=await self.turn('r1',['take-a'])
+        self.assertEqual(reply['type'],'guidance')
+        self.assertEqual(reply['text'],'Asynchronous provider result')
+        events=[json.loads(line)['message'] for line in
+                (self.service.archive.root/'transcript.jsonl').read_text().splitlines()]
+        times=[event for event in events if event.get('type')=='provider_timing']
+        self.assertEqual(len(times),1)
+        self.assertEqual(times[0]['provider'],'test-async-provider')
+        self.assertEqual(times[0]['model'],'test-model')
+        self.assertGreaterEqual(times[0]['finished_host_ns'],times[0]['started_host_ns'])
+
     async def test_sd_replay_requires_explicit_server_mode_and_is_labeled(self):
         async def send(_):pass
         hello=dict(version=1,type='hello',boot_id='oldboot',session_id='saved',fixture=fixture().to_dict(),replay=True)
@@ -197,6 +220,25 @@ except ImportError:
 
 @unittest.skipIf(websockets is None,'install tools/investigation-requirements.txt for real WebSocket tests')
 class WebSocketTests(unittest.IsolatedAsyncioTestCase):
+    async def test_transport_close_records_codes_without_peer_reason(self):
+        from websockets.asyncio.client import connect
+        from tools.investigation_service import serve_mock
+        with tempfile.TemporaryDirectory() as directory:
+            server=await serve_mock('127.0.0.1',0,Path(directory))
+            async with server:
+                uri=f'ws://127.0.0.1:{server.sockets[0].getsockname()[1]}'
+                async with connect(uri,proxy=None) as socket:
+                    await socket.send(json.dumps(dict(version=1,type='hello',boot_id='boot',
+                        session_id='session',fixture=fixture().to_dict())))
+                    await socket.recv()
+                    await socket.close(code=1000,reason='private-peer-reason')
+            transcript=(Path(directory)/'boot-session/transcript.jsonl').read_text()
+            self.assertNotIn('private-peer-reason',transcript)
+            events=[json.loads(line)['message'] for line in transcript.splitlines()]
+            closure=next(event for event in events if event.get('type')=='transport_closed')
+            self.assertEqual(closure['received_code'],1000)
+            self.assertEqual(closure['sent_code'],1000)
+
     async def test_real_connection_upload_reply_cancel_and_session_capacity(self):
         from websockets.asyncio.client import connect
         from tools.investigation_service import serve_mock

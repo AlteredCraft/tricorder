@@ -1,8 +1,52 @@
 # Tricorder agent handoff
 
-Updated: 2026-09-22 — SD-assisted testing and persistent Wi-Fi configuration.
+Updated: 2026-09-22 — transport hardening, live text probes and completed physical A/B.
 
 ## Current checkpoint
+
+The fresh **8-inch A → 16-inch B physical mock trial completed**. The operator
+reported “Comparison appeared”; independent raw/hash/ingress and transcript/ACK
+checks pass. B/A digital RMS is **−3.8894 dB** (B quieter), with no clipped samples.
+This is one completed physical trial on the transport candidate, not live speech
+or full acoustic acceptance. The operator confirmed audible MacBook built-in
+speakers, a quiet room and measured placements before recording; the exact ruler
+or tape was not specified. Preserve that fixture limitation.
+
+Evidence below is relative to `.local/runs/20260922-transport-resume/`:
+
+- Physical boot `92ca13cf587e052c0a184f6033f42c4e`, session
+  `ab-37d8b855eaf9b6a50662cc17bcd1f9ad`: `physical/assessment-1.json`,
+  `physical/operator-1.json`, `physical/fixture.json`, `physical/mock/` and
+  `physical/serial/`. `physical/interrupted-trial.json` retains the earlier
+  adjustment timeout during a conversation interruption; it remains incomplete.
+  The finalized serial summary is **FAIL** for malformed instrumentation, with
+  all three startup checks passing and no integrity errors listed. Preserve that
+  summary separately from the passing A/B assessment; no full log-integrity pass.
+- Bounded TCP completion is implemented below WebSocket framing, retaining the
+  original timeouts and cancellation behavior. Native short-write tests and normal
+  device SD replay pass (`candidate/assessment.json`). The 80-ms/chunk receiver
+  trial fails explicitly at the two-second write timeout (`slow-candidate/`).
+  The historical B failure still lacks send counts: its exact cause is unproven.
+  The successful new physical trial does not erase it or establish reliability.
+- The asynchronous text adapter supports OpenRouter `openai/gpt-5.6-sol` through
+  the existing service/evidence contract. Two approved real summary calls pass in
+  **3.21 / 2.93 seconds** (`openrouter-smoke.json`). Only verified summaries,
+  capture references and fixture notes were sent. The host owns measurements;
+  provider failure never silently falls back to mock. Speech remains unimplemented.
+- **192 host tests pass** (`tests-3.txt`), including native sanitizer and localhost
+  WebSocket checks. P4 build/flash pass (`build-3.txt`, `flash-1.txt`).
+  `candidate-manifest.json` and `candidate-artifacts/` identify the flashed image;
+  later host/docs changes are captured separately in `commit-checkpoint.json`.
+- Current network was provisioned from ignored `.env.local.newnet`; the ignored
+  `.env.local.openrouter` contains the provider key. Never print or commit values.
+  Initial network failures remain alongside successful provisioning/LAN checks.
+
+The completed trial has been closed: tone finished, collector finalized and mock
+service stopped. The candidate remains flashed. The user requested a local commit;
+no push. G-0002, G-0001 and M-0001 remain **In progress** with unchanged gates.
+The sections labeled earlier/previous checkpoints retain historical claims only.
+
+## Earlier checkpoint — SD recovery and replay
 
 **Latest physical retry:** the memory-fixed image stayed running, saved A and B
 to SD, then displayed **Incomplete** while starting B's upload. The mock received
@@ -106,12 +150,24 @@ This checkpoint adds the device implementation to parent `ef38657` (host mock ch
 
 ## Resume here
 
-1. Read this checkpoint, [G-0002](planning/plans/G-0002-thin-investigation-slice.md), [G-0002.01](planning/plans/G-0002.01-guided-ab-slice.md), [protocol/setup](planning/guided-ab-protocol.md) and [ADR-0010](planning/adrs/ADR-0010-device-owned-ab-lan-experiment.md). Use the existing device-owned flow and provider seam; do not build a second protocol/demo.
-2. No immediate operator repeat is requested. If continuing mock hardening, the known evidence gaps are actual panel timing, device timing specifically during pending-turn cancellation, and complete pre-run fixture notes for formal acceptance. Distinguish those from already observed capture cancellation and successful recovery. Preserve the original failed runs and ordinary serial FAIL summaries.
-3. Resume live-provider work only when the user resumes that phase. Then choose the model/speech provider, configure credentials locally on the Mac, implement the adapter and spoken input/guidance using the same evidence contract, and collect the three live loops plus responsiveness/usefulness feedback. Never put credentials in chat/Git. Provider absence does not complete G-0002.
-4. Reuse this path for G-0001 hardening. Full simultaneous camera/preview/audio/FFT/IMU/UI, backpressure, memory return, storage, power and the original interaction statistics remain open. Before ten-minute camera runs, replace the diagnostic 6 MiB/30-JPEG retention pool with bounded recycling/streaming; it is not evidence for 300 JPEGs. Preserve the JPEG fail-stop guard; the approved fault trial is already done and must not be repeated as startup routine.
+1. Read the current checkpoint, [G-0002.01](planning/plans/G-0002.01-guided-ab-slice.md),
+   [protocol/setup](planning/guided-ab-protocol.md), [ADR-0011](planning/adrs/ADR-0011-bounded-tcp-write-completion.md)
+   and [ADR-0012](planning/adrs/ADR-0012-live-prose-over-verified-summaries.md).
+   Retain the existing device-owned flow and local Record controls.
+2. Continue instrumented transport checks if failures recur. Preserve originals,
+   partial transfers and timeouts. Complete fixture characterization and actual
+   panel/pending-cancel timing before claiming formal mock acceptance.
+3. Text provider selection and credentials are complete. Next integrate speech
+   into the same flow and collect three live handheld loops with responsiveness
+   and usefulness feedback. No speech provider/codec has been adopted; choose it
+   before implementing or sending audio. The two summary probes are not live loops.
+4. Resume G-0001 hardening on the shared implementation: full simultaneous
+   camera/preview/audio/FFT/IMU/UI, backpressure, memory return, storage, power and
+   original interaction statistics. Before ten-minute camera runs, replace the
+   diagnostic 6 MiB/30-JPEG retention pool with bounded recycling/streaming.
+   Preserve the JPEG fail-stop guard; fault injection is not a startup routine.
 
-## Implementation and validation
+## Earlier implementation and validation — 2026-09-21
 
 - `firmware/main/investigation{,_protocol,_capture}.cpp` and `investigation_wire.h`: native state/evidence guard, bounded IDF WebSocket transport, LVGL controls and one raw capture at a time through the existing media owner. Only local controls initiate capture; terminal states require a fresh session. Endpoint entry now has a visible keyboard with verified panel bounds.
 - Shared fixture: MacBook built-in speakers, continuous 1000 Hz, **30% system volume**, **8 inches / 16 inches** to the farther microphone hole (slot 0), same orientation. Use imperial measurements going forward. The user confirmed measured distances and no noticeable background noise for the two resumed repeats. The first corrected run has incomplete fixture notes; do not retroactively call all three pre-frozen acceptance runs.
@@ -137,7 +193,7 @@ Detailed chronology, session IDs, limitations and architecture disposition remai
 ## Device and execution
 
 - Correct Tab5 USB serial **E8:F6:0A:E2:E0:0E**, last found at `/dev/cu.usbmodem1101`, P4 v1.3, 16 MB flash, 32 MB PSRAM, ST7121. Rediscover with `.tools/python-env/bin/python -m serial.tools.list_ports -v` and match identity before opening. `/dev/cu.usbmodem11101` is another board.
-- **Opening USB serial can reset the Tab5**, even without an explicit reset. Keep one collector open through an operator trial and use a suitable bounded duration. SD-provisioned Wi-Fi/endpoint settings reload after ordinary reset; manual screen edits are temporary. Latest LAN addresses: Mac `10.0.13.37`, Tab5 `10.0.13.116`; recheck before use.
+- **Opening USB serial can reset the Tab5**, even without an explicit reset. Keep one collector open through an operator trial and use a suitable bounded duration. SD-provisioned Wi-Fi/endpoint settings reload after ordinary reset; manual screen edits are temporary. Latest LAN addresses: Mac `192.168.0.44`, Tab5 `192.168.0.66`; recheck before use.
 - Current private sdkconfig has `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` and an editable initial endpoint. This skips automatic media diagnostics and waits for manual A/B after board/display/radio startup. Skipped stages do not pass diagnostic gates. JPEG fault injection stays disabled. The default build option remains off.
 - Start the mock using a new evidence directory, join Wi-Fi and open Guided A/B. **Start mock connects; the separate Record A button starts acquisition.** After guidance, Confirm position B enables the separate Record B button. Follow [protocol/setup](planning/guided-ab-protocol.md) for exact commands and bounds.
 - Full host tests: `.tools/investigation-env/bin/python -m unittest discover -s tests -q` (this environment includes the pinned WebSocket dependency). Build: `tools/idf.sh -C firmware build`. Bootstrap: `python3 tools/bootstrap.py`. USB, localhost listeners and builds may need sandbox escalation. Do not rebuild/reflash just to identify the current checkpoint.

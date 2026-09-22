@@ -16,7 +16,7 @@
 - [G-0001.04 Agent interaction](G-0001.04-agent-interaction.md)
 - [G-0001.05 Power and recovery](G-0001.05-power-recovery.md)
 
-**Status.** In progress; implementation paused at the user's request on 2026-09-21. Hardware baseline and isolated live-audio integrity evidence are recorded; the full investigation and remaining acceptance gates are unverified.
+**Status.** In progress; user resumed the shared investigation and subsequent full hardening on 2026-09-22. Hardware baseline and isolated live-audio integrity evidence are recorded; the full investigation and remaining acceptance gates are unverified.
 
 **Relationship to G-0002.** [G-0002](G-0002-thin-investigation-slice.md) is an enabling sibling under M-0001, prioritized next on resumption to establish one usable end-to-end loop. Its shared implementation is then hardened here. G-0001 retains all five specs and the full outcome above; G-0002 completion does not imply G-0001 completion. Partial prerequisites permit the bounded G-0002 experiment, not acceptance of G-0001's dependent specs. Evidence may be reused only when it independently satisfies the original owning spec's checks.
 

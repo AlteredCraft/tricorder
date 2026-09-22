@@ -15,9 +15,9 @@ Hold it, point it, move it, and ask questions. The goal is to learn what the dev
 
 ## Status
 
-G-0001 and G-0002 are in progress. The Tab5 runs a device-owned, text-only Guided A/B investigation against the Mac mock service. Three developmental physical loops and bounded failure/recovery trials are retained. SD-backed Wi-Fi provisioning now avoids re-entering settings after resets, and completed A/B captures can be archived on the card and downloaded with independent SHA-256 verification. Live-provider and speech work remain deferred. See [HANDOFF.md](HANDOFF.md) for current evidence and [TODO.md](TODO.md) for remaining operator fixtures.
+G-0001 and G-0002 are in progress. The Tab5 runs a device-owned Guided A/B flow with SD-backed Wi-Fi setup and verified recording archives. Bounded TCP write completion now passes native tests and device replay; a fresh 8-inch/16-inch physical mock loop completed with B 3.89 dB quieter. An OpenRouter text adapter using `openai/gpt-5.6-sol` passes two approved live calls over saved summaries. Speech and three operator-rated live handheld loops remain open, as do full reliability gates and the historical upload failure's exact cause. **192 host tests pass; P4 build/flash pass.** See [HANDOFF.md](HANDOFF.md) for evidence and [TODO.md](TODO.md) for operator follow-ups.
 
-Run host checks with `python3 -m unittest discover -s tests -v`. Toolchains, private flash backups and run captures stay in ignored `.tools/` and `.local/` directories.
+Run full host checks with `.tools/investigation-env/bin/python -m unittest discover -s tests -v` after installing `tools/openai-requirements.txt` in that isolated environment. Toolchains, private flash backups and run captures stay in ignored `.tools/` and `.local/` directories.
 
 ## Development
 
@@ -60,3 +60,22 @@ See the [protocol, SD provisioning and download instructions](planning/guided-ab
 The fixture compares a steady speaker sound at 8 inches and 16 inches, using
 MacBook built-in speakers at 30% system volume. Explicitly labeled SD replay can retest uploads and comparisons without new recordings. Saved SD bytes do not replace
 operator fixture notes or establish live-provider acceptance.
+
+## Live text service
+
+The same service can use the selected OpenRouter text model. Keep its key in an
+ignored local file containing `OPENROUTER_API_KEY`; the file is parsed literally,
+not sourced by a shell. Install `tools/openai-requirements.txt` in the host virtual
+environment, then run with a fresh evidence directory and the current Mac LAN IP:
+
+```sh
+.tools/investigation-env/bin/python -m tools.investigation_service \
+  --host MAC_LAN_IP --port 8765 --output .local/runs/live-text-001 \
+  --provider openrouter --model openai/gpt-5.6-sol --env .env.local.openrouter
+```
+
+Live mode sends verified measurement summaries and fixture notes to OpenRouter
+and its serving provider, using API credit. Raw recordings stay local. The host
+constructs measurement values and validates capture references; the model supplies
+prose. The default service remains mock. This command enables text responses;
+spoken input/output and handheld live acceptance are still pending.

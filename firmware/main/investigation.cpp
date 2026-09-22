@@ -2,12 +2,14 @@
 #include "investigation_protocol.h"
 #include "investigation_wire.h"
 #include "investigation_capture.h"
+#include "transport_write.h"
 #include "test_storage.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_transport.h"
 #include "esp_transport_tcp.h"
 #include "esp_transport_ws.h"
+#include "esp_transport_internal.h"
 #include "esp_heap_caps.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -86,17 +88,68 @@ void show(InvestigationProtocol& p,const char* message,const char* button_text=n
     cJSON_Delete(identity);diagnostic_emit(e);
 }
 
+// The pinned TCP writer may return a positive short count. Complete that byte
+// range below WS framing, under its original budget; a fresh WS send would
+// corrupt the unfinished frame. All handles remain owned by the media worker.
+struct TcpCompletion {
+    esp_transport_handle_t tcp=nullptr;
+    bool failed=false, cancel_notice=false;
+};
+TcpCompletion& completion(esp_transport_handle_t t) {
+    return *static_cast<TcpCompletion*>(esp_transport_get_context_data(t));
+}
+esp_transport_handle_t parent_tcp(esp_transport_handle_t t) {
+    return completion(t).tcp;
+}
+int complete_write(esp_transport_handle_t t,const char* data,int size,int timeout) {
+    auto& state=completion(t);
+    if(state.failed)return -1;
+    const int result=transport_write_all(data,size,timeout,
+        [t](const char* bytes,int count,int budget) {
+            int sent=esp_transport_write(parent_tcp(t),bytes,count,budget);
+            if(sent>0 && sent<count) {
+                auto* e=diagnostic_event("investigation_tcp_short_write");
+                cJSON_AddNumberToObject(e,"requested_bytes",count);
+                cJSON_AddNumberToObject(e,"sent_bytes",sent);diagnostic_emit(e);
+            }
+            return sent;
+        },now_ms,[&state]{return cancelled.load() && !state.cancel_notice;});
+    if(result!=size)state.failed=true;
+    return result;
+}
+
 class Socket {
 public:
-    esp_transport_handle_t tcp=nullptr,ws=nullptr;
+    esp_transport_handle_t tcp=nullptr,complete_tcp=nullptr,ws=nullptr;
+    TcpCompletion completion_state;
     char* buffer=nullptr;
     std::unique_ptr<InvestigationFrames> frames;
     Socket() {
         buffer=static_cast<char*>(heap_caps_malloc(32769,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
         if(buffer)frames.reset(new InvestigationFrames(buffer));
-        tcp=esp_transport_tcp_init();if(tcp)ws=esp_transport_ws_init(tcp);
+        tcp=esp_transport_tcp_init();
+        if(tcp)complete_tcp=esp_transport_init();
+        if(complete_tcp) {
+            completion_state.tcp=tcp;
+            esp_transport_set_context_data(complete_tcp,&completion_state);
+            // Pinned IDF's WS close handler requires the parent's socket getter,
+            // and its error capture shares the TCP foundation. Public callbacks
+            // alone do not forward these; preserve both before constructing WS.
+            complete_tcp->foundation=tcp->foundation;
+            complete_tcp->_get_socket=[](esp_transport_handle_t t){return esp_transport_get_socket(parent_tcp(t));};
+            esp_transport_set_func(complete_tcp,
+                [](esp_transport_handle_t t,const char* host,int port,int timeout){return esp_transport_connect(parent_tcp(t),host,port,timeout);},
+                [](esp_transport_handle_t t,char* data,int size,int timeout){return esp_transport_read(parent_tcp(t),data,size,timeout);},
+                complete_write,
+                [](esp_transport_handle_t t){return esp_transport_close(parent_tcp(t));},
+                [](esp_transport_handle_t t,int timeout){return esp_transport_poll_read(parent_tcp(t),timeout);},
+                [](esp_transport_handle_t t,int timeout){return esp_transport_poll_write(parent_tcp(t),timeout);},
+                [](esp_transport_handle_t){return ESP_OK;});
+            esp_transport_set_parent_transport_func(complete_tcp,parent_tcp);
+            ws=esp_transport_ws_init(complete_tcp);
+        }
     }
-    ~Socket() {if(ws){esp_transport_close(ws);esp_transport_destroy(ws);}if(tcp)esp_transport_destroy(tcp);free(buffer);}
+    ~Socket() {if(ws){esp_transport_close(ws);esp_transport_destroy(ws);}if(complete_tcp)esp_transport_destroy(complete_tcp);if(tcp)esp_transport_destroy(tcp);free(buffer);}
     bool connect(const InvestigationEndpoint& e) {
         if(cancelled.load() || !ws || !buffer)return false;
         esp_transport_ws_set_path(ws,e.path);
@@ -110,7 +163,11 @@ public:
         if(!data)return false;
         size_t n=strlen(data);
         int64_t started=esp_timer_get_time();errno=0;
+        // A clean connection may notify a local cancel. Never append another
+        // frame after any failed/partial write, including cancellation mid-frame.
+        completion_state.cancel_notice=kind=="cancel";
         int sent=n<=32768?esp_transport_ws_send_raw(ws,static_cast<ws_transport_opcodes_t>(0x81),data,n,2000):-1;
+        completion_state.cancel_notice=false;
         int error=errno;bool ok=sent==static_cast<int>(n);
         if(!ok || kind!="capture_chunk") {
             auto* e=diagnostic_event("investigation_transport");

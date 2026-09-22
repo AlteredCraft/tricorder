@@ -1,0 +1,3 @@
+# Optional live-provider dependencies; isolated from the ESP-IDF Python environment.
+-r investigation-requirements.txt
+openai==3.18.0

@@ -8,6 +8,7 @@ import argparse
 import asyncio
 from contextlib import suppress
 import json
+import inspect
 from pathlib import Path
 import time
 
@@ -182,7 +183,11 @@ class MockSession:
                 await asyncio.sleep(self.delay_s)
                 # Future network providers implement this awaitable seam. No synchronous
                 # model call may block the receive/cancel loop.
+                started=time.monotonic_ns()
                 reply=await self.provider_reply(request)
+                self.archive.record({'type':'provider_timing','request_id':request['request_id'],
+                    'provider':self.provider.name,'model':getattr(self.provider,'model',None),
+                    'started_host_ns':started,'finished_host_ns':time.monotonic_ns()})
             if self.pending is not request or self.phase!='pending':return
             if time.monotonic()>=self.expires:
                 self.phase='incomplete';self.pending=None
@@ -202,7 +207,8 @@ class MockSession:
             await self.emit(self.envelope('incomplete',reason='provider_or_evidence_failure'))
 
     async def provider_reply(self, request):
-        return self.provider.respond(request)
+        reply=self.provider.respond(request)
+        return await reply if inspect.isawaitable(reply) else reply
 
     async def drain(self):
         if self.task:
@@ -220,7 +226,7 @@ class MockSession:
             self.archive.record({'type':'closed','state':self.phase,'incomplete_captures':incomplete})
 
 
-async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_only=False):
+async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_only=False, provider=None):
     from websockets.asyncio.server import serve
     from websockets.exceptions import ConnectionClosed
     output=Path(output)
@@ -233,7 +239,7 @@ async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_o
         active=True
         async def send(message):
             await asyncio.wait_for(socket.send(json.dumps(message,allow_nan=False)),timeout=2)
-        session=MockSession(output,send,delay_s=delay_s,replay_only=replay_only)
+        session=MockSession(output,send,delay_s=delay_s,replay_only=replay_only,provider=provider)
         try:
             while True:
                 wire=await asyncio.wait_for(socket.recv(),timeout=30)
@@ -264,12 +270,30 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--delay-seconds',type=float,default=0,help='Controlled mock-response delay, 0–30')
     parser.add_argument('--replay-only',action='store_true',help='Require labeled SD replay; no new physical trial')
+    parser.add_argument('--provider',choices=('mock','openai','openrouter'),default='mock')
+    parser.add_argument('--model',help='Exact model ID; default OpenRouter openai/gpt-5.6-sol or direct gpt-4.1-mini')
+    parser.add_argument('--env',type=Path,help='Local provider-key file; parsed literally, never sent to device')
     args=parser.parse_args()
     if not 0<=args.delay_seconds<=30:parser.error('delay must be 0–30 seconds')
     async def run():
-        server=await serve_mock(args.host,args.port,args.output,delay_s=args.delay_seconds,replay_only=args.replay_only)
-        print(f'Mock ready at ws://{args.host}:{args.port}; private evidence: {args.output}',flush=True)
-        async with server:await server.serve_forever()
+        client=None;provider=None
+        if args.provider!='mock':
+            from openai import AsyncOpenAI
+            from tools.openai_provider import OpenAIProvider
+            from tools.service_credentials import load_api_key
+            router=args.provider=='openrouter'
+            try:key=load_api_key(args.provider,args.env)
+            except (ValueError,OSError):parser.error('Cannot load the selected provider key from local configuration')
+            client=AsyncOpenAI(api_key=key,base_url='https://openrouter.ai/api/v1' if router else 'https://api.openai.com/v1',
+                               timeout=12,max_retries=0)
+            provider=OpenAIProvider(client,model=args.model or ('openai/gpt-5.6-sol' if router else 'gpt-4.1-mini'),route=args.provider)
+        try:
+            server=await serve_mock(args.host,args.port,args.output,delay_s=args.delay_seconds,
+                                    replay_only=args.replay_only,provider=provider)
+            print(f'{args.provider} service ready at ws://{args.host}:{args.port}; private evidence: {args.output}',flush=True)
+            async with server:await server.serve_forever()
+        finally:
+            if client:await client.close()
     try:asyncio.run(run())
     except KeyboardInterrupt:pass
 
