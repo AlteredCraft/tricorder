@@ -1,6 +1,6 @@
 # Planning guidelines
 
-Planning docs exist so the next person (or agent) can pick up the work quickly. Write the fewest words that let them act. State results plainly. Mention open work only as a next action.
+Planning docs exist so the next person (or agent) can pick up the work quickly. The milestone file and the active spec together show where things stand and what's next. Write the fewest words that let them act. State results plainly. Mention open work only as a next action.
 
 ## Principles
 
@@ -20,7 +20,6 @@ Planning docs exist so the next person (or agent) can pick up the work quickly. 
 | Goal | `plans/G-NNNN-title.md` ([template](goal-template.md)) | Outcome, measure, spec table, status | ≤ 30 lines |
 | Spec | `plans/G-NNNN.nn-title.md` ([template](spec-template.md)) | Hypothesis, refuted-if, checks, observed | Proposal ≤ 40 lines; Observed ≤ 2 lines per entry |
 | ADR | `adrs/ADR-NNNN-title.md` ([template](adrs/ADR-template.md)) | A durable choice already made, with evidence | ≤ 30 lines |
-| Handoff | [../HANDOFF.md](../HANDOFF.md) | State, next steps, device/env gotchas, commands | ≤ 80 lines; rewrite it, don't append |
 | Operator TODO | [../TODO.md](../TODO.md) | Only things needing the user's hands or equipment | Short list |
 
 Reference material that several specs use (e.g. [guided-ab-protocol.md](guided-ab-protocol.md)) may live in `planning/`. Keep it operational: the protocol, commands and limits.
@@ -30,7 +29,7 @@ Status values: goals and milestones use Not started, In progress, Met or Partly 
 ## Specs
 
 - **Checks** are concrete and numeric where possible: evidence source plus pass condition.
-- **Observed** is a bullet list: `- YYYY-MM-DD — result (key numbers). Evidence: run-dir. → ADR-NNNN`. End with one `- Open:` bullet listing what remains.
+- **Observed** is a bullet list: `- YYYY-MM-DD — result (key numbers). Evidence: run-dir. → ADR-NNNN`. End with an `- Open:` bullet: the ordered next work, each item sized to finish in one session.
 - Record measured results, bugs found and fixed, and decisions. Don't record: "checks written before implementation", plans, restated open gates, "no ADR needed", process/PID status, pauses.
 - **Changing checks:** edit them and add a dated one-line `Revision:` to the header (what changed, why). Earlier results stand under the criteria they were measured against.
 
@@ -55,9 +54,12 @@ The user's physical time is the scarcest resource.
 - Before asking, state in one sentence what the trial tests and which outcome would change the plan.
 - Don't repeat a physical fixture unless the code or conditions it tests have changed.
 
-## Agent workflow
+## Sessions
 
-1. **Start:** read [HANDOFF.md](../HANDOFF.md) and the active spec.
+The active spec's `Open` bullet is an ordered list of next work, each item sized to finish in one session.
+
+1. **Start:** read [milestones.md](milestones.md) and the active spec. Take the first Open item.
 2. **Work:** write tests first for code changes. When a result lands, add its Observed bullet. When a durable choice is made, write the ADR in the same change.
-3. **End:** rewrite HANDOFF.md. Update goal/milestone status lines only if they changed. Check the size budgets.
-4. Ask the user when a trade-off changes product intent or scope.
+3. **End:** update the spec's Open list, plus goal/milestone status lines if they changed. Check the size budgets.
+4. **Stopping early:** if a session must stop before its item is done, write a short temporary `HANDOFF.md` at the repo root (where you are, what's half-done, how to resume). The next session finishes the item and deletes it. There's no standing handoff file.
+5. Ask the user when a trade-off changes product intent or scope.

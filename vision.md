@@ -8,7 +8,7 @@ The goal is to learn about both the physical world and the device itself by givi
 
 > “I learned something about this object—and something about what my device can do.”
 
-**Status:** in development. The experiences below describe intended behavior; see [HANDOFF.md](HANDOFF.md) for what works today and the [milestones](planning/milestones.md) for the plan.
+**Status:** in development. The experiences below describe intended behavior; see the [milestones](planning/milestones.md) for what works today and what's next.
 
 ## The experience
 

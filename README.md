@@ -7,8 +7,7 @@ Hold it, point it, move it, and ask questions. The goal is to learn what the dev
 ## Start here
 
 - [Vision](vision.md): the product concept.
-- [Handoff](HANDOFF.md): current state, next steps, device setup.
-- [Milestones](planning/milestones.md): Milestone → Goal → Spec, plus [ADRs](planning/adrs/).
+- [Milestones](planning/milestones.md): current state and next work, via Milestone → Goal → Spec, plus [ADRs](planning/adrs/).
 - [Planning guidelines](planning/README.md): how the docs are kept.
 - [Guided A/B protocol](planning/guided-ab-protocol.md): wire protocol and trial/replay commands.
 - [TODO](TODO.md): tasks that need the operator.
@@ -43,6 +42,15 @@ Serial capture of a diagnostic run (see `--help` for `--checks`, `--stop-file`, 
 ```
 
 Evidence assessors (`python3 -m tools.<name> RUN_DIR`): `camera_baseline_evidence`, `audio_baseline_evidence`, `imu_baseline_evidence`, `ui_baseline_evidence`, `jpeg_evidence`, `preview_evidence`, `restart_evidence`, `device_spectrum`, `investigation_evidence`. `tools.inspect_capture` converts a capture to PNG/WAV.
+
+## Device notes
+
+- The Tab5's USB serial is **E8:F6:0A:E2:E0:0E**. Rediscover the port with `.tools/python-env/bin/python -m serial.tools.list_ports -v`; another attached board may show up too.
+- **Opening the serial port can reset the Tab5.** Keep one collector open for a whole trial, and prefix long runs with `/usr/bin/caffeinate -is` (Mac sleep drops USB data).
+- Wi-Fi and the service endpoint load from SD at boot. Provision them with `tools.provision_device` ([protocol doc](planning/guided-ab-protocol.md#sd-provisioning-archive-and-download)). The SD card holds plaintext Wi-Fi credentials, so keep it private.
+- The private `firmware/sdkconfig` sets `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` (boot straight to Guided A/B, skipping diagnostics).
+- Flash backups and recovery steps: `.local/runs/20260920-baseline/RECOVERY.md`.
+- Secrets live in ignored `.env.local.*` files. Never print or commit them.
 
 ## Live text provider
 

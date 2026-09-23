@@ -21,6 +21,8 @@
 
 Sequencing: G-0002 (usefulness) first, then harden the same code under G-0001. G-0002 does not lower G-0001's checks.
 
+**Next:** the ordered Open list in [G-0002.01](plans/G-0002.01-guided-ab-slice.md#observed).
+
 ## Later
 
 - Hosted agent service (device auth, TLS, credential provisioning, internet latency).

@@ -24,4 +24,5 @@ Out of scope: one line.
 ## Observed
 
 - YYYY-MM-DD — result (key numbers). Evidence: `run-dir`. → ADR-NNNN
-- Open: what remains.
+- Open, in order (one session each):
+  1. Next item.

@@ -14,6 +14,6 @@
 
 | Spec | Status | State |
 | --- | --- | --- |
-| [.01 Guided A/B vertical slice](G-0002.01-guided-ab-slice.md) | In progress | Mock loop, failure handling, SD archive/replay and live text model work. Instrument UI, speech and three rated live loops open. |
+| [.01 Guided A/B vertical slice](G-0002.01-guided-ab-slice.md) | In progress | Mock loop, failure handling, SD archive/replay and live text model work. Next: instrument UI, then speech and three rated live loops. |
 
 **Status:** In progress.
