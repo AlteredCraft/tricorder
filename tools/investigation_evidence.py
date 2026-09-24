@@ -11,6 +11,47 @@ from pathlib import Path
 import struct
 
 
+QUESTION_TYPES=('question_start','question_end','transcript','question_confirm')
+
+
+def spoken_questions(root,rows,traffic):
+    """Check the spoken-ask exchange (before Record A only) and return the A/B traffic."""
+    def check(ok,reason):
+        if not ok:raise ValueError(reason)
+    first=next((i for i,m in enumerate(traffic) if m['type']=='capture_start'),len(traffic))
+    check(all(m['type'] not in QUESTION_TYPES for m in traffic[first:]),'question traffic after Record A')
+    analyses={r['question_id']:r for r in rows if r.get('type')=='question_analysis'}
+    answers=[r for r in rows if r.get('type')=='operator_question']
+    questions=[];heard={};operator_question=None
+    for m in traffic[:first]:
+        if m['type']=='question_start':
+            meta=m['metadata'];key=meta['question_id']
+            check(isinstance(key,str) and '/' not in key and '\\' not in key,'unsafe question identity')
+            raw=(root/'questions'/f'{key}.bin').read_bytes()
+            check(len(raw)==meta['size_bytes']==meta['frames']*2 and meta['sample_rate_hz']==16000
+                  and meta['channels']==1 and hashlib.sha256(raw).hexdigest()==meta['sha256'],'question audio mismatch')
+            questions.append(dict(question_id=key,duration_s=meta['frames']/16000,stopped_by=meta['stopped_by']))
+        elif m['type']=='question_end':
+            check(questions and m['question_id']==questions[-1]['question_id'],'question end identity')
+        elif m['type']=='transcript':
+            q=questions[-1] if questions else {}
+            check(m['question_id']==q.get('question_id'),'transcript identity')
+            record=analyses.get(m['question_id'],{})
+            level=record.get('speech_to_noise_db')
+            check(record.get('status')==m['status'] and record.get('text')==m['text'],'transcript not joined to its analysis')
+            check(m['speech_to_noise_db']==(None if level is None else round(level,1)),'speech-to-noise level mismatch')
+            q.update(status=m['status'],text=m['text'],speech_to_noise_db=m['speech_to_noise_db'],accepted=None)
+            if m['status']=='heard':heard[m['question_id']]=m['text']
+        elif m['type']=='question_confirm':
+            key=m['question_id']
+            check(key in heard,'confirmation without a heard transcript')
+            answer=next((r for r in answers if r['question_id']==key),None)
+            check(answer is not None and answer['accepted'] is m['accepted'] and answer['text']==heard.pop(key),'confirmation record mismatch')
+            questions[-1]['accepted']=m['accepted']
+            if m['accepted']:operator_question=answer['text']
+    return [m for m in traffic if m['type'] not in QUESTION_TYPES],questions,operator_question
+
+
 def assess_run(root):
     root=Path(root)
     result=dict(status='fail',scope='saved A/B bytes and transcript joins only; no physical/live acceptance',errors=[])
@@ -26,6 +67,8 @@ def assess_run(root):
         result['replay']=replay
         if replay:result['scope']='SD transport replay; no new sensor acquisition or physical/live acceptance'
         check(all(m.get('version')==1 and m.get('boot_id')==boot and m.get('session_id')==session for m in traffic),'wire identity mismatch')
+        traffic,questions,operator_question=spoken_questions(root,rows,traffic)
+        result.update(questions=questions,operator_question=operator_question)
         expected=['hello','ready']+['capture_start','capture_ack','capture_end','capture_ack','turn','guidance','ack','acknowledged']+['capture_start','capture_ack','capture_end','capture_ack','turn','comparison','ack','acknowledged']
         check([m['type'] for m in traffic]==expected,'incomplete/out-of-order exchange')
         captures=[];proofs=[]

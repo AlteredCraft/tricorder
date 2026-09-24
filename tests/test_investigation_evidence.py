@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from tools.investigation_service import MockSession
 from test_investigation import evidence, fixture
+from test_question import question
+from test_spoken_ask_service import FakeTranscriber
 from tools.investigation_evidence import assess_run
 
 class InvestigationEvidenceTests(unittest.IsolatedAsyncioTestCase):
@@ -14,10 +16,17 @@ class InvestigationEvidenceTests(unittest.IsolatedAsyncioTestCase):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name)
         async def send(_):pass
-        s=MockSession(self.root,send)
+        s=MockSession(self.root,send,transcriber=FakeTranscriber('Is it louder?','Is the fan louder?'))
         async def message(kind,**fields):
             await s.receive(dict(version=1,type=kind,boot_id='boot',session_id='session',**fields))
         await message('hello',fixture=fixture().to_dict())
+        for n,accepted in ((1,False),(2,True)):
+            key=f'session-q{n}';meta,raw=question(key)
+            await message('question_start',metadata=meta)
+            for offset in range(0,len(raw),4096):
+                await message('question_chunk',question_id=key,offset=offset,data=base64.b64encode(raw[offset:offset+4096]).decode())
+            await message('question_end',question_id=key,sha256=meta['sha256'])
+            await s.drain();await message('question_confirm',question_id=key,accepted=accepted)
         for index,amplitude in enumerate([1000,500]):
             key=f'take-{index}';meta,raw=evidence(key,amplitude,acquisition_start_us=index*30000+100,acquisition_end_us=index*30000+20100)
             await message('capture_start',metadata=meta)
@@ -35,6 +44,24 @@ class InvestigationEvidenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'],'pass',result)
         self.assertAlmostEqual(result['rms_delta_db'],-6.020599913)
         self.assertFalse(result['driver_proofs_present'])
+        self.assertEqual(result['operator_question'],'Is the fan louder?')
+        self.assertEqual([q['status'] for q in result['questions']],['heard','heard'])
+        self.assertEqual([q['accepted'] for q in result['questions']],[False,True])
+        self.assertAlmostEqual(result['questions'][0]['speech_to_noise_db'],15,delta=1)
+
+    async def test_question_audio_must_match_its_transcript_record(self):
+        (self.run/'questions'/'session-q2.bin').write_bytes(b'bad')
+        self.assertEqual(assess_run(self.run)['status'],'fail')
+
+    async def test_question_traffic_after_capture_a_is_rejected(self):
+        path=self.run/'transcript.jsonl'
+        rows=[json.loads(line) for line in path.read_text().splitlines()]
+        moved=[r for r in rows if r['message'].get('payload',{}).get('type','').startswith('question_confirm')]
+        rows=[r for r in rows if r not in moved]
+        at=next(i for i,r in enumerate(rows) if r['message'].get('payload',{}).get('type')=='turn')
+        rows[at:at]=moved
+        path.write_text(''.join(json.dumps(row)+'\n' for row in rows))
+        self.assertEqual(assess_run(self.run)['status'],'fail')
 
     async def test_corrupt_bytes_or_reply_cannot_pass(self):
         capture=next((self.run/'captures').glob('*.bin'));capture.write_bytes(b'bad')

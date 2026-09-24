@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from tools.investigation import CaptureEvidence, MockProvider
 from test_investigation import evidence, fixture
+from test_question import question
 
 
 class DeviceProtocolTests(unittest.TestCase):
@@ -21,6 +22,7 @@ class DeviceProtocolTests(unittest.TestCase):
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <cmath>
 static size_t allocated=0;
 static void* tracked_malloc(size_t n){allocated+=n;return malloc(n);}
 int main() {
@@ -49,11 +51,23 @@ int main() {
   else if(action=="disconnect") {p.disconnect();ok=true;}
   else if(action=="tick") {p.tick(t);ok=true;}
   else if(action=="ack") {out=p.ack();ok=out;}
+  else if(action=="start_question") ok=p.start_question();
+  else if(action=="question_recorded") {
+   ok=p.question_recorded(cJSON_GetObjectItemCaseSensitive(cmd,"metadata"),t);
+  } else if(action=="confirm") {
+   out=p.confirm_question(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(cmd,"accepted")));ok=out;
+  }
   auto* result=cJSON_CreateObject();
   cJSON_AddBoolToObject(result,"ok",ok);
   cJSON_AddNumberToObject(result,"capture_allocated",capture_allocated);
   cJSON_AddStringToObject(result,"state",p.state_name());
   cJSON_AddStringToObject(result,"text",p.text());
+  cJSON_AddStringToObject(result,"question",p.question());
+  cJSON_AddStringToObject(result,"transcript",p.transcript());
+  cJSON_AddStringToObject(result,"status",p.transcript_status());
+  cJSON_AddNumberToObject(result,"questions_left",p.questions_left());
+  if(std::isfinite(p.speech_to_noise_db()))cJSON_AddNumberToObject(result,"snr",p.speech_to_noise_db());
+  else cJSON_AddNullToObject(result,"snr");
   if(out)cJSON_AddItemToObject(result,"out",out);
   char* encoded=cJSON_PrintUnformatted(result);std::cout<<encoded<<std::endl;
   cJSON_free(encoded);cJSON_Delete(result);cJSON_Delete(cmd);
@@ -90,7 +104,7 @@ int main() {
 
     def prefix(self):
         capture,item=self.capture()
-        return [dict(op='ask'),self.receive(self.envelope('ready',provider='scripted-mock-v1')),
+        return [dict(op='ask'),self.receive(self.envelope('ready',provider='scripted-mock-v1',speech_to_text='fake-stt')),
                 dict(op='start'),capture,dict(op='uploaded')],item
 
     def reply(self, items, deadline=15100):
@@ -98,6 +112,82 @@ int main() {
                               deadline_ms=deadline,fixture=fixture().to_dict(),
                               captures=[x.to_dict() for x in items],adjustment='Moved to 40 cm')
         return MockProvider().respond(request)
+
+    def ready(self, speech='fake-stt'):
+        return [dict(op='ask'),self.receive(self.envelope('ready',provider='scripted-mock-v1',speech_to_text=speech))]
+
+    def transcript(self, status='heard', text='Is the fan louder?', key='session-q1', snr=12.5, **extra):
+        return self.receive(self.envelope('transcript',question_id=key,status=status,text=text,
+                                          speech_to_noise_db=snr,**extra))
+
+    def asked(self, key='session-q1', **changes):
+        meta,_=question(key,[0]*16000,**changes)
+        return [dict(op='start_question'),dict(op='question_recorded',metadata=meta)]
+
+    def test_spoken_question_confirm_retry_and_use(self):
+        rows=self.run_commands(self.ready()+self.asked()+[self.transcript(),dict(op='start'),
+            dict(op='confirm',accepted=False)]+self.asked('session-q2')+[
+            self.transcript(key='session-q2',text='Is the fan louder near the wall?'),
+            dict(op='confirm',accepted=True),dict(op='start')])
+        self.assertEqual([r['state'] for r in rows[2:5]],['asking','transcribing','confirming'])
+        self.assertEqual(rows[4]['transcript'],'Is the fan louder?')
+        self.assertEqual(rows[4]['status'],'heard');self.assertEqual(rows[3]['status'],'')
+        self.assertEqual(rows[4]['snr'],12.5)
+        self.assertFalse(rows[5]['ok'])  # Record A needs Use or Retry first
+        self.assertEqual(rows[6]['out']['type'],'question_confirm')
+        self.assertEqual(rows[6]['out']['accepted'],False)
+        self.assertEqual(rows[6]['question'],'')
+        self.assertEqual(rows[6]['state'],'ready_a')
+        self.assertEqual(rows[10]['out'],self.envelope('question_confirm',question_id='session-q2',accepted=True))
+        self.assertEqual(rows[10]['question'],'Is the fan louder near the wall?')
+        self.assertEqual(rows[10]['questions_left'],3)
+        self.assertEqual(rows[11]['state'],'recording_a')
+
+    def test_empty_or_failed_transcript_returns_to_record_a_without_confirm(self):
+        for status in ('empty','failed'):
+            with self.subTest(status=status):
+                rows=self.run_commands(self.ready()+self.asked()+[self.transcript(status,'',snr=None),
+                    dict(op='confirm',accepted=True),dict(op='start')])
+                self.assertTrue(rows[4]['ok']);self.assertEqual(rows[4]['state'],'ready_a')
+                self.assertEqual(rows[4]['status'],status)
+                self.assertIsNone(rows[4]['snr'])
+                self.assertFalse(rows[5]['ok']);self.assertEqual(rows[6]['state'],'recording_a')
+
+    def test_hostile_transcripts_and_question_metadata_rejected(self):
+        for patch in [dict(key='session-q9'),dict(status='heard',text=''),dict(status='empty',text='words'),
+                      dict(status='other'),dict(text='x'*513),dict(snr='12'),dict(snr=True),
+                      dict(extra=1),dict(text=' ')]:
+            extra={'extra':1} if 'extra' in patch else {}
+            args={k:v for k,v in patch.items() if k!='extra'}
+            with self.subTest(patch=patch):
+                rows=self.run_commands(self.ready()+self.asked()+[self.transcript(**args,**extra)])
+                self.assertFalse(rows[-1]['ok']);self.assertEqual(rows[-1]['transcript'],'')
+        wrong=self.envelope('transcript',question_id='session-q1',status='heard',text='x',speech_to_noise_db=1)
+        wrong['session_id']='old'
+        self.assertFalse(self.run_commands(self.ready()+self.asked()+[self.receive(wrong)])[-1]['ok'])
+        for change in [dict(sample_rate_hz=48000),dict(channels=4),dict(frames=128001),dict(size_bytes=3),
+                       dict(sha256='bad'),dict(session_id='old'),dict(driver_epoch_integrity=False),
+                       dict(question_id='../x'),dict(acquisition_end_us=1000)]:
+            with self.subTest(change=change):
+                rows=self.run_commands(self.ready()+self.asked(**change))
+                self.assertFalse(rows[-1]['ok'])
+
+    def test_question_only_before_record_a_with_speech_available_and_bounded(self):
+        rows=self.run_commands(self.ready(None)+[dict(op='start_question')])
+        self.assertTrue(rows[1]['ok']);self.assertFalse(rows[2]['ok'])
+        self.assertFalse(self.run_commands([dict(op='ask'),self.receive(self.envelope('ready',provider='x'))])[-1]['ok'])
+        commands=self.ready()
+        for n in range(1,6):
+            commands+=self.asked(f'session-q{n}')+[self.transcript(key=f'session-q{n}'),dict(op='confirm',accepted=False)]
+        rows=self.run_commands(commands+[dict(op='start_question')])
+        self.assertEqual(rows[-2]['questions_left'],0);self.assertFalse(rows[-1]['ok'])
+        prefix,_=self.prefix()
+        self.assertFalse(self.run_commands(prefix+[dict(op='start_question')])[-1]['ok'])
+        # Transcribing still has a deadline; cancel is local and final.
+        rows=self.run_commands(self.ready()+self.asked()+[dict(op='tick',now=30100)])
+        self.assertEqual(rows[-1]['state'],'incomplete')
+        rows=self.run_commands(self.ready()+self.asked()+[dict(op='cancel'),self.transcript()])
+        self.assertFalse(rows[-1]['ok']);self.assertEqual(rows[-1]['state'],'cancelled')
 
     def test_complete_host_provider_exchange_and_ack_gate(self):
         commands,a=self.prefix()

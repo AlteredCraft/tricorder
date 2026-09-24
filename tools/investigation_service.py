@@ -11,13 +11,18 @@ import json
 import inspect
 from pathlib import Path
 import time
+import wave
 
 from tools.captures import CaptureStore
-from tools.investigation import (CaptureEvidence, Fixture, MAX_CAPTURE_BYTES, MockProvider,
-                                 ProtocolError, RunArchive, bounded_text, identity,
-                                 integer, require, validate_reply)
+from tools.speech_to_text import DEFAULT_ENGINE, ENGINES, load_transcriber
+from tools.investigation import (CaptureEvidence, Fixture, MAX_CAPTURE_BYTES, MAX_QUESTIONS,
+                                 MAX_QUESTION_FRAMES, MAX_QUESTION_TEXT, MockProvider,
+                                 ProtocolError, QUESTION_FIELDS, QUESTION_RATE_HZ, QuestionAudio,
+                                 RunArchive, bounded_text, identity, integer, require, validate_reply)
 
 MAX_WIRE_BYTES = 32768
+# Spoken ask: start + chunks + end + confirm per question, outside the A/B budget.
+QUESTION_MESSAGES = MAX_QUESTIONS*(-(-MAX_QUESTION_FRAMES*2//4096)+3)
 
 
 def decode_message(wire):
@@ -38,10 +43,12 @@ def decode_message(wire):
 
 
 class MockSession:
-    def __init__(self, root, send, *, provider=None, delay_s=0, replay_only=False):
+    def __init__(self, root, send, *, provider=None, delay_s=0, replay_only=False, transcriber=None):
         self.root=Path(root)
         self.send=send
         self.provider=provider or MockProvider()
+        self.transcriber=transcriber
+        self.transcribe_timeout_s=10
         self.delay_s=delay_s
         self.replay_only=replay_only
         self.archive=self.store=self.pending=self.task=None
@@ -50,6 +57,10 @@ class MockSession:
         self.requests=set()
         self.reserved_bytes=0
         self.messages=0
+        # Spoken ask (ADR-0013): separate IDs, store and budget; never a measurement.
+        self.question_store=self.heard=self.operator_question=None
+        self.question_ids=[]
+        self.question_messages=0
         self.closed=False
         self.expires=0
 
@@ -69,13 +80,19 @@ class MockSession:
             'hello':{'fixture'}, 'capture_start':{'metadata'},
             'capture_chunk':{'capture_id','offset','data'}, 'capture_end':{'capture_id','sha256'},
             'turn':{'request_id','capture_ids','device_ms','deadline_ms'},
-            'ack':{'request_id'}, 'cancel':set()}
+            'ack':{'request_id'}, 'cancel':set(),
+            'question_start':{'metadata'}, 'question_chunk':{'question_id','offset','data'},
+            'question_end':{'question_id','sha256'}, 'question_confirm':{'question_id','accepted'}}
         require(isinstance(kind,str) and kind in fields,'unknown message type')
         allowed={'version','type','boot_id','session_id'}|fields[kind]
         if kind=='hello' and self.replay_only:allowed.add('replay')
         require(set(message)==allowed or (kind=='turn' and set(message)==allowed|{'adjustment'}), 'message fields')
-        require(self.messages<640,'message budget exhausted')
-        self.messages+=1
+        if kind.startswith('question_'):
+            require(self.question_messages<QUESTION_MESSAGES,'question message budget exhausted')
+            self.question_messages+=1
+        else:
+            require(self.messages<640,'message budget exhausted')
+            self.messages+=1
         if kind=='hello':
             require(self.phase=='new','duplicate hello')
             require(message.get('replay',False) is self.replay_only,'replay mode mismatch')
@@ -94,22 +111,26 @@ class MockSession:
             self.store.MAX_ACTIVE=1
             self.phase='await_a'
             self.archive.record({'direction':'in','payload':message})
-            await self.emit(self.envelope('ready',provider=self.provider.name))
+            speech=self.transcriber.name if self.transcriber and not self.replay_only else None
+            await self.emit(self.envelope('ready',provider=self.provider.name,speech_to_text=speech))
             return
         require(self.archive is not None,'hello required')
         require(message['boot_id']==self.archive.boot_id and message['session_id']==self.archive.session_id,
                 'session mismatch')
         # Never log media/base64 or arbitrary extra fields. Raw evidence stays in captures/.
-        if kind!='capture_chunk':self.archive.record({'direction':'in','payload':message})
+        if kind not in ('capture_chunk','question_chunk'):self.archive.record({'direction':'in','payload':message})
         if kind=='cancel':
             require(self.phase not in ('complete','cancelled'),'terminal session')
             self.phase='cancelled';self.pending=None
             if self.task:self.task.cancel()
             self.store.close()
+            if self.question_store:self.question_store.close()
             await self.emit(self.envelope('cancelled'))
             return
         require(self.phase not in ('complete','cancelled','offline','incomplete'),'terminal session')
-        if kind.startswith('capture_'):
+        if kind.startswith('question_'):
+            await self.question(kind,message)
+        elif kind.startswith('capture_'):
             await self.capture(kind,message)
         elif kind=='turn':
             require(self.phase in ('guide_ready','compare_ready') and self.pending is None,'pending queue/state')
@@ -124,7 +145,8 @@ class MockSession:
             request=dict(version=1,type='guide' if len(self.ids)==1 else 'compare',
                          boot_id=self.archive.boot_id,session_id=self.archive.session_id,
                          request_id=request_id,deadline_ms=deadline,fixture=self.archive.fixture.to_dict(),
-                         adjustment=adjustment,captures=[self.archive.load(key).to_dict() for key in self.ids])
+                         adjustment=adjustment,operator_question=self.operator_question,
+                         captures=[self.archive.load(key).to_dict() for key in self.ids])
             self.pending=request
             self.requests.add(request_id)
             self.expires=time.monotonic()+(deadline-now)/1000
@@ -147,6 +169,7 @@ class MockSession:
             require(meta.get('boot_id')==self.archive.boot_id and meta.get('session_id')==self.archive.session_id,
                     'capture identity mismatch')
             require(key not in self.store.seen and len(self.store.seen)<2,'capture capacity/duplicate')
+            require(key not in self.question_ids,'capture ID reuses a question ID')
             size=integer(meta.get('size_bytes'),1,MAX_CAPTURE_BYTES)
             require(self.reserved_bytes+size<=self.archive.max_bytes,'capture byte capacity')
             # Only these transport fields can identify the event; metadata cannot override them.
@@ -176,6 +199,90 @@ class MockSession:
             self.phase='incomplete'
             self.store.close()
             raise ProtocolError('capture rejected') from error
+
+    async def question(self, kind, message):
+        if kind=='question_start':
+            require(self.transcriber is not None and not self.replay_only,'speech-to-text unavailable')
+            require(self.phase=='await_a' and not self.ids,'questions only before Record A')
+            require(len(self.question_ids)<MAX_QUESTIONS,'question capacity')
+            meta=message['metadata']
+            require(isinstance(meta,dict) and set(meta)==QUESTION_FIELDS,'question metadata fields')
+            key=identity(meta['question_id'])
+            require(meta['boot_id']==self.archive.boot_id and meta['session_id']==self.archive.session_id,
+                    'question identity mismatch')
+            require(key not in self.question_ids and key not in self.store.seen,'question ID reused')
+            integer(meta['size_bytes'],1,MAX_QUESTION_FRAMES*2)
+            if self.question_store is None:
+                self.question_store=CaptureStore(self.archive.root/'questions')
+                self.question_store.MAX_BYTES=MAX_QUESTION_FRAMES*2
+                self.question_store.MAX_ACTIVE=1
+            self.question_store.consume({**meta,'capture_id':key,'event':'capture_start'})
+            self.question_ids.append(key)
+            self.phase='question_upload'
+            return
+        if kind=='question_confirm':
+            require(self.phase=='await_confirm' and self.heard and message['question_id']==self.heard[0],
+                    'no transcript awaiting confirmation')
+            require(type(message['accepted']) is bool,'confirmation must be boolean')
+            key,text=self.heard
+            self.heard=None
+            if message['accepted']:self.operator_question=text
+            self.archive.record({'type':'operator_question','question_id':key,
+                                 'accepted':message['accepted'],'text':text})
+            self.phase='await_a'
+            return
+        require(self.phase=='question_upload' and message['question_id']==self.question_ids[-1],
+                'no active question upload')
+        key=message['question_id']
+        try:
+            event={k:v for k,v in message.items() if k!='question_id'}
+            self.question_store.consume({**event,'capture_id':key,
+                                        'event':'capture_chunk' if kind=='question_chunk' else 'capture_end'})
+            if kind=='question_end':
+                path=self.archive.root/'questions'/f'{key}.json'
+                stored=json.loads(path.read_text())
+                require(stored['status']=='complete','question upload incomplete')
+                item=QuestionAudio.from_pcm({k:stored[k] for k in QUESTION_FIELDS},path.with_suffix('.bin').read_bytes())
+                self.phase='transcribing'
+                self.task=asyncio.create_task(self.transcribe(item))
+        except (ValueError,KeyError,TypeError) as error:
+            self.phase='incomplete'
+            self.question_store.close()
+            raise ProtocolError('question rejected') from error
+
+    async def transcribe(self, item):
+        """Transcribe off the receive loop. The device shows the text for Use or Retry;
+        only a confirmed transcript becomes the operator question."""
+        key=item.metadata['question_id']
+        analysis=item.analysis
+        started=time.monotonic_ns()
+        status,text,reason='failed','',None
+        try:
+            async with asyncio.timeout(self.transcribe_timeout_s):
+                heard=await self.transcriber.transcribe(item.raw)
+            heard=' '.join(heard.split()) if isinstance(heard,str) else None
+            if heard is None:reason='not_text'
+            elif not heard:status='empty'
+            elif len(heard.encode())>MAX_QUESTION_TEXT:reason='too_long'
+            else:status,text='heard',heard
+        except asyncio.CancelledError:
+            raise
+        except TimeoutError:
+            reason='timeout'
+        except Exception:
+            reason='engine_error'  # Engine exceptions can carry paths or keys; never log them.
+        with wave.open(str(self.archive.root/'questions'/f'{key}.wav'),'wb') as stream:
+            stream.setnchannels(1);stream.setsampwidth(2);stream.setframerate(QUESTION_RATE_HZ)
+            stream.writeframes(item.raw)
+        self.archive.record({'type':'question_analysis','question_id':key,
+            'transcriber':self.transcriber.name,'status':status,'reason':reason,'text':text,
+            'started_host_ns':started,'finished_host_ns':time.monotonic_ns(),**analysis})
+        if self.phase!='transcribing':return
+        self.heard=(key,text) if status=='heard' else None
+        self.phase='await_confirm' if status=='heard' else 'await_a'
+        level=analysis['speech_to_noise_db']
+        await self.emit(self.envelope('transcript',question_id=key,status=status,text=text,
+                                      speech_to_noise_db=None if level is None else round(level,1)))
 
     async def respond(self, request):
         try:
@@ -219,6 +326,7 @@ class MockSession:
         self.closed=True
         if self.task:self.task.cancel()
         await self.drain()
+        if self.question_store:self.question_store.close()
         if self.store:
             incomplete=self.store.close()
             if self.phase not in ('complete','cancelled','incomplete'):self.phase='offline'
@@ -226,13 +334,15 @@ class MockSession:
             self.archive.record({'type':'closed','state':self.phase,'incomplete_captures':incomplete})
 
 
-# Phases where the device waits for the person (record A; read guidance, move,
-# record B). WebSocket ping/pong (10 s + 10 s) still detects a dead device.
-OPERATOR_PHASES=('await_a','adjust')
+# Phases where the device's next message waits for the person (record A; read the
+# transcript; read guidance, move, record B). A read that starts while transcribing
+# ends after the person reads it; transcription has its own bound. WebSocket
+# ping/pong (10 s + 10 s) still detects a dead device.
+OPERATOR_PHASES=('await_a','transcribing','await_confirm','adjust')
 
 
 async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_only=False, provider=None,
-                     idle_s=30, operator_idle_s=600):
+                     idle_s=30, operator_idle_s=600, transcriber=None):
     from websockets.asyncio.server import serve
     from websockets.exceptions import ConnectionClosed
     output=Path(output)
@@ -245,7 +355,8 @@ async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_o
         active=True
         async def send(message):
             await asyncio.wait_for(socket.send(json.dumps(message,allow_nan=False)),timeout=2)
-        session=MockSession(output,send,delay_s=delay_s,replay_only=replay_only,provider=provider)
+        session=MockSession(output,send,delay_s=delay_s,replay_only=replay_only,provider=provider,
+                            transcriber=transcriber)
         try:
             while True:
                 wire=await asyncio.wait_for(socket.recv(),
@@ -280,8 +391,14 @@ def main():
     parser.add_argument('--provider',choices=('mock','openai','openrouter'),default='mock')
     parser.add_argument('--model',help='Exact model ID; default OpenRouter openai/gpt-5.6-sol or direct gpt-4.1-mini')
     parser.add_argument('--env',type=Path,help='Local provider-key file; parsed literally, never sent to device')
+    parser.add_argument('--stt',choices=ENGINES,default=DEFAULT_ENGINE,
+                        help='Speech-to-text for spoken questions; parakeet is local (tools/stt-requirements.txt)')
     args=parser.parse_args()
     if not 0<=args.delay_seconds<=30:parser.error('delay must be 0–30 seconds')
+    transcriber=None
+    if not args.replay_only and args.stt!='none':
+        try:transcriber=load_transcriber(args.stt)
+        except ImportError:parser.error('Local speech-to-text needs tools/stt-requirements.txt (Apple Silicon); or pass --stt none')
     async def run():
         client=None;provider=None
         if args.provider!='mock':
@@ -296,8 +413,10 @@ def main():
             provider=OpenAIProvider(client,model=args.model or ('openai/gpt-5.6-sol' if router else 'gpt-4.1-mini'),route=args.provider)
         try:
             server=await serve_mock(args.host,args.port,args.output,delay_s=args.delay_seconds,
-                                    replay_only=args.replay_only,provider=provider)
-            print(f'{args.provider} service ready at ws://{args.host}:{args.port}; private evidence: {args.output}',flush=True)
+                                    replay_only=args.replay_only,provider=provider,transcriber=transcriber)
+            speech=transcriber.name if transcriber else 'off'
+            print(f'{args.provider} service ready at ws://{args.host}:{args.port}; speech-to-text {speech}; '
+                  f'private evidence: {args.output}',flush=True)
             async with server:await server.serve_forever()
         finally:
             if client:await client.close()

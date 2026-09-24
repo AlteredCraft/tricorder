@@ -85,6 +85,31 @@ bool InvestigationProtocol::start_capture() {
     else return false;
     return true;
 }
+bool InvestigationProtocol::start_question() {
+    if(state_!=State::ReadyA || !speech_ || questions_>=max_questions)return false;
+    state_=State::Asking;return true;
+}
+bool InvestigationProtocol::question_recorded(const cJSON* m,uint64_t now) {
+    if(state_!=State::Asking)return false;
+    auto* key=field(m,"question_id");auto* hash=field(m,"sha256");auto* frames=field(m,"frames");
+    if(!str(field(m,"boot_id"),boot_) || !str(field(m,"session_id"),session_) ||
+       !cJSON_IsString(key) || !id(key->valuestring) || !strcmp(key->valuestring,question_id_) ||
+       !cJSON_IsString(hash) || strlen(hash->valuestring)!=64 || !str(field(m,"format"),"pcm_s16le") ||
+       !number(field(m,"sample_rate_hz"),16000) || !number(field(m,"channels"),1) ||
+       !integer(frames,1,max_question_frames) || !number(field(m,"size_bytes"),frames->valuedouble*2) ||
+       !cJSON_IsTrue(field(m,"driver_epoch_integrity")) ||
+       !integer(field(m,"acquisition_start_us"),0,9007199254740990.) ||
+       !integer(field(m,"acquisition_end_us"),field(m,"acquisition_start_us")->valuedouble+1,9007199254740991.))return false;
+    for(const char* p=hash->valuestring;*p;++p)if(!((*p>='0' && *p<='9') || (*p>='a' && *p<='f')))return false;
+    strcpy(question_id_,key->valuestring);transcript_[0]=status_[0]=0;speech_to_noise_db_=NAN;++questions_;
+    deadline_=now+30000;state_=State::Transcribing;return true;
+}
+cJSON* InvestigationProtocol::confirm_question(bool accepted) {
+    if(state_!=State::Confirming)return nullptr;
+    if(accepted)strcpy(question_,transcript_);
+    auto* o=envelope("question_confirm");cJSON_AddStringToObject(o,"question_id",question_id_);
+    cJSON_AddBoolToObject(o,"accepted",accepted);state_=State::ReadyA;return o;
+}
 bool InvestigationProtocol::captured(const cJSON* m,const cJSON* v,uint64_t now) {
     if((state_!=State::RecordingA && state_!=State::RecordingB) || count_>=2)return false;
     auto* key=field(m,"capture_id");auto* hash=field(m,"sha256");
@@ -99,6 +124,7 @@ bool InvestigationProtocol::captured(const cJSON* m,const cJSON* v,uint64_t now)
        !integer(field(m,"acquisition_end_us"),field(m,"acquisition_start_us")->valuedouble+1,9007199254740991.) ||
        !measurement(v,frames_))return false;
     for(const char* p=hash->valuestring;*p;++p)if(!((*p>='0' && *p<='9') || (*p>='a' && *p<='f')))return false;
+    if(!strcmp(key->valuestring,question_id_))return false;
     if(count_ && (!strcmp(key->valuestring,capture_id(0)) ||
        field(m,"acquisition_start_us")->valuedouble<field(captures_[0],"acquisition_end_us")->valuedouble))return false;
     // Raw capture ownership retains the full ingress proof through SD commit
@@ -129,8 +155,24 @@ bool InvestigationProtocol::receive(const char* wire,uint64_t now) {
     tick(now);auto* o=parse(wire);if(!o)return false;
     bool ok=false;
     if(same_session(o)) {
-        if(state_==State::Connecting && str(field(o,"type"),"ready") && cJSON_GetArraySize(o)==5 && bounded(field(o,"provider"),96)) {
-            state_=State::ReadyA;deadline_=0;ok=true;
+        auto* speech=field(o,"speech_to_text");
+        if(state_==State::Connecting && str(field(o,"type"),"ready") && cJSON_GetArraySize(o)==6 && bounded(field(o,"provider"),96) &&
+           (cJSON_IsNull(speech) || bounded(speech,96))) {
+            speech_=!cJSON_IsNull(speech);state_=State::ReadyA;deadline_=0;ok=true;
+        } else if(state_==State::Transcribing && str(field(o,"type"),"transcript") && cJSON_GetArraySize(o)==8 &&
+                  str(field(o,"question_id"),question_id_)) {
+            // Heard text needs Use or Retry; nothing heard or a failed engine returns to Record A.
+            auto* status=field(o,"status");auto* words=field(o,"text");auto* level=field(o,"speech_to_noise_db");
+            const bool heard=str(status,"heard");
+            ok=(heard || str(status,"empty") || str(status,"failed")) &&
+                (heard ? bounded(words,512) : str(words,"")) &&
+                (cJSON_IsNull(level) || (cJSON_IsNumber(level) && std::isfinite(level->valuedouble) && fabs(level->valuedouble)<=200));
+            if(ok) {
+                if(heard)strcpy(transcript_,words->valuestring);
+                strcpy(status_,status->valuestring);
+                speech_to_noise_db_=cJSON_IsNumber(level)?level->valuedouble:NAN;
+                state_=heard?State::Confirming:State::ReadyA;deadline_=0;
+            }
         } else if(state_==State::Acknowledging && ack_sent_ && str(field(o,"type"),"acknowledged") && cJSON_GetArraySize(o)==6 &&
                   str(field(o,"request_id"),count_==1?"r1":"r2") && str(field(o,"state"),count_==1?"adjust":"complete")) {
             state_=count_==1?State::Adjust:State::Complete;deadline_=0;ok=true;
@@ -177,6 +219,7 @@ void InvestigationProtocol::cancel() {if(state_!=State::Complete){state_=State::
 void InvestigationProtocol::disconnect() {if(!terminal()){state_=State::Offline;deadline_=0;}}
 void InvestigationProtocol::fail() {if(!terminal()){state_=State::Incomplete;deadline_=0;}}
 const char* InvestigationProtocol::state_name() const {
-    static const char* names[]={"idle","connecting","ready_a","recording_a","uploading","waiting","acknowledging","adjust","ready_b","recording_b","complete","cancelled","offline","incomplete"};
+    static const char* names[]={"idle","connecting","ready_a","asking","transcribing","confirming","recording_a","uploading","waiting",
+                                "acknowledging","adjust","ready_b","recording_b","complete","cancelled","offline","incomplete"};
     return names[static_cast<unsigned>(state_)];
 }

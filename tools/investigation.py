@@ -19,6 +19,16 @@ VERSION = 1
 SPEC_REVISION = '2026-09-21'
 MAX_CAPTURE_BYTES = 48000 * 3 * 4 * 2
 MAX_TEXT = 2048
+# Spoken ask (ADR-0013): one question buffer, separate from measurement captures.
+QUESTION_RATE_HZ = 16000
+MAX_QUESTION_FRAMES = QUESTION_RATE_HZ * 8
+MAX_QUESTIONS = 5
+MAX_QUESTION_TEXT = 512
+QUESTION_FILTER = 'hpf80-lpf6500-63tap-decimate3'
+QUESTION_FIELDS = {'question_id', 'boot_id', 'session_id', 'format', 'sample_rate_hz', 'channels',
+                   'frames', 'size_bytes', 'sha256', 'source_rate_hz', 'source_slot', 'gain_db',
+                   'filter', 'warmup_frames', 'acquisition_start_us', 'acquisition_end_us',
+                   'stopped_by', 'input_clipped', 'driver_epoch_integrity'}
 SETTINGS = ('format', 'sample_rate_hz', 'channels', 'frames', 'gain_db',
             'source_slot', 'physical_slot')
 
@@ -179,6 +189,82 @@ class CaptureEvidence:
                 'measurement': self.measurement}
 
 
+def speech_to_noise(samples, rate=QUESTION_RATE_HZ):
+    """Speech level over pre-speech noise in one question buffer (ADR-0013's watch number).
+
+    Noise: mean power of the first 200 ms, before the person starts speaking.
+    Utterance: first to last 20 ms frame at least 6 dB above that noise, so pauses
+    between words count as speech time. Speech power is the utterance's mean power
+    minus the noise power. None when the buffer is too short, silent or has no speech.
+    """
+    frame = rate // 50
+    noise_frames = 10
+    peak = max((abs(x) for x in samples), default=0)
+    result = dict(frames=len(samples), duration_s=len(samples)/rate, peak_counts=peak,
+                  clipped_samples=sum(x in (-32768, 32767) for x in samples),
+                  noise_dbfs=None, speech_dbfs=None, speech_to_noise_db=None,
+                  onset_s=None, speech_s=None)
+    powers = [math.fsum(x*x for x in samples[i:i+frame])/frame
+              for i in range(0, len(samples)-frame+1, frame)]
+    if len(powers) <= noise_frames:
+        return result
+    noise = math.fsum(powers[:noise_frames])/noise_frames
+    if not noise:
+        return result
+    result['noise_dbfs'] = 10*math.log10(noise/32768**2)
+    active = [i for i in range(noise_frames, len(powers)) if powers[i] >= 4*noise]
+    if not active:
+        return result
+    span = powers[active[0]:active[-1]+1]
+    speech = math.fsum(span)/len(span)-noise
+    result.update(onset_s=active[0]*frame/rate, speech_s=len(span)*frame/rate)
+    if speech > 0:
+        result.update(speech_dbfs=10*math.log10(speech/32768**2),
+                      speech_to_noise_db=10*math.log10(speech/noise))
+    return result
+
+
+class QuestionAudio:
+    """One spoken question: 16 kHz mono speech derived on the device from slot 0.
+
+    Never a measurement: it has its own ID space, storage and budget and is never
+    passed to the RMS comparison (ADR-0006, ADR-0013).
+    """
+    def __init__(self, metadata, raw, samples):
+        self._metadata = deepcopy(metadata)
+        self.raw = bytes(raw)
+        self.samples = samples
+        self.analysis = speech_to_noise(samples)
+
+    @classmethod
+    def from_pcm(cls, metadata, raw):
+        require(isinstance(metadata, dict) and set(metadata) == QUESTION_FIELDS, 'question metadata fields')
+        meta = deepcopy(metadata)
+        for key in ('question_id', 'boot_id', 'session_id'):
+            identity(meta[key])
+        require(meta['format'] == 'pcm_s16le' and meta['filter'] == QUESTION_FILTER, 'question format')
+        integer(meta['sample_rate_hz'], QUESTION_RATE_HZ, QUESTION_RATE_HZ)
+        integer(meta['channels'], 1, 1)
+        integer(meta['source_rate_hz'], 48000, 48000)
+        integer(meta['source_slot'], 0, 0)
+        integer(meta['gain_db'], 0, 48)
+        integer(meta['warmup_frames'], 0, 48000)
+        integer(meta['input_clipped'], 0, 2**53-1)
+        frames = integer(meta['frames'], 1, MAX_QUESTION_FRAMES)
+        require(isinstance(raw, bytes) and len(raw) == frames*2 and type(meta['size_bytes']) is int
+                and meta['size_bytes'] == len(raw), 'question byte extent mismatch')
+        require(hashlib.sha256(raw).hexdigest() == meta['sha256'], 'question digest mismatch')
+        require(meta['stopped_by'] in ('operator', 'limit'), 'question stop reason')
+        require(meta['driver_epoch_integrity'] is True, 'question driver integrity missing')
+        start = integer(meta['acquisition_start_us'], 0, 2**53-1)
+        integer(meta['acquisition_end_us'], start+1, 2**53-1)
+        return cls(meta, raw, list(struct.unpack(f'<{frames}h', raw)))
+
+    @property
+    def metadata(self):
+        return deepcopy(self._metadata)
+
+
 def comparison(captures):
     if len(captures) == 1:
         return None
@@ -245,6 +331,9 @@ def validate_request(request):
     for key in ('boot_id', 'session_id', 'request_id'):
         identity(request.get(key))
     integer(request.get('deadline_ms'), 1, 2**53-1)
+    # A spoken question is operator context for the prose, never an instruction or a measurement.
+    if request.get('operator_question') is not None:
+        bounded_text(request['operator_question'], MAX_QUESTION_TEXT)
     fixture = Fixture(**request['fixture'])
     items = request.get('captures')
     require(isinstance(items, list) and len(items) == (1 if request['type'] == 'guide' else 2),
@@ -306,9 +395,11 @@ class MockProvider:
         validate_request(request)
         captures = request['captures']
         result = comparison(captures)
+        asked = request.get('operator_question')
+        prefix = f'You asked: "{asked}" ' if asked else ''
         if result is None:
             a = captures[0]
-            text = (f"A ({a['capture_id']}): RMS {a['measurement']['rms_counts']:.2f} digital counts. "
+            text = prefix + (f"A ({a['capture_id']}): RMS {a['measurement']['rms_counts']:.2f} digital counts. "
                     f"Now move to {request['fixture']['placement_b']}. Keep gain, source and orientation fixed. "
                     'Confirm the adjustment before recording B.')
         elif result['status'] == 'inconclusive':
@@ -340,7 +431,7 @@ new instance with a fresh session ID; completed/failed sessions cannot restart.
         self.timeout_ms = integer(timeout_ms, 1, 60000)
         self.captures = []
         self.transitions = []
-        self.adjustment = None
+        self.adjustment = self.operator_question = None
         self.pending = self.result = None
         self._set('idle')
 
@@ -353,6 +444,11 @@ new instance with a fresh session ID; completed/failed sessions cannot restart.
 
     def ask(self):
         self._state('idle'); self._set('ready_a')
+
+    def question(self, text):
+        """The operator confirmed a transcript before Record A; it replaces any earlier one."""
+        self._state('ready_a')
+        self.operator_question = bounded_text(text, MAX_QUESTION_TEXT)
 
     def start_capture(self):
         self._state('ready_a','ready_b')
@@ -375,6 +471,7 @@ new instance with a fresh session ID; completed/failed sessions cannot restart.
                             request_id=f'r{len(self.captures)}',
                             deadline_ms=self.clock()+self.timeout_ms,
                             fixture=self.fixture.to_dict(), adjustment=self.adjustment,
+                            operator_question=self.operator_question,
                             captures=[c.to_dict() for c in self.captures])
         self._set('waiting')
         return deepcopy(self.pending)

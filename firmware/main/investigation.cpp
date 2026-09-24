@@ -35,6 +35,10 @@ extern const uint8_t fixture_start[] asm("_binary_guided_ab_fixture_json_start")
 extern const uint8_t fixture_end[] asm("_binary_guided_ab_fixture_json_end");
 namespace {
 lv_obj_t *launch,*panel,*heading,*label,*start_button,*action_button,*action_label,*back_button,*cancel_button,*setup_button;
+// Spoken ask: Ask/Stop/Retry beside Record A/Use, and a live input level while listening.
+lv_obj_t *ask_button,*ask_label,*level_bar;
+std::atomic<bool> listening{false},stop_question{false};
+float live_level=-120;bool level_fresh=false; // Guarded by live_lock.
 lv_obj_t *setup_panel,*endpoint_field,*keyboard;
 // Instrument view: live spectrum while recording, then A and B overlaid.
 lv_obj_t *chart,*legend[3];
@@ -78,6 +82,10 @@ void live_tap(const float* db) {
     memcpy(live_db,db,sizeof(live_db));++live_sequence;
     portEXIT_CRITICAL(&live_lock);
 }
+// Question recorder tap (media task): copy only; the LVGL timer below draws.
+void level_tap(float dbfs) {
+    portENTER_CRITICAL(&live_lock);live_level=dbfs;level_fresh=true;portEXIT_CRITICAL(&live_lock);
+}
 void draw_steadiness(const SteadinessReading& r) {
     char text[48];uint32_t color=0x90a4ae;
     if(r.state==SteadinessReading::Steady){snprintf(text,sizeof(text),"Steady  %.1f deg/s",r.peak_dps);color=0x66bb6a;}
@@ -86,13 +94,16 @@ void draw_steadiness(const SteadinessReading& r) {
     lv_label_set_text(steady_label,text);lv_obj_set_style_text_color(steady_label,lv_color_hex(color),0);
 }
 void draw_live(lv_timer_t*) {
-    float db[spectrum_band_count];bool fresh;SteadinessReading reading;bool steady;
+    float db[spectrum_band_count];bool fresh;SteadinessReading reading;bool steady;float level;bool leveled;
     portENTER_CRITICAL(&live_lock);
     fresh=live_sequence!=live_drawn;
     if(fresh){memcpy(db,live_db,sizeof(db));live_drawn=live_sequence;}
     steady=steady_fresh;reading=steady_reading;steady_fresh=false;
+    leveled=level_fresh;level=live_level;level_fresh=false;
     portEXIT_CRITICAL(&live_lock);
     if(steady)draw_steadiness(reading);
+    // -60..0 dBFS fills the meter.
+    if(leveled)lv_bar_set_value(level_bar,static_cast<int32_t>(std::clamp((level+60.0f)*100.0f/60.0f,0.0f,100.0f)),LV_ANIM_OFF);
     if(!fresh)return;
     for(size_t i=0;i<spectrum_band_count;++i)lv_chart_set_value_by_id(chart,series[0],i,spectrum_chart_value(db[i]));
     lv_chart_refresh(chart);
@@ -142,6 +153,9 @@ const char* heading_text(InvestigationProtocol::State s) {
     switch(s) {
     case S::Idle:case S::Connecting:return "Connecting";
     case S::ReadyA:return "Step 1: record A";
+    case S::Asking:return "Listening";
+    case S::Transcribing:return "Transcribing";
+    case S::Confirming:return "Your question";
     case S::RecordingA:return "Recording A";
     case S::Uploading:return "Uploading";
     case S::Waiting:case S::Acknowledging:return "Waiting for guidance";
@@ -159,11 +173,19 @@ void cancel(lv_event_t*) {
     cancel_requested_us.store(esp_timer_get_time());
     cancelled.store(true);
     lv_label_set_text(label,"Cancelled locally. Waiting for capture/connection cleanup.");
-    lv_obj_add_state(action_button,LV_STATE_DISABLED);
+    lv_obj_add_state(action_button,LV_STATE_DISABLED);lv_obj_add_state(ask_button,LV_STATE_DISABLED);
 }
-void action(lv_event_t*) {
+// Actions: 1 = action button (Record A, Use, ...), 2 = ask button (Ask, Retry).
+void choose(uint8_t value) {
+    if(xQueueSend(actions,&value,0)==pdTRUE)
+        for(auto* b:{action_button,ask_button})lv_obj_add_state(b,LV_STATE_DISABLED);
+}
+void action(lv_event_t*) {if(running && !cancelled.load())choose(1);}
+void ask(lv_event_t*) {
     if(!running || cancelled.load())return;
-    uint8_t value=1;if(xQueueSend(actions,&value,0)==pdTRUE)lv_obj_add_state(action_button,LV_STATE_DISABLED);
+    // While listening this button is Stop: the recorder polls the flag between blocks.
+    if(listening.load()){stop_question.store(true);lv_obj_add_state(ask_button,LV_STATE_DISABLED);}
+    else choose(2);
 }
 void edit_endpoint(lv_event_t*) {
     if(!running)lv_obj_remove_flag(keyboard,LV_OBJ_FLAG_HIDDEN);
@@ -186,12 +208,12 @@ void start(lv_event_t*) {
     lv_label_set_text(heading,"Connecting");
     lv_label_set_text(label,"Connecting to the Mac service...");
 }
-lv_obj_t* button(lv_obj_t* parent,const char* text,int x,int y,lv_event_cb_t callback) {
-    auto* b=lv_button_create(parent);lv_obj_set_pos(b,x,y);lv_obj_set_size(b,220,60);
+lv_obj_t* button(lv_obj_t* parent,const char* text,int x,int y,lv_event_cb_t callback,int width=220) {
+    auto* b=lv_button_create(parent);lv_obj_set_pos(b,x,y);lv_obj_set_size(b,width,60);
     lv_obj_add_event_cb(b,callback,LV_EVENT_CLICKED,nullptr);
     auto* l=lv_label_create(b);lv_label_set_text(l,text);lv_obj_center(l);return b;
 }
-void show(InvestigationProtocol& p,const char* message,const char* button_text=nullptr) {
+void show(InvestigationProtocol& p,const char* message,const char* button_text=nullptr,const char* ask_text=nullptr) {
     if(bsp_display_lock(1000)) {
         // A worker completion must never overwrite a locally visible cancel.
         if(cancelled.load())p.cancel();
@@ -199,12 +221,17 @@ void show(InvestigationProtocol& p,const char* message,const char* button_text=n
         using S=InvestigationProtocol::State;const auto state=p.state();
         if(state==S::ReadyA || state==S::Adjust || state==S::ReadyB)lv_obj_remove_flag(steady_label,LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(steady_label,LV_OBJ_FLAG_HIDDEN);
+        if(state==S::Asking){lv_bar_set_value(level_bar,0,LV_ANIM_OFF);lv_obj_remove_flag(level_bar,LV_OBJ_FLAG_HIDDEN);}
+        else lv_obj_add_flag(level_bar,LV_OBJ_FLAG_HIDDEN);
         if(p.state()==InvestigationProtocol::State::Cancelled)lv_label_set_text(label,"Cancelled. This session cannot resume. Start a new investigation.");
         else lv_label_set_text(label,message);
-        lv_obj_add_state(action_button,LV_STATE_DISABLED);
+        lv_obj_add_state(action_button,LV_STATE_DISABLED);lv_obj_add_state(ask_button,LV_STATE_DISABLED);
+        if((button_text || ask_text) && !p.terminal())xQueueReset(actions);
         if(button_text && !p.terminal()) {
-            lv_label_set_text(action_label,button_text);xQueueReset(actions);
-            lv_obj_remove_state(action_button,LV_STATE_DISABLED);
+            lv_label_set_text(action_label,button_text);lv_obj_remove_state(action_button,LV_STATE_DISABLED);
+        }
+        if(ask_text && !p.terminal()) {
+            lv_label_set_text(ask_label,ask_text);lv_obj_remove_state(ask_button,LV_STATE_DISABLED);
         }
         bsp_display_unlock();
     }
@@ -335,7 +362,8 @@ bool wait_reply(Socket& s,InvestigationProtocol& p) {
     return false;
 }
 // The media owner is the IMU's sequential owner; sample it while waiting.
-bool wait_action(Socket& s,InvestigationProtocol& p,const char* action) {
+// Returns the chosen action (1 or 2), or 0 when the session ended.
+int wait_action(Socket& s,InvestigationProtocol& p,const char* action) {
     uint8_t command;Steadiness steadiness;uint64_t next_sample=0;SteadinessReading reading;
     while(active(p)) {
         const uint64_t now=now_ms();
@@ -358,10 +386,10 @@ bool wait_action(Socket& s,InvestigationProtocol& p,const char* action) {
             cJSON_AddStringToObject(e,"state",names[reading.state]);cJSON_AddNumberToObject(e,"peak_dps",reading.peak_dps);
             cJSON_AddNumberToObject(e,"accel_span_g",reading.accel_span_g);cJSON_AddNumberToObject(e,"samples",reading.samples);
             diagnostic_emit(e);
-            return active(p);
+            return active(p)?command:0;
         }
     }
-    return false;
+    return 0;
 }
 bool capture_ack(Socket& s,InvestigationProtocol& p,const char* id,const char* stage,const char* sha=nullptr) {
     const uint64_t deadline=now_ms()+5000;
@@ -380,12 +408,8 @@ bool capture_ack(Socket& s,InvestigationProtocol& p,const char* id,const char* s
     }
     p.fail();return false;
 }
-bool upload(Socket& s,InvestigationProtocol& p,const InvestigationCapture& c,unsigned index) {
-    const char* id=p.capture_id(index);auto* o=p.envelope("capture_start");
-    cJSON_AddItemToObject(o,"metadata",cJSON_Duplicate(c.metadata,true));
-    if(!active(p)){cJSON_Delete(o);return false;}
-    if(!s.send(o) || !capture_ack(s,p,id,"start"))return false;
-    // One reusable base64 scratch buffer; at most 4096 raw bytes per message.
+// One reusable base64 scratch buffer; at most 4096 raw bytes per message.
+bool send_chunks(Socket& s,InvestigationProtocol& p,const char* type,const char* key,const char* id,const InvestigationCapture& c) {
     auto* encoded=static_cast<unsigned char*>(malloc(5465));if(!encoded)return false;
     bool ok=true;
     for(size_t offset=0;ok && offset<c.size;offset+=4096) {
@@ -394,15 +418,107 @@ bool upload(Socket& s,InvestigationProtocol& p,const InvestigationCapture& c,uns
         ok=mbedtls_base64_encode(encoded,5465,&written,c.bytes+offset,count)==0;
         if(!ok)break;
         encoded[written]=0;
-        o=p.envelope("capture_chunk");cJSON_AddStringToObject(o,"capture_id",id);
+        auto* o=p.envelope(type);cJSON_AddStringToObject(o,key,id);
         cJSON_AddNumberToObject(o,"offset",offset);cJSON_AddStringToObject(o,"data",reinterpret_cast<char*>(encoded));
         ok=s.send(o);
     }
-    free(encoded);if(!ok)return false;
+    free(encoded);return ok;
+}
+bool upload(Socket& s,InvestigationProtocol& p,const InvestigationCapture& c,unsigned index) {
+    const char* id=p.capture_id(index);auto* o=p.envelope("capture_start");
+    cJSON_AddItemToObject(o,"metadata",cJSON_Duplicate(c.metadata,true));
+    if(!active(p)){cJSON_Delete(o);return false;}
+    if(!s.send(o) || !capture_ack(s,p,id,"start") || !send_chunks(s,p,"capture_chunk","capture_id",id,c))return false;
     const char* sha=cJSON_GetObjectItemCaseSensitive(c.metadata,"sha256")->valuestring;
     o=p.envelope("capture_end");cJSON_AddStringToObject(o,"capture_id",id);cJSON_AddStringToObject(o,"sha256",sha);
     if(!active(p)){cJSON_Delete(o);return false;}
     return s.send(o) && capture_ack(s,p,id,"complete",sha);
+}
+
+// Spoken question: no per-stage ACKs; the transcript is the completion reply.
+bool upload_question(Socket& s,InvestigationProtocol& p,const InvestigationCapture& q) {
+    const char* id=p.question_id();auto* o=p.envelope("question_start");
+    cJSON_AddItemToObject(o,"metadata",cJSON_Duplicate(q.metadata,true));
+    if(!active(p)){cJSON_Delete(o);return false;}
+    if(!s.send(o) || !send_chunks(s,p,"question_chunk","question_id",id,q))return false;
+    o=p.envelope("question_end");cJSON_AddStringToObject(o,"question_id",id);
+    cJSON_AddStringToObject(o,"sha256",cJSON_GetObjectItemCaseSensitive(q.metadata,"sha256")->valuestring);
+    if(!active(p)){cJSON_Delete(o);return false;}
+    return s.send(o);
+}
+// Record, upload and transcribe one question. False when the session ended.
+bool ask_question(Socket& s,InvestigationProtocol& p,const char* boot,const char* session) {
+    const unsigned number=InvestigationProtocol::max_questions-p.questions_left()+1;
+    if(!p.start_question())return false;
+    char id[48];snprintf(id,sizeof(id),"%s-q%u",session,number);
+    stop_question.store(false);listening.store(true);
+    show(p,"Ask your question now, then tap Stop.\nUp to 8 seconds.",nullptr,"Stop");
+    InvestigationCapture q;
+    const bool recorded=investigation_record_question(boot,session,id,cancelled,stop_question,q,level_tap);
+    listening.store(false);
+    auto* e=diagnostic_event("investigation_question");cJSON_AddStringToObject(e,"question_id",id);
+    cJSON_AddBoolToObject(e,"ok",recorded);
+    if(recorded)for(const char* key:{"frames","stopped_by","input_clipped"})
+        cJSON_AddItemToObject(e,key,cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(q.metadata,key),true));
+    diagnostic_emit(e);
+    if(!recorded || !active(p) || !p.question_recorded(q.metadata,now_ms())){p.fail();return false;}
+    show(p,"Transcribing your question on the Mac...");
+    const int64_t started=esp_timer_get_time();
+    if(!upload_question(s,p,q)){p.fail();return false;}
+    const int64_t uploaded=esp_timer_get_time();
+    if(!wait_reply(s,p))return false;
+    e=diagnostic_event("investigation_transcript");cJSON_AddStringToObject(e,"question_id",id);
+    cJSON_AddStringToObject(e,"status",p.transcript_status());
+    if(std::isfinite(p.speech_to_noise_db()))cJSON_AddNumberToObject(e,"speech_to_noise_db",p.speech_to_noise_db());
+    else cJSON_AddNullToObject(e,"speech_to_noise_db");
+    cJSON_AddNumberToObject(e,"upload_us",uploaded-started);
+    cJSON_AddNumberToObject(e,"reply_us",esp_timer_get_time()-uploaded);diagnostic_emit(e);
+    return active(p);
+}
+// The host measured this level from the uploaded question (ADR-0012).
+std::string level_note(const InvestigationProtocol& p) {
+    const double db=p.speech_to_noise_db();char text[96];
+    if(!std::isfinite(db))return "Your voice was not measured over the background: check the words.\n";
+    snprintf(text,sizeof(text),db<5?"Voice %.0f dB over background: noisy, check the words.\n":
+             "Voice %.0f dB over background.\n",db);
+    return text;
+}
+// Before Record A: Ask records a question, a heard transcript needs Use or Retry,
+// and Record A goes on with the confirmed (or fixture) question. True when
+// Record A was chosen and the session is still active.
+bool choose_question(Socket& s,InvestigationProtocol& p,const char* boot,const char* session,
+                     const std::string& fixture_question,const std::string& steps) {
+    using S=InvestigationProtocol::State;
+    std::string notice;
+    while(active(p)) {
+        if(p.state()==S::Confirming) {
+            const bool more=p.questions_left()>0;
+            const std::string text="\""+std::string(p.transcript())+"\"\n\n"+level_note(p)+
+                (more?"Use this question, or Retry to ask again.":"Use this question, or Discard it.");
+            show(p,text.c_str(),"Use",more?"Retry":"Discard");
+            const int choice=wait_action(s,p,"confirm_question");
+            if(!choice)return false;
+            auto* e=diagnostic_event("investigation_question_confirm");
+            cJSON_AddStringToObject(e,"question_id",p.question_id());cJSON_AddBoolToObject(e,"accepted",choice==1);
+            diagnostic_emit(e);
+            if(!s.send(p.confirm_question(choice==1))){p.disconnect();return false;}
+            notice=choice==1?"":"Question discarded.\n";
+            if(choice==2 && more && !ask_question(s,p,boot,session))return false;
+            continue;
+        }
+        const bool asked=p.question()[0];
+        // The guidance box shows about 7 lines: the Ask hint shares the question's line.
+        const std::string prompt=notice+(asked?"Your question: "+std::string(p.question()):
+            (p.questions_left()?"Tap Ask to ask by voice, or record A for: ":"")+fixture_question)+"\n\n"+steps;
+        show(p,prompt.c_str(),"Record A",p.questions_left()?(asked?"Ask again":"Ask"):nullptr);
+        const int choice=wait_action(s,p,"record_a");
+        if(choice!=2)return choice==1;
+        notice.clear();
+        if(!ask_question(s,p,boot,session))return false;
+        if(p.state()==S::ReadyA)notice=!strcmp(p.transcript_status(),"empty")?
+            "Nothing was recognised. Ask again, or record A.\n":"Speech-to-text failed on the Mac. Ask again, or record A.\n";
+    }
+    return false;
 }
 
 // Media task. The image is hidden (under the display lock) while its pixels
@@ -487,12 +603,19 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     context_dsc.data_size=context_width*context_height*2;context_dsc.data=reinterpret_cast<const uint8_t*>(context_pixels);
     context_image=lv_image_create(panel);lv_obj_set_pos(context_image,850,355);lv_obj_set_size(context_image,context_width,context_height);
     context_caption=text(panel,"",850,355+context_height+2,&lv_font_montserrat_16,0x90a4ae);
-    start_button=button(panel,"Start",0,560,start);
-    action_button=button(panel,"Record A",235,560,action);action_label=lv_obj_get_child(action_button,0);
+    start_button=button(panel,"Start",0,560,start,180);
+    ask_button=button(panel,"Ask",192,560,ask,180);ask_label=lv_obj_get_child(ask_button,0);
+    lv_obj_add_state(ask_button,LV_STATE_DISABLED);
+    action_button=button(panel,"Record A",384,560,action,180);action_label=lv_obj_get_child(action_button,0);
     lv_obj_add_state(action_button,LV_STATE_DISABLED);
-    cancel_button=button(panel,"Cancel",470,560,cancel);lv_obj_add_state(cancel_button,LV_STATE_DISABLED);
-    setup_button=button(panel,"Setup",705,560,open_setup);
-    back_button=button(panel,"Back",940,560,back);
+    cancel_button=button(panel,"Cancel",576,560,cancel,180);lv_obj_add_state(cancel_button,LV_STATE_DISABLED);
+    setup_button=button(panel,"Setup",768,560,open_setup,180);
+    back_button=button(panel,"Back",960,560,back,180);
+    // Question input level, shown only while listening, where the steadiness label sits.
+    level_bar=lv_bar_create(panel);lv_obj_set_pos(level_bar,520,8);lv_obj_set_size(level_bar,360,28);
+    lv_bar_set_range(level_bar,0,100);
+    lv_obj_set_style_bg_color(level_bar,lv_color_hex(0x263238),LV_PART_MAIN);
+    lv_obj_set_style_bg_color(level_bar,lv_color_hex(0x66bb6a),LV_PART_INDICATOR);
     lv_timer_create(draw_live,60,nullptr);
 
     // Setup stays off the main flow: service address, Wi-Fi and keyboard.
@@ -514,8 +637,11 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_obj_update_layout(screen);
     diagnostic_check("investigation_keyboard_layout",layout_ok(setup_panel,{done,endpoint_field,wifi,keyboard})?"pass":"fail",
                      "Resolved setup controls and keyboard stay inside the setup panel without overlap.");
-    diagnostic_check("investigation_layout",layout_ok(panel,{heading,steady_label,legend[0],chart,transcript,context_image,start_button,action_button,cancel_button,setup_button,back_button})?"pass":"fail",
+    diagnostic_check("investigation_layout",layout_ok(panel,{heading,steady_label,legend[0],chart,transcript,context_image,start_button,ask_button,action_button,cancel_button,setup_button,back_button})?"pass":"fail",
                      "Resolved A/B heading, spectrum, guidance and buttons stay inside the panel without overlap.");
+    diagnostic_check("investigation_level_layout",layout_ok(panel,{heading,level_bar,legend[0],chart})?"pass":"fail",
+                     "The question level meter stays inside the panel, clear of the heading, legend and spectrum.");
+    lv_obj_add_flag(level_bar,LV_OBJ_FLAG_HIDDEN);
     for(auto* p:{panel,setup_panel,keyboard})lv_obj_add_flag(p,LV_OBJ_FLAG_HIDDEN);
     context_clear();
 }
@@ -551,10 +677,16 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         take_context_photo();
     }
     for(unsigned index=0;index<2 && active(*p);++index) {
-        const std::string prompt=question+"\n\n"+(index==0?placement_a:placement_b)+
+        const std::string steps=(index==0?placement_a:placement_b)+
             "\nStop moving before recording. Three seconds; device speaker stays silent.";
-        show(*p,replay?"SD REPLAY: loading original recordings. No new sensor acquisition.":prompt.c_str(),replay?nullptr:index==0?"Record A":"Record B");
-        if((!replay && !wait_action(socket,*p,index==0?"record_a":"record_b")) || !p->start_capture())break;
+        if(index==0 && !replay && p->speech_available()) {
+            if(!choose_question(socket,*p,boot,session,question,steps))break;
+        } else {
+            const std::string prompt=(p->question()[0]?"Your question: "+std::string(p->question()):question)+"\n\n"+steps;
+            show(*p,replay?"SD REPLAY: loading original recordings. No new sensor acquisition.":prompt.c_str(),replay?nullptr:index==0?"Record A":"Record B");
+            if(!replay && !wait_action(socket,*p,index==0?"record_a":"record_b"))break;
+        }
+        if(!p->start_capture())break;
         if(!replay)show(*p,index==0?"Settling 0.5s, then recording A / 3s\nHold still; speaker silent.":"Settling 0.5s, then recording B / 3s\nHold still; speaker silent.");
         {
             InvestigationCapture capture;char id[48];snprintf(id,sizeof(id),"%s-%c",session,index?'b':'a');
