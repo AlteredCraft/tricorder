@@ -4,7 +4,9 @@ Reference for [G-0002.01](plans/G-0002.01-guided-ab-slice.md). Design decisions:
 
 ## States
 
-`idle → ready_a → recording_a → waiting → adjust → ready_b → recording_b → waiting → complete`
+`idle → ready_a → recording_a → waiting → adjust → ready_b → recording_b → return_a → recording_repeat → waiting → complete`
+
+A is where the person is; the guidance names B from their question; then they go back to A and record it again. The fixture (`planning/fixtures/G-0002.01-open-ab.json`) holds only the capture settings and a default question. SD replay resends a saved pair and skips the repeat.
 
 Spoken ask, optional, only at `ready_a`: `ready_a → asking → transcribing → confirming → ready_a` (Use or Retry). An empty or failed transcript goes straight back to `ready_a`.
 
@@ -20,8 +22,8 @@ Every message carries `version`, `type`, `boot_id`, `session_id` (IDs 1–96 cha
 1a. Spoken ask, before capture A only, at most 5 per session: `question_start{metadata}`, `question_chunk{question_id, offset, data}` ×N, `question_end{question_id, sha256}` → `transcript{question_id, status: heard|empty|failed, text, speech_to_noise_db}`. After `heard`, the device must send `question_confirm{question_id, accepted}` before anything else except `cancel`; only an accepted transcript becomes the operator question. No per-stage ACKs.
 2. `capture_start` (+ `metadata`) → `capture_ack{stage:start}`; `capture_chunk{capture_id, offset, data(base64 ≤ 4096 B)}` ×N; `capture_end{sha256}` → `capture_ack{stage:complete}`.
 3. `turn{request_id, capture_ids:[A], device_ms, deadline_ms}` → `guidance{measurements, comparison:null, text}` → device `ack` → `acknowledged`.
-4. Operator confirms the adjustment; capture B as in step 2.
-5. `turn{capture_ids:[A,B], adjustment}` → `guidance{comparison:{rms_delta_db = 20·log10(RMS_B/RMS_A)}}` → `ack`. Clipping or zero RMS makes the comparison `inconclusive`.
+4. Operator confirms the adjustment; capture B as in step 2. Back at A, capture A again as in step 2 (optional in the protocol; the live flow always does it).
+5. `turn{capture_ids:[A,B] or [A,B,A2], adjustment}` → `comparison{comparison:{rms_delta_db = 20·log10(RMS_B/RMS_A), repeat_delta_db = 20·log10(RMS_A2/RMS_A) or null without a repeat}}` → `ack`. Clipping or zero RMS in any capture makes the comparison `inconclusive` (both values null).
 6. `cancel` → `cancelled`. The device stops locally without waiting for it.
 
 Question metadata (exactly these fields): `question_id` (never a capture ID), `boot_id`, `session_id`, format `pcm_s16le`, `sample_rate_hz` 16000, `channels` 1, `frames` ≤ 128,000 (8 s), `size_bytes`, `sha256`, `source_rate_hz` 48000, `source_slot` 0, `gain_db` 24, `filter` `hpf80-lpf6500-63tap-decimate3` (the device's `SpeechFilter` on slot 0), `warmup_frames` 12000, acquisition start/end µs, `stopped_by` operator|limit, `input_clipped`, `driver_epoch_integrity`. Question audio is saved under `questions/` (with a 16 kHz WAV), never under `captures/`, and never reaches the RMS comparison or the text model. The text model gets only the confirmed text, as `operator_question` (operator context, not instructions).
@@ -30,7 +32,7 @@ Speech-to-noise (logged per ask as `question_analysis`, shown on the transcript 
 
 Capture metadata: format `pcm_s16le`, rate, channels, frames, requested `gain_db`, source/physical slot, size, acquisition start/end µs, `warmup_frames`, ingress block hashes, driver counters, `speaker_active:false`. **The host recomputes every measurement from the raw bytes**, and the model only writes prose.
 
-Bounds: one connection, one transfer, one pending reply, two captures per session, ≤ 1,152,000 B per capture, 640 incoming messages; separately, 5 questions of ≤ 256,000 B and 330 question messages. Transcription is bounded at 10 s (then `failed`); the device allows 30 s from the end of recording to the transcript. Device timeouts: connect 3 s, send 2 s, read 1 s, upload 30 s total, capture ACK 5 s, reply 15 s. Host idle close after 30 s between messages, or 10 min while the device waits for the operator (before Record A, while transcribing and confirming a question, and at adjust); ping/pong (10 s + 10 s) detects a dead device.
+Bounds: one connection, one transfer, one pending reply, three captures per session (A, B, A again), ≤ 1,152,000 B per capture, 900 incoming messages; separately, 5 questions of ≤ 256,000 B and 330 question messages. Transcription is bounded at 10 s (then `failed`); the device allows 30 s from the end of recording to the transcript. Device timeouts: connect 3 s, send 2 s, read 1 s, upload 30 s total, capture ACK 5 s, reply 15 s. Host idle close after 30 s between messages, or 10 min while the device waits for the operator (before Record A, while transcribing and confirming a question, at adjust, and walking back to A); ping/pong (10 s + 10 s) detects a dead device.
 
 Capture: 48 kHz, 4 slots, s16, requested gain 24 dB, 0.5 s discarded settling prefix, then 3 s (144,000 frames) retained. Measurement slot 0 = farther mic hole.
 
@@ -50,7 +52,7 @@ Capture: 48 kHz, 4 slots, s16, requested gain 24 dB, 0.5 s discarded settling pr
 .tools/investigation-env/bin/python -m tools.investigation_evidence .local/runs/NEW/mock/<session-dir>
 ```
 
-On the device (guided startup opens this screen): **Start** (context photo, device-only) → optional **Ask** (tap, speak, **Stop**; level meter; up to 8 s) → transcript with the voice-over-background level → **Use** or **Retry** → **Record A** (steadiness label before each tap) (live spectrum) → wait for guidance → move → **Confirm position B** → **Record B** (live over A) → comparison with A/B spectra overlaid. **Setup** holds the service address and Wi-Fi. The on-device spectra are display only: 48 log bands, 50 Hz–20 kHz, averaged 2048-point FFTs of slot 0.
+On the device (guided startup opens this screen): **Start** (context photo, device-only) → optional **Ask** (tap, speak, **Stop**; level meter; up to 8 s) → transcript with the voice-over-background level → **Use** or **Retry** → **Record A** (steadiness label before each tap) (live spectrum) → wait for guidance → move → **Confirm position B** → **Record B** (live over A) → back at A, **Record A again** → comparison with A, B and A2 spectra overlaid. **Setup** holds the service address and Wi-Fi. The on-device spectra are display only: 48 log bands, 50 Hz–20 kHz, averaged 2048-point FFTs of slot 0.
 
 Firmware option `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` (private sdkconfig) skips automatic diagnostics at boot.
 

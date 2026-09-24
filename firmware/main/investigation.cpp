@@ -41,8 +41,8 @@ std::atomic<bool> listening{false},stop_question{false};
 float live_level=-120;bool level_fresh=false; // Guarded by live_lock.
 lv_obj_t *setup_panel,*endpoint_field,*keyboard;
 // Instrument view: live spectrum while recording, then A and B overlaid.
-lv_obj_t *chart,*legend[3];
-lv_chart_series_t* series[3]; // live, A, B
+lv_obj_t *chart,*legend[4];
+lv_chart_series_t* series[4]; // live, A, B, A again
 // Context photo (camera, once per session) and IMU steadiness before captures.
 constexpr unsigned context_width=320,context_height=180;
 lv_obj_t *context_image,*context_caption,*steady_label;
@@ -50,7 +50,7 @@ uint16_t* context_pixels=nullptr;
 lv_image_dsc_t context_dsc{};
 SteadinessReading steady_reading;
 bool steady_fresh=false; // Guarded by live_lock.
-const uint32_t series_colors[3]={0x66bb6a,0x4fc3f7,0xffb74d};
+const uint32_t series_colors[4]={0x66bb6a,0x4fc3f7,0xffb74d,0xce93d8};
 portMUX_TYPE live_lock=portMUX_INITIALIZER_UNLOCKED;
 float live_db[spectrum_band_count];
 unsigned live_sequence=0,live_drawn=0; // Guarded by live_lock.
@@ -112,17 +112,18 @@ void show_series(unsigned index,bool visible) {
     lv_chart_hide_series(chart,series[index],!visible);
     if(visible)lv_obj_remove_flag(legend[index],LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(legend[index],LV_OBJ_FLAG_HIDDEN);
 }
-// Media task: recording A shows only live; recording B shows live over A.
+// Media task: recording A shows only live; B and A again show live over A.
 void chart_recording(unsigned index) {
     if(!bsp_display_lock(1000))return;
     lv_chart_set_all_value(chart,series[0],LV_CHART_POINT_NONE);
-    show_series(0,true);show_series(1,index==1);show_series(2,false);
+    for(unsigned s=0;s<4;++s)show_series(s,s==0 || (s==1 && index>0));
     lv_chart_refresh(chart);bsp_display_unlock();
 }
+// After each capture, every recorded series so far is overlaid.
 void chart_capture(unsigned index,const float* db) {
     if(!bsp_display_lock(1000))return;
     for(size_t i=0;i<spectrum_band_count;++i)lv_chart_set_value_by_id(chart,series[index+1],i,spectrum_chart_value(db[i]));
-    show_series(0,false);show_series(index+1,true);
+    for(unsigned s=0;s<4;++s)show_series(s,s>0 && s<=index+1);
     lv_chart_refresh(chart);bsp_display_unlock();
 }
 void context_clear() {
@@ -130,7 +131,7 @@ void context_clear() {
     lv_obj_add_flag(steady_label,LV_OBJ_FLAG_HIDDEN);
 }
 void chart_clear() {
-    for(unsigned s=0;s<3;++s){lv_chart_set_all_value(chart,series[s],LV_CHART_POINT_NONE);show_series(s,false);}
+    for(unsigned s=0;s<4;++s){lv_chart_set_all_value(chart,series[s],LV_CHART_POINT_NONE);show_series(s,false);}
     lv_chart_refresh(chart);
 }
 // Whole-capture average of the measurement slot for the A/B overlay (display
@@ -162,6 +163,8 @@ const char* heading_text(InvestigationProtocol::State s) {
     case S::Adjust:return "Step 2: move to B";
     case S::ReadyB:return "Step 3: record B";
     case S::RecordingB:return "Recording B over A";
+    case S::ReturnA:return "Step 4: back to A";
+    case S::RecordingRepeat:return "Recording A again";
     case S::Complete:return "Comparison: A vs B";
     case S::Cancelled:return "Cancelled";
     case S::Offline:return "Offline";
@@ -219,7 +222,7 @@ void show(InvestigationProtocol& p,const char* message,const char* button_text=n
         if(cancelled.load())p.cancel();
         lv_label_set_text(heading,heading_text(p.state()));
         using S=InvestigationProtocol::State;const auto state=p.state();
-        if(state==S::ReadyA || state==S::Adjust || state==S::ReadyB)lv_obj_remove_flag(steady_label,LV_OBJ_FLAG_HIDDEN);
+        if(state==S::ReadyA || state==S::Adjust || state==S::ReadyB || state==S::ReturnA)lv_obj_remove_flag(steady_label,LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(steady_label,LV_OBJ_FLAG_HIDDEN);
         if(state==S::Asking){lv_bar_set_value(level_bar,0,LV_ANIM_OFF);lv_obj_remove_flag(level_bar,LV_OBJ_FLAG_HIDDEN);}
         else lv_obj_add_flag(level_bar,LV_OBJ_FLAG_HIDDEN);
@@ -567,8 +570,9 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_obj_set_width(heading,500);lv_label_set_long_mode(heading,LV_LABEL_LONG_DOT);
     steady_label=text(panel,"Motion: no data",520,6,&lv_font_montserrat_24,0x90a4ae);
     lv_obj_set_width(steady_label,360);lv_label_set_long_mode(steady_label,LV_LABEL_LONG_DOT);
-    const char* names[3]={"Live","A","B"};
-    for(unsigned s=0;s<3;++s)legend[s]=text(panel,names[s],900+s*95,6,&lv_font_montserrat_24,series_colors[s]);
+    const char* names[4]={"Live","A","B","A2"};
+    const int legend_x[4]={890,965,1015,1065};
+    for(unsigned s=0;s<4;++s)legend[s]=text(panel,names[s],legend_x[s],6,&lv_font_montserrat_24,series_colors[s]);
 
     // 48 log bands, 50 Hz-20 kHz; 0..100 maps floor..ceiling dB.
     constexpr int chart_x=80,chart_y=50,chart_w=1090,chart_h=270;
@@ -579,7 +583,7 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_obj_set_style_border_color(chart,lv_color_hex(0x37474f),0);
     lv_obj_set_style_line_color(chart,lv_color_hex(0x263238),LV_PART_MAIN);
     lv_obj_set_style_line_width(chart,3,LV_PART_ITEMS);lv_obj_set_style_size(chart,0,0,LV_PART_INDICATOR);
-    for(unsigned s=0;s<3;++s)series[s]=lv_chart_add_series(chart,lv_color_hex(series_colors[s]),LV_CHART_AXIS_PRIMARY_Y);
+    for(unsigned s=0;s<4;++s)series[s]=lv_chart_add_series(chart,lv_color_hex(series_colors[s]),LV_CHART_AXIS_PRIMARY_Y);
     chart_clear();
     for(int step=0;step<5;++step) {
         char value[16];snprintf(value,sizeof(value),"%d",static_cast<int>(spectrum_ceiling_db)-20*step);
@@ -637,7 +641,7 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_obj_update_layout(screen);
     diagnostic_check("investigation_keyboard_layout",layout_ok(setup_panel,{done,endpoint_field,wifi,keyboard})?"pass":"fail",
                      "Resolved setup controls and keyboard stay inside the setup panel without overlap.");
-    diagnostic_check("investigation_layout",layout_ok(panel,{heading,steady_label,legend[0],chart,transcript,context_image,start_button,ask_button,action_button,cancel_button,setup_button,back_button})?"pass":"fail",
+    diagnostic_check("investigation_layout",layout_ok(panel,{heading,steady_label,legend[0],legend[1],legend[2],legend[3],chart,transcript,context_image,start_button,ask_button,action_button,cancel_button,setup_button,back_button})?"pass":"fail",
                      "Resolved A/B heading, spectrum, guidance and buttons stay inside the panel without overlap.");
     diagnostic_check("investigation_level_layout",layout_ok(panel,{heading,level_bar,legend[0],chart})?"pass":"fail",
                      "The question level meter stays inside the panel, clear of the heading, legend and spectrum.");
@@ -663,8 +667,10 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         auto* value=cJSON_GetObjectItemCaseSensitive(fixture.get(),key);
         return cJSON_IsString(value)?value->valuestring:"";
     };
-    const std::string question=fixture_text("question"),placement_a=fixture_text("placement_a"),placement_b=fixture_text("placement_b");
-    if(question.empty() || placement_a.empty() || placement_b.empty())p->fail();
+    // The fixture holds capture settings and a default question. What A and B
+    // are comes from the person's question and the guidance, not the fixture.
+    const std::string question=fixture_text("question");
+    if(question.empty())p->fail();
     if(!active(*p) || !endpoint.parse(endpoint_text) || !socket.connect(endpoint))p->disconnect();
     else if(active(*p)) {
         auto* hello=p->envelope("hello");
@@ -676,20 +682,29 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         show(*p,"Point the camera at what you are investigating.\nTaking a context photo...");
         take_context_photo();
     }
-    for(unsigned index=0;index<2 && active(*p);++index) {
-        const std::string steps=(index==0?placement_a:placement_b)+
-            "\nStop moving before recording. Three seconds; device speaker stays silent.";
+    // A, B, then back to A for a repeat (SD replay resends a saved pair only).
+    static const char* steps_text[3]={
+        "Record A where you are now. Hold still: three seconds, speaker silent.",
+        "Record B where the guidance sent you, holding the device the same way. Hold still: three seconds.",
+        "Go back to A and hold the device the same way, then record A again.\nThis shows how much the reading changes when nothing else does."};
+    static const char* record_text[3]={"Record A","Record B","Record A again"};
+    static const char* action_name[3]={"record_a","record_b","record_repeat"};
+    for(unsigned index=0;index<(replay?2u:3u) && active(*p);++index) {
+        const std::string steps=steps_text[index];
         if(index==0 && !replay && p->speech_available()) {
             if(!choose_question(socket,*p,boot,session,question,steps))break;
         } else {
             const std::string prompt=(p->question()[0]?"Your question: "+std::string(p->question()):question)+"\n\n"+steps;
-            show(*p,replay?"SD REPLAY: loading original recordings. No new sensor acquisition.":prompt.c_str(),replay?nullptr:index==0?"Record A":"Record B");
-            if(!replay && !wait_action(socket,*p,index==0?"record_a":"record_b"))break;
+            show(*p,replay?"SD REPLAY: loading original recordings. No new sensor acquisition.":prompt.c_str(),replay?nullptr:record_text[index]);
+            if(!replay && !wait_action(socket,*p,action_name[index]))break;
         }
         if(!p->start_capture())break;
-        if(!replay)show(*p,index==0?"Settling 0.5s, then recording A / 3s\nHold still; speaker silent.":"Settling 0.5s, then recording B / 3s\nHold still; speaker silent.");
+        static const char* settling[3]={"Settling 0.5s, then recording A / 3s\nHold still; speaker silent.",
+            "Settling 0.5s, then recording B / 3s\nHold still; speaker silent.",
+            "Settling 0.5s, then recording A again / 3s\nHold still; speaker silent."};
+        if(!replay)show(*p,settling[index]);
         {
-            InvestigationCapture capture;char id[48];snprintf(id,sizeof(id),"%s-%c",session,index?'b':'a');
+            InvestigationCapture capture;char id[48];snprintf(id,sizeof(id),"%s-%c",session,"abr"[index]);
             if(!replay)chart_recording(index);
             const bool loaded=replay?test_storage_load_capture(id,capture):investigation_capture(boot,session,id,cancelled,capture,live_tap);
             if(!loaded || !active(*p) ||
@@ -705,6 +720,7 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
             if(!upload(socket,*p,capture,index)){p->fail();break;}
         } // Free raw PCM only after the service's matching completion/hash ACK.
         if(!active(*p))break;
+        if(index==1 && !replay) {if(!p->await_repeat())break;continue;}
         if(!socket.send(p->turn(now_ms()))){p->disconnect();break;}
         show(*p,"Waiting for evidence-linked guidance...\nCancel is available.");
         if(!wait_reply(socket,*p))break;
@@ -713,7 +729,8 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         if(!wait_reply(socket,*p))break;
         if(index==0) {
             show(*p,p->text(),replay?nullptr:"Confirm position B");
-            if((!replay && !wait_action(socket,*p,"confirm_b")) || !p->adjust(replay?"SD replay of original recorded A/B adjustment; no new movement":("Moved to "+placement_b+"; same source level").c_str()))break;
+            if((!replay && !wait_action(socket,*p,"confirm_b")) || !p->adjust(replay?"SD replay of original recorded A/B adjustment; no new movement":
+                                                                            "Moved to B as the guidance described; device held the same way"))break;
         }
     }
     if(cancelled.load()) {

@@ -21,6 +21,8 @@ from tools.investigation import (CaptureEvidence, Fixture, MAX_CAPTURE_BYTES, MA
                                  RunArchive, bounded_text, identity, integer, require, validate_reply)
 
 MAX_WIRE_BYTES = 32768
+# A, B and a repeat of A: start + 282 chunks + end each, plus hello, turns, acks, cancel.
+MAX_MESSAGES = 900
 # Spoken ask: start + chunks + end + confirm per question, outside the A/B budget.
 QUESTION_MESSAGES = MAX_QUESTIONS*(-(-MAX_QUESTION_FRAMES*2//4096)+3)
 
@@ -91,7 +93,7 @@ class MockSession:
             require(self.question_messages<QUESTION_MESSAGES,'question message budget exhausted')
             self.question_messages+=1
         else:
-            require(self.messages<640,'message budget exhausted')
+            require(self.messages<MAX_MESSAGES,'message budget exhausted')
             self.messages+=1
         if kind=='hello':
             require(self.phase=='new','duplicate hello')
@@ -140,7 +142,7 @@ class MockSession:
             now=integer(message['device_ms'],0,2**53-60001)
             deadline=integer(message['deadline_ms'],now+1,now+60000)
             adjustment=message.get('adjustment')
-            if len(self.ids)==2:bounded_text(adjustment,512)
+            if len(self.ids)>1:bounded_text(adjustment,512)
             else:require(adjustment is None,'premature adjustment')
             request=dict(version=1,type='guide' if len(self.ids)==1 else 'compare',
                          boot_id=self.archive.boot_id,session_id=self.archive.session_id,
@@ -162,23 +164,25 @@ class MockSession:
 
     async def capture(self, kind, message):
         if kind=='capture_start':
-            require(self.phase in ('await_a','adjust'),'capture invalid in state')
+            # compare_ready: after B the device may record A again before the compare turn.
+            require(self.phase in ('await_a','adjust') or (self.phase=='compare_ready' and len(self.ids)==2),
+                    'capture invalid in state')
             meta=message['metadata']
             require(isinstance(meta,dict),'capture metadata')
             key=identity(meta.get('capture_id'))
             require(meta.get('boot_id')==self.archive.boot_id and meta.get('session_id')==self.archive.session_id,
                     'capture identity mismatch')
-            require(key not in self.store.seen and len(self.store.seen)<2,'capture capacity/duplicate')
+            require(key not in self.store.seen and len(self.store.seen)<3,'capture capacity/duplicate')
             require(key not in self.question_ids,'capture ID reuses a question ID')
             size=integer(meta.get('size_bytes'),1,MAX_CAPTURE_BYTES)
             require(self.reserved_bytes+size<=self.archive.max_bytes,'capture byte capacity')
             # Only these transport fields can identify the event; metadata cannot override them.
             self.store.consume({**meta,'event':'capture_start'})
             self.reserved_bytes+=size
-            self.phase='recording_a' if not self.ids else 'recording_b'
+            self.phase=('recording_a','recording_b','recording_repeat')[len(self.ids)]
             await self.emit(self.envelope('capture_ack',capture_id=key,stage='start'))
             return
-        require(self.phase in ('recording_a','recording_b'),'no active capture')
+        require(self.phase in ('recording_a','recording_b','recording_repeat'),'no active capture')
         try:
             self.store.consume({**message,'event':kind})
             if kind=='capture_end':
@@ -187,9 +191,9 @@ class MockSession:
                 item=CaptureEvidence.from_pcm(json.loads(path.read_text()),path.with_suffix('.bin').read_bytes())
                 self.archive.fixture.check(item)
                 if self.ids:
-                    first=self.archive.load(self.ids[0])
-                    require(item.metadata['acquisition_start_us']>=first.metadata['acquisition_end_us'],
-                            'A/B windows overlap')
+                    last=self.archive.load(self.ids[-1])
+                    require(item.metadata['acquisition_start_us']>=last.metadata['acquisition_end_us'],
+                            'capture windows overlap')
                 self.archive.seen.add(key)
                 self.archive.used_bytes+=len(item.raw)
                 self.ids.append(key)
@@ -335,10 +339,10 @@ class MockSession:
 
 
 # Phases where the device's next message waits for the person (record A; read the
-# transcript; read guidance, move, record B). A read that starts while transcribing
+# transcript; read guidance, move, record B; walk back to A). A read that starts while transcribing
 # ends after the person reads it; transcription has its own bound. WebSocket
 # ping/pong (10 s + 10 s) still detects a dead device.
-OPERATOR_PHASES=('await_a','transcribing','await_confirm','adjust')
+OPERATOR_PHASES=('await_a','transcribing','await_confirm','adjust','compare_ready')
 
 
 async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_only=False, provider=None,

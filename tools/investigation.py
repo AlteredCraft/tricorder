@@ -266,12 +266,15 @@ class QuestionAudio:
 
 
 def comparison(captures):
+    """B/A, and A-again/A when the person returned to A after B (null without a repeat)."""
     if len(captures) == 1:
         return None
-    a, b = (item['measurement'] for item in captures)
-    valid = a['rms_counts'] > 0 and b['rms_counts'] > 0 and not (
-        a['clipped_samples'] or b['clipped_samples'])
-    return {'rms_delta_db': 20*math.log10(b['rms_counts']/a['rms_counts']) if valid else None,
+    values = [item['measurement'] for item in captures]
+    a = values[0]['rms_counts']
+    valid = all(v['rms_counts'] > 0 and not v['clipped_samples'] for v in values)
+    ratio = lambda v: 20*math.log10(v['rms_counts']/a) if valid else None
+    return {'rms_delta_db': ratio(values[1]),
+            'repeat_delta_db': ratio(values[2]) if len(values) == 3 else None,
             'status': 'measured' if valid else 'inconclusive',
             'unit': 'digital RMS dB ratio; not calibrated SPL'}
 
@@ -336,7 +339,8 @@ def validate_request(request):
         bounded_text(request['operator_question'], MAX_QUESTION_TEXT)
     fixture = Fixture(**request['fixture'])
     items = request.get('captures')
-    require(isinstance(items, list) and len(items) == (1 if request['type'] == 'guide' else 2),
+    # Compare: A, B and optionally A again (the person returned to A after B).
+    require(isinstance(items, list) and (len(items) == 1 if request['type'] == 'guide' else len(items) in (2, 3)),
             'wrong capture count')
     seen = set()
     for item in items:
@@ -357,9 +361,10 @@ def validate_request(request):
                 and 0 <= m['rms_counts'] <= m['peak_counts'], 'invalid RMS')
         expected_db = 20*math.log10(m['rms_counts']/32768) if m['rms_counts'] else None
         require(m['rms_dbfs'] == expected_db, 'inconsistent dBFS')
-    if len(items) == 2:
+    if len(items) > 1:
         bounded_text(request.get('adjustment'),512)
-        require(items[1]['acquisition_start_us'] >= items[0]['acquisition_end_us'], 'A/B windows overlap')
+        for before, after in zip(items, items[1:]):
+            require(after['acquisition_start_us'] >= before['acquisition_end_us'], 'capture windows overlap')
 
 
 def validate_reply(request, reply):
@@ -400,14 +405,18 @@ class MockProvider:
         if result is None:
             a = captures[0]
             text = prefix + (f"A ({a['capture_id']}): RMS {a['measurement']['rms_counts']:.2f} digital counts. "
-                    f"Now move to {request['fixture']['placement_b']}. Keep gain, source and orientation fixed. "
-                    'Confirm the adjustment before recording B.')
+                    'For B, change one thing that tests your question, such as the spot or the distance, '
+                    'and hold the device the same way. Confirm when you are there, then record B.')
         elif result['status'] == 'inconclusive':
             text = 'A/B retained, but clipping or silence prevents a useful RMS ratio. Repeat with a suitable signal.'
         else:
             text = (f"B versus A ({captures[1]['capture_id']} / {captures[0]['capture_id']}): "
-                    f"{result['rms_delta_db']:+.2f} dB digital RMS change. "
-                    'This is not calibrated sound pressure. Repeat the same positions to check consistency.')
+                    f"{result['rms_delta_db']:+.2f} dB digital RMS change. ")
+            if result['repeat_delta_db'] is None:
+                text += 'This is not calibrated sound pressure. Repeat the same positions to check consistency.'
+            else:
+                text += (f"Recording A again changed it by {result['repeat_delta_db']:+.2f} dB, the repeat "
+                         'variation to compare against. This is not calibrated sound pressure.')
         reply = {key: request[key] for key in ('version','boot_id','session_id','request_id','deadline_ms')}
         reply.update(type='guidance' if result is None else 'comparison',
                      capture_ids=[c['capture_id'] for c in captures],
@@ -418,13 +427,15 @@ class MockProvider:
 
 
 class Investigation:
-    """One session, two captures, one outstanding turn, no automatic retry.
+    """One session, A and B (and with repeat=True, A again after B), one
+outstanding turn, no automatic retry.
 
 Cancel/disconnect/timeout invalidate the pending request. Reconnect creates a
 new instance with a fresh session ID; completed/failed sessions cannot restart.
 """
-    def __init__(self, boot_id, session_id, fixture, *, clock=None, timeout_ms=15000):
+    def __init__(self, boot_id, session_id, fixture, *, clock=None, timeout_ms=15000, repeat=False):
         self.boot_id, self.session_id = identity(boot_id), identity(session_id)
+        self.repeat = repeat
         require(isinstance(fixture, Fixture), 'fixture required')
         self.fixture = fixture
         self.clock = clock or (lambda: time.monotonic_ns()//1000000)
@@ -451,24 +462,27 @@ new instance with a fresh session ID; completed/failed sessions cannot restart.
         self.operator_question = bounded_text(text, MAX_QUESTION_TEXT)
 
     def start_capture(self):
-        self._state('ready_a','ready_b')
-        self._set('recording_a' if self.state=='ready_a' else 'recording_b')
+        self._state('ready_a','ready_b','return_a')
+        self._set({'ready_a':'recording_a','ready_b':'recording_b','return_a':'recording_repeat'}[self.state])
 
     def finish_capture(self, item):
-        self._state('recording_a','recording_b')
+        self._state('recording_a','recording_b','recording_repeat')
         require(isinstance(item,CaptureEvidence), 'verified evidence required')
         item = CaptureEvidence.from_pcm(item.metadata, item.raw)
         meta = item.metadata
         require(meta['boot_id']==self.boot_id and meta['session_id']==self.session_id, 'capture session mismatch')
         self.fixture.check(item)
-        require(len(self.captures)<2 and all(c.metadata['capture_id']!=meta['capture_id'] for c in self.captures),
+        require(len(self.captures)<3 and all(c.metadata['capture_id']!=meta['capture_id'] for c in self.captures),
                 'capture capacity/duplicate')
         if self.captures:
-            require(meta['acquisition_start_us']>=self.captures[0].metadata['acquisition_end_us'], 'A/B windows overlap')
+            require(meta['acquisition_start_us']>=self.captures[-1].metadata['acquisition_end_us'], 'capture windows overlap')
         self.captures.append(item)
+        if self.state=='recording_b' and self.repeat:
+            self._set('return_a')  # the person walks back to A before the comparison
+            return None
         self.pending = dict(version=VERSION, type='guide' if len(self.captures)==1 else 'compare',
                             boot_id=self.boot_id, session_id=self.session_id,
-                            request_id=f'r{len(self.captures)}',
+                            request_id='r1' if len(self.captures)==1 else 'r2',
                             deadline_ms=self.clock()+self.timeout_ms,
                             fixture=self.fixture.to_dict(), adjustment=self.adjustment,
                             operator_question=self.operator_question,
@@ -498,7 +512,8 @@ new instance with a fresh session ID; completed/failed sessions cannot restart.
             self._set('incomplete')
 
     def cancel(self):
-        self._state('idle','ready_a','recording_a','waiting','adjust','ready_b','recording_b','offline','incomplete')
+        self._state('idle','ready_a','recording_a','waiting','adjust','ready_b','recording_b','return_a',
+                    'recording_repeat','offline','incomplete')
         self.pending = None
         self._set('cancelled')
 
@@ -509,15 +524,15 @@ new instance with a fresh session ID; completed/failed sessions cannot restart.
 
 
 class RunArchive:
-    """Exclusive private run directory; explicit two-capture and transcript budgets.
+    """Exclusive private run directory; explicit three-capture and transcript budgets.
 
 A failed write leaves partial evidence and poisons the archive. Never recycle a
 run directory or silently discard a failed attempt to recover capacity.
 """
-    def __init__(self, root, boot_id, session_id, fixture, *, max_bytes=2*MAX_CAPTURE_BYTES, max_events=256):
+    def __init__(self, root, boot_id, session_id, fixture, *, max_bytes=3*MAX_CAPTURE_BYTES, max_events=256):
         self.boot_id, self.session_id = identity(boot_id),identity(session_id)
         self.fixture = fixture
-        self.max_bytes = integer(max_bytes,1,2*MAX_CAPTURE_BYTES)
+        self.max_bytes = integer(max_bytes,1,3*MAX_CAPTURE_BYTES)
         self.max_events = integer(max_events,1,1024)
         self.used_bytes = self.events = 0
         self.seen = set()
@@ -528,7 +543,7 @@ run directory or silently discard a failed attempt to recover capacity.
         manifest = dict(spec_id='G-0002.01',spec_revision=SPEC_REVISION,protocol_version=VERSION,
                         run_id=self.root.name,boot_id=boot_id,session_id=session_id,
                         created_utc=datetime.now(timezone.utc).isoformat(),fixture=fixture.to_dict(),
-                        max_capture_bytes=max_bytes,max_captures=2,max_transcript_events=max_events,
+                        max_capture_bytes=max_bytes,max_captures=3,max_transcript_events=max_events,
                         workload='explicit-turn raw audio; camera/IMU/playback inactive during A/B',
                         scope='mock development; no handheld/live-provider acceptance',
                         clocks='device_ms/device_us are device monotonic; host_receipt_ns is Mac monotonic; do not subtract')
@@ -542,7 +557,7 @@ run directory or silently discard a failed attempt to recover capacity.
         self.fixture.check(item)
         require(meta['boot_id']==self.boot_id and meta['session_id']==self.session_id, 'archive session mismatch')
         key = meta['capture_id']
-        require(key not in self.seen and len(self.seen)<2, 'capture count capacity/duplicate')
+        require(key not in self.seen and len(self.seen)<3, 'capture count capacity/duplicate')
         require(self.used_bytes+len(item.raw)<=self.max_bytes, 'capture byte capacity')
         try:
             partial = self.root/'captures'/f'{key}.partial'

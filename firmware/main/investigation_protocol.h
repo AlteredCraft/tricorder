@@ -9,7 +9,7 @@ class InvestigationProtocol {
 public:
     enum class State { Idle, Connecting, ReadyA, Asking, Transcribing, Confirming,
                        RecordingA, Uploading, Waiting, Acknowledging, Adjust, ReadyB,
-                       RecordingB, Complete, Cancelled, Offline, Incomplete };
+                       RecordingB, ReturnA, RecordingRepeat, Complete, Cancelled, Offline, Incomplete };
     static constexpr unsigned max_questions=5,max_question_frames=128000;
     InvestigationProtocol(const char* boot, const char* session, unsigned frames=144000);
     ~InvestigationProtocol();
@@ -32,6 +32,9 @@ public:
     double speech_to_noise_db() const {return speech_to_noise_db_;}
     bool captured(const cJSON* metadata, const cJSON* measurement, uint64_t now);
     cJSON* turn(uint64_t now); // Only after the caller checks the complete hash ACK.
+    // After B's hash ACK: walk back to A and record it again before the compare
+    // turn, which then joins A, B and A again (SD replay of a pair skips this).
+    bool await_repeat();
     bool receive(const char* wire, uint64_t now);
     cJSON* ack();
     bool adjust(const char* text);
@@ -56,7 +59,7 @@ private:
     double speech_to_noise_db_=NAN;
     unsigned frames_,count_=0;
     uint64_t deadline_=0;
-    cJSON* captures_[2]{};
-    cJSON* measurements_[2]{};
+    cJSON* captures_[3]{};
+    cJSON* measurements_[3]{};
     bool ack_sent_=false;
 };

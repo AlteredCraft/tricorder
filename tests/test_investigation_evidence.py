@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import json
+import math
 from pathlib import Path
 import tempfile
 import unittest
@@ -48,6 +49,36 @@ class InvestigationEvidenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([q['status'] for q in result['questions']],['heard','heard'])
         self.assertEqual([q['accepted'] for q in result['questions']],[False,True])
         self.assertAlmostEqual(result['questions'][0]['speech_to_noise_db'],15,delta=1)
+
+    async def test_repeat_of_a_is_recomputed_from_saved_raw(self):
+        async def send(_):pass
+        s=MockSession(self.root/'repeat',send)
+        async def message(kind,**fields):
+            await s.receive(dict(version=1,type=kind,boot_id='boot',session_id='session',**fields))
+        await message('hello',fixture=fixture().to_dict())
+        for index,amplitude in enumerate([1000,500,900]):
+            key=f'take-{index}';meta,raw=evidence(key,amplitude,acquisition_start_us=index*30000+100,acquisition_end_us=index*30000+20100)
+            await message('capture_start',metadata=meta)
+            for offset in range(0,len(raw),4096):
+                await message('capture_chunk',capture_id=key,offset=offset,data=base64.b64encode(raw[offset:offset+4096]).decode())
+            await message('capture_end',capture_id=key,sha256=meta['sha256'])
+            if index==1:continue
+            fields={'adjustment':'Moved to B as guided'} if index else {}
+            await message('turn',request_id='r2' if index else 'r1',capture_ids=[f'take-{i}' for i in range(index+1)],
+                          device_ms=100000,deadline_ms=115000,**fields)
+            await s.drain();await message('ack',request_id='r2' if index else 'r1')
+        await s.close()
+        run=self.root/'repeat'/'boot-session'
+        result=assess_run(run)
+        self.assertEqual(result['status'],'pass',result)
+        self.assertAlmostEqual(result['repeat_delta_db'],20*math.log10(0.9))
+        self.assertEqual(len(result['captures']),3)
+        path=run/'transcript.jsonl';rows=[json.loads(line) for line in path.read_text().splitlines()]
+        for row in rows:
+            payload=row['message'].get('payload',{})
+            if payload.get('type')=='comparison':payload['comparison']['repeat_delta_db']=0.0
+        path.write_text(''.join(json.dumps(row)+'\n' for row in rows))
+        self.assertEqual(assess_run(run)['status'],'fail')
 
     async def test_question_audio_must_match_its_transcript_record(self):
         (self.run/'questions'/'session-q2.bin').write_bytes(b'bad')

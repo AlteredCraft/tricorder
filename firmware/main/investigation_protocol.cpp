@@ -82,6 +82,7 @@ bool InvestigationProtocol::ask(uint64_t now) {
 bool InvestigationProtocol::start_capture() {
     if(state_==State::ReadyA)state_=State::RecordingA;
     else if(state_==State::ReadyB)state_=State::RecordingB;
+    else if(state_==State::ReturnA)state_=State::RecordingRepeat;
     else return false;
     return true;
 }
@@ -111,7 +112,7 @@ cJSON* InvestigationProtocol::confirm_question(bool accepted) {
     cJSON_AddBoolToObject(o,"accepted",accepted);state_=State::ReadyA;return o;
 }
 bool InvestigationProtocol::captured(const cJSON* m,const cJSON* v,uint64_t now) {
-    if((state_!=State::RecordingA && state_!=State::RecordingB) || count_>=2)return false;
+    if((state_!=State::RecordingA && state_!=State::RecordingB && state_!=State::RecordingRepeat) || count_>=3)return false;
     auto* key=field(m,"capture_id");auto* hash=field(m,"sha256");
     if(!str(field(m,"boot_id"),boot_) || !str(field(m,"session_id"),session_) ||
        !cJSON_IsString(key) || !id(key->valuestring) || !cJSON_IsString(hash) || strlen(hash->valuestring)!=64 ||
@@ -125,8 +126,8 @@ bool InvestigationProtocol::captured(const cJSON* m,const cJSON* v,uint64_t now)
        !measurement(v,frames_))return false;
     for(const char* p=hash->valuestring;*p;++p)if(!((*p>='0' && *p<='9') || (*p>='a' && *p<='f')))return false;
     if(!strcmp(key->valuestring,question_id_))return false;
-    if(count_ && (!strcmp(key->valuestring,capture_id(0)) ||
-       field(m,"acquisition_start_us")->valuedouble<field(captures_[0],"acquisition_end_us")->valuedouble))return false;
+    for(unsigned i=0;i<count_;++i)if(!strcmp(key->valuestring,capture_id(i)))return false;
+    if(count_ && field(m,"acquisition_start_us")->valuedouble<field(captures_[count_-1],"acquisition_end_us")->valuedouble)return false;
     // Raw capture ownership retains the full ingress proof through SD commit
     // and upload ACK. The reducer only needs identity and the previous end
     // timestamp; copying 141 proof blocks here consumed ~62 KiB per capture
@@ -141,6 +142,10 @@ bool InvestigationProtocol::captured(const cJSON* m,const cJSON* v,uint64_t now)
 }
 const char* InvestigationProtocol::capture_id(unsigned index) const {
     return index<count_ ? field(captures_[index],"capture_id")->valuestring : "";
+}
+bool InvestigationProtocol::await_repeat() {
+    if(state_!=State::Uploading || count_!=2)return false;
+    state_=State::ReturnA;deadline_=0;return true;
 }
 cJSON* InvestigationProtocol::turn(uint64_t now) {
     tick(now);if(state_!=State::Uploading)return nullptr;
@@ -191,13 +196,20 @@ bool InvestigationProtocol::receive(const char* wire,uint64_t now) {
             auto* compare=field(o,"comparison");
             if(count_==1)ok=ok && cJSON_IsNull(compare);
             else {
-                double a=field(measurements_[0],"rms_counts")->valuedouble,b=field(measurements_[1],"rms_counts")->valuedouble;
-                bool valid=a>0 && b>0 && number(field(measurements_[0],"clipped_samples"),0) && number(field(measurements_[1],"clipped_samples"),0);
-                auto* delta=field(compare,"rms_delta_db");
-                ok=ok && cJSON_IsObject(compare) && cJSON_GetArraySize(compare)==3 &&
+                // B/A, and A-again/A when repeated; null when any capture clipped or was silent.
+                bool valid=true;
+                for(unsigned i=0;i<count_;++i)valid=valid && field(measurements_[i],"rms_counts")->valuedouble>0 &&
+                    number(field(measurements_[i],"clipped_samples"),0);
+                const double a=field(measurements_[0],"rms_counts")->valuedouble;
+                auto matches=[&](const cJSON* v,unsigned index)->bool {
+                    if(!valid || index>=count_)return cJSON_IsNull(v);
+                    return cJSON_IsNumber(v) && fabs(v->valuedouble-20*log10(field(measurements_[index],"rms_counts")->valuedouble/a))<1e-8;
+                };
+                ok=ok && cJSON_IsObject(compare) && cJSON_GetArraySize(compare)==4 &&
                     str(field(compare,"status"),valid?"measured":"inconclusive") &&
                     str(field(compare,"unit"),"digital RMS dB ratio; not calibrated SPL") &&
-                    (valid ? cJSON_IsNumber(delta) && fabs(delta->valuedouble-20*log10(b/a))<1e-8 : cJSON_IsNull(delta));
+                    matches(field(compare,"rms_delta_db"),1) && field(compare,"repeat_delta_db") &&
+                    matches(field(compare,"repeat_delta_db"),2);
             }
             if(ok){strcpy(text_,field(o,"text")->valuestring);state_=State::Acknowledging;ack_sent_=false;}
         }
@@ -220,6 +232,6 @@ void InvestigationProtocol::disconnect() {if(!terminal()){state_=State::Offline;
 void InvestigationProtocol::fail() {if(!terminal()){state_=State::Incomplete;deadline_=0;}}
 const char* InvestigationProtocol::state_name() const {
     static const char* names[]={"idle","connecting","ready_a","asking","transcribing","confirming","recording_a","uploading","waiting",
-                                "acknowledging","adjust","ready_b","recording_b","complete","cancelled","offline","incomplete"};
+                                "acknowledging","adjust","ready_b","recording_b","return_a","recording_repeat","complete","cancelled","offline","incomplete"};
     return names[static_cast<unsigned>(state_)];
 }

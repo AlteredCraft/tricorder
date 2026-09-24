@@ -1,0 +1,13 @@
+{
+  "question": "What changes between A and B?",
+  "variable": "One change that tests the operator's question, named by the guidance after A; everything else stays the same",
+  "placement_a": "Where the person is when they record A",
+  "placement_b": "Where the guidance sends the person, holding the device the same way",
+  "expected": "No expected result; report the measured change next to how much recording A again changes it; no calibrated SPL claim",
+  "sample_rate_hz": 48000,
+  "frames": 144000,
+  "channels": 4,
+  "gain_db": 24,
+  "source_slot": 0,
+  "physical_slot": "farther-hole"
+}

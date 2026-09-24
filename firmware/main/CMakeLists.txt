@@ -10,6 +10,6 @@ target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=pvPortMalloc" "-Wl,
 target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=dma2d_force_end")
 
 # Embed the same fixture read by host tools; do not maintain a second copy.
-configure_file("${CMAKE_CURRENT_LIST_DIR}/../../planning/fixtures/G-0002.01-speaker-distance.json"
+configure_file("${CMAKE_CURRENT_LIST_DIR}/../../planning/fixtures/G-0002.01-open-ab.json"
                "${CMAKE_CURRENT_BINARY_DIR}/guided_ab_fixture.json" COPYONLY)
 target_add_binary_data(${COMPONENT_LIB} "${CMAKE_CURRENT_BINARY_DIR}/guided_ab_fixture.json" TEXT)

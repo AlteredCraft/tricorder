@@ -69,11 +69,15 @@ def assess_run(root):
         check(all(m.get('version')==1 and m.get('boot_id')==boot and m.get('session_id')==session for m in traffic),'wire identity mismatch')
         traffic,questions,operator_question=spoken_questions(root,rows,traffic)
         result.update(questions=questions,operator_question=operator_question)
-        expected=['hello','ready']+['capture_start','capture_ack','capture_end','capture_ack','turn','guidance','ack','acknowledged']+['capture_start','capture_ack','capture_end','capture_ack','turn','comparison','ack','acknowledged']
+        upload=['capture_start','capture_ack','capture_end','capture_ack']
+        guide=['turn','guidance','ack','acknowledged'];compare=['turn','comparison','ack','acknowledged']
+        # A, guidance, B, then optionally A again (the person returned to A), then the comparison.
+        repeat=len(traffic)==22
+        expected=['hello','ready']+upload+guide+upload+(upload if repeat else [])+compare
         check([m['type'] for m in traffic]==expected,'incomplete/out-of-order exchange')
         captures=[];proofs=[]
-        for index,base in enumerate([2,10]):
-            messages=traffic[base:base+8]
+        for base in ([2,10,14] if repeat else [2,10]):
+            messages=traffic[base:base+4]
             key=messages[0]['metadata']['capture_id']
             check(isinstance(key,str) and '/' not in key and '\\' not in key,'unsafe capture identity')
             meta=json.loads((root/'captures'/f'{key}.json').read_text())
@@ -85,7 +89,8 @@ def assess_run(root):
                 check(meta[setting]==fixture[setting],f'changed setting: {setting}')
             check(meta['format']=='pcm_s16le' and meta['driver_epoch_integrity'] is True and meta['speaker_active'] is False,'measurement window invalid')
             check(meta['acquisition_end_us']>meta['acquisition_start_us'],'invalid acquisition window')
-            if captures:check(meta['acquisition_start_us']>=captures[0]['end_us'],'overlapping captures')
+            if captures:check(meta['acquisition_start_us']>=captures[-1]['end_us'],'overlapping captures')
+            check(all(c['capture_id']!=key for c in captures),'duplicate capture')
             samples=[value[0] for value in struct.iter_unpack('<h',raw)]
             selected=samples[fixture['source_slot']::4]
             rms=math.sqrt(math.fsum(x*x for x in selected)/len(selected))
@@ -96,19 +101,6 @@ def assess_run(root):
             check(messages[1]['capture_id']==messages[2]['capture_id']==messages[3]['capture_id']==key,'upload ACK identity')
             check(messages[1]['stage']=='start' and messages[3]['stage']=='complete','upload ACK stage')
             check(messages[2]['sha256']==messages[3]['sha256']==meta['sha256'],'upload ACK digest')
-            turn,reply,ack,done=messages[4:]
-            check(turn['capture_ids']==reply['capture_ids']==[c['capture_id'] for c in captures],'evidence join mismatch')
-            check(turn['request_id']==reply['request_id']==ack['request_id']==done['request_id'],'turn ACK mismatch')
-            check(turn['deadline_ms']==reply['deadline_ms'] and turn['device_ms']<turn['deadline_ms'],'deadline mismatch')
-            check(done['state']==('adjust' if index==0 else 'complete'),'final acknowledgement missing')
-            check(len(reply['measurements'])==len(captures),'measurement count')
-            for supplied,computed in zip(reply['measurements'],[c['measurement'] for c in captures]):
-                check(set(supplied)==set(computed),'measurement fields')
-                for name,value in computed.items():
-                    actual=supplied[name]
-                    check(actual is None if value is None else type(actual) in (int,float) and math.isfinite(actual) and math.isclose(actual,value,rel_tol=1e-10,abs_tol=1e-10),f'unbacked {name}')
-            if index==0:check(reply['comparison'] is None,'premature comparison')
-            else:check(isinstance(turn.get('adjustment'),str) and turn['adjustment'].strip(),'adjustment missing')
             has_proof='ingress_blocks' in meta
             if has_proof:
                 offset=0;previous=meta['acquisition_start_us']
@@ -127,15 +119,32 @@ def assess_run(root):
                 check(after['read_bytes']-before['read_bytes']==extent and after['dma_bytes']-before['dma_bytes']>=extent,'driver extent')
                 check(all(before[k]==after[k] for k in ('overflows','overwritten_bytes','short_reads','read_errors')),'driver loss/error')
             proofs.append(has_proof)
-        a,b=(c['measurement'] for c in captures)
-        valid=a['rms_counts']>0 and b['rms_counts']>0 and not(a['clipped_samples'] or b['clipped_samples'])
-        delta=20*math.log10(b['rms_counts']/a['rms_counts']) if valid else None
+        for index,(base,joined) in enumerate([(6,captures[:1]),(len(traffic)-4,captures)]):
+            turn,reply,ack,done=traffic[base:base+4]
+            check(turn['capture_ids']==reply['capture_ids']==[c['capture_id'] for c in joined],'evidence join mismatch')
+            check(turn['request_id']==reply['request_id']==ack['request_id']==done['request_id'],'turn ACK mismatch')
+            check(turn['deadline_ms']==reply['deadline_ms'] and turn['device_ms']<turn['deadline_ms'],'deadline mismatch')
+            check(done['state']==('adjust' if index==0 else 'complete'),'final acknowledgement missing')
+            check(len(reply['measurements'])==len(joined),'measurement count')
+            for supplied,computed in zip(reply['measurements'],[c['measurement'] for c in joined]):
+                check(set(supplied)==set(computed),'measurement fields')
+                for name,value in computed.items():
+                    actual=supplied[name]
+                    check(actual is None if value is None else type(actual) in (int,float) and math.isfinite(actual) and math.isclose(actual,value,rel_tol=1e-10,abs_tol=1e-10),f'unbacked {name}')
+            if index==0:check(reply['comparison'] is None,'premature comparison')
+            else:check(isinstance(turn.get('adjustment'),str) and turn['adjustment'].strip(),'adjustment missing')
+        values=[c['measurement'] for c in captures]
+        valid=all(v['rms_counts']>0 and not v['clipped_samples'] for v in values)
+        ratio=lambda v:20*math.log10(v['rms_counts']/values[0]['rms_counts']) if valid else None
+        delta=ratio(values[1]);again=ratio(values[2]) if repeat else None
         comparison=traffic[-3]['comparison']
+        same=lambda supplied,computed:supplied is None if computed is None else math.isclose(supplied,computed,rel_tol=1e-10,abs_tol=1e-10)
         check(comparison['status']==('measured' if valid else 'inconclusive'),'comparison status')
-        check(comparison['rms_delta_db'] is None if delta is None else math.isclose(comparison['rms_delta_db'],delta,rel_tol=1e-10,abs_tol=1e-10),'comparison ratio')
-        check(captures[0]['capture_id']!=captures[1]['capture_id'],'duplicate A/B')
+        check(same(comparison['rms_delta_db'],delta),'comparison ratio')
+        check(same(comparison.get('repeat_delta_db'),again),'repeat ratio')  # absent in runs saved before the repeat
         result.update(status='pass',boot_id=boot,session_id=session,captures=captures,
-                      driver_proofs_present=all(proofs),rms_delta_db=delta,comparison_status=comparison['status'])
+                      driver_proofs_present=all(proofs),rms_delta_db=delta,repeat_delta_db=again,
+                      comparison_status=comparison['status'])
     except (OSError,ValueError,KeyError,TypeError,IndexError,struct.error) as error:
         result['errors'].append(str(error))
     return result

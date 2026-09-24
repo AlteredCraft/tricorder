@@ -51,6 +51,7 @@ int main() {
   else if(action=="disconnect") {p.disconnect();ok=true;}
   else if(action=="tick") {p.tick(t);ok=true;}
   else if(action=="ack") {out=p.ack();ok=out;}
+  else if(action=="await_repeat") ok=p.await_repeat();
   else if(action=="start_question") ok=p.start_question();
   else if(action=="question_recorded") {
    ok=p.question_recorded(cJSON_GetObjectItemCaseSensitive(cmd,"metadata"),t);
@@ -108,7 +109,7 @@ int main() {
                 dict(op='start'),capture,dict(op='uploaded')],item
 
     def reply(self, items, deadline=15100):
-        request=self.envelope('guide' if len(items)==1 else 'compare',request_id=f'r{len(items)}',
+        request=self.envelope('guide' if len(items)==1 else 'compare',request_id='r1' if len(items)==1 else 'r2',
                               deadline_ms=deadline,fixture=fixture().to_dict(),
                               captures=[x.to_dict() for x in items],adjustment='Moved to 40 cm')
         return MockProvider().respond(request)
@@ -188,6 +189,39 @@ int main() {
         self.assertEqual(rows[-1]['state'],'incomplete')
         rows=self.run_commands(self.ready()+self.asked()+[dict(op='cancel'),self.transcript()])
         self.assertFalse(rows[-1]['ok']);self.assertEqual(rows[-1]['state'],'cancelled')
+
+    def test_repeat_of_a_after_b_joins_the_comparison(self):
+        commands,a=self.prefix()
+        cap_b,b=self.capture('take-b',500,4000);cap_r,r=self.capture('take-r',900,7000)
+        before_b=commands+[self.receive(self.reply([a])),dict(op='ack'),
+            self.receive(self.envelope('acknowledged',request_id='r1',state='adjust')),
+            dict(op='adjust'),dict(op='start'),cap_b]
+        good=self.reply([a,b,r])
+        rows=self.run_commands(before_b+[dict(op='await_repeat'),dict(op='uploaded'),dict(op='start'),cap_r,
+            dict(op='await_repeat'),dict(op='uploaded'),self.receive(good),dict(op='ack'),
+            self.receive(self.envelope('acknowledged',request_id='r2',state='complete'))])
+        self.assertEqual(rows[11]['state'],'return_a')
+        self.assertFalse(rows[12]['ok'])  # no compare turn while walking back to A
+        self.assertEqual(rows[13]['state'],'recording_repeat')
+        self.assertFalse(rows[15]['ok'])  # only one repeat
+        self.assertEqual(rows[16]['out']['capture_ids'],['take-a','take-b','take-r'])
+        self.assertEqual(rows[16]['out']['request_id'],'r2')
+        self.assertEqual(rows[17]['state'],'acknowledging')
+        self.assertEqual(rows[-1]['state'],'complete')
+        # A repeat is only offered after B, and its comparison must carry the host's A-to-A value.
+        early=self.run_commands(commands+[dict(op='await_repeat')])
+        self.assertFalse(early[-1]['ok'])
+        prefix=before_b+[dict(op='await_repeat'),dict(op='start'),cap_r,dict(op='uploaded')]
+        for patch in [{'repeat_delta_db':0.0},{'repeat_delta_db':None},{'repeat_delta_db':'x'}]:
+            with self.subTest(patch=patch):
+                bad=copy.deepcopy(good);bad['comparison'].update(patch)
+                self.assertFalse(self.run_commands(prefix+[self.receive(bad)])[-1]['ok'])
+        bad=copy.deepcopy(good);del bad['comparison']['repeat_delta_db']
+        self.assertFalse(self.run_commands(prefix+[self.receive(bad)])[-1]['ok'])
+        bad=copy.deepcopy(good);bad['capture_ids']=['take-a','take-b']
+        self.assertFalse(self.run_commands(prefix+[self.receive(bad)])[-1]['ok'])
+        overlap,_=self.capture('take-r',900,4500)
+        self.assertFalse(self.run_commands(before_b+[dict(op='await_repeat'),dict(op='start'),overlap])[-1]['ok'])
 
     def test_complete_host_provider_exchange_and_ack_gate(self):
         commands,a=self.prefix()
