@@ -71,6 +71,23 @@ class OpenAIProviderTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(output=str(output)[:80]),self.assertRaises(ProtocolError):
                 await self.provider(output).respond(request)
 
+    async def test_prose_numbers_with_measurement_units_must_match_host_values(self):
+        # Pair: A 1000 counts (-30.31 dBFS), B 500 counts; B/A = -6.0206 dB; gain 24 dB; 48000 Hz.
+        request=self.request(True)
+        ids=['take-0','take-1']
+        backed=('B is 6.02 dB quieter than A.','B is about 6 dB lower.','B/A was −6.0 dB.',
+                'A read -30.3 dBFS.','Gain stayed at 24 dB.','Recorded at 48 kHz.',
+                'Move 16 inches closer and repeat.','A had 1000 counts RMS.')
+        for text in backed:
+            with self.subTest(text=text):
+                reply=await self.provider(dict(text=text,capture_ids=ids)).respond(request)
+                self.assertEqual(reply['text'],text)
+        for text in ('B is 1.7 dB quieter.','A read -40 dBFS.','A 3 dB change is barely audible.',
+                     'The peak is near 5000 Hz.','B had 900 counts RMS.','B is 6.5 dB quieter.'):
+            with self.subTest(text=text),self.assertRaises(ProtocolError):
+                await self.provider(dict(text=text,capture_ids=ids)).respond(request)
+        self.assertIn('only as given',self.calls[-1]['instructions'])
+
     async def test_incomplete_refusal_and_provider_error_never_fall_back_to_mock(self):
         for status in ('incomplete','failed'):
             with self.assertRaises(ProtocolError):

@@ -4,7 +4,7 @@ from copy import deepcopy
 import json
 
 from tools.investigation import (MAX_TEXT, ProtocolError, bounded_text, comparison,
-                                 require, validate_request, validate_reply)
+                                 require, unbacked_numbers, validate_request, validate_reply)
 
 
 class OpenAIProvider:
@@ -46,7 +46,9 @@ class OpenAIProvider:
                     'orientation, then confirm before recording B. For compare, explain the '
                     'measured difference, acknowledge contrary or inconclusive results, and give '
                     'one useful next action. Never imply calibrated SPL, infer causality or '
-                    'invent ambient conditions. Use inches. Never issue automatic capture commands.'),
+                    'invent ambient conditions. Use inches. Never issue automatic capture commands. '
+                    'State measured values (dB, dBFS, Hz, counts) only as given in the input, '
+                    'rounded if you like; never compute or quote other measured numbers.'),
                 input=[{'role': 'user', 'content': json.dumps(evidence, allow_nan=False)}],
                 text={'format': {'type': 'json_schema', 'name': 'investigation_guidance',
                                  'strict': True, 'schema': schema}}, **routing)
@@ -65,6 +67,8 @@ class OpenAIProvider:
                     'OpenAI response fields')
             require(output['capture_ids'] == ids, 'OpenAI capture references')
             text = bounded_text(output['text'], MAX_TEXT)
+            # ADR-0012: prose may round host values but never state new measurements.
+            require(not unbacked_numbers(text, evidence), 'OpenAI prose states unbacked measurement')
         except asyncio.CancelledError:
             raise
         except Exception:

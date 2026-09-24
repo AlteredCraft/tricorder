@@ -190,6 +190,54 @@ def comparison(captures):
             'unit': 'digital RMS dB ratio; not calibrated SPL'}
 
 
+MEASURED_NUMBER = re.compile(r'([-+\u2212]?\d+(?:\.\d+)?)\s*(dBFS|dB|kHz|Hz|counts?)\b')
+_UNIT_FAMILY = {'dBFS': 'db', 'dB': 'db', 'kHz': 'hz', 'Hz': 'hz', 'count': 'counts', 'counts': 'counts'}
+_KEY_FAMILY = (('_dbfs', 'db'), ('_db', 'db'), ('_hz', 'hz'), ('_counts', 'counts'))
+
+
+def _measured(match):
+    """(unit family, value in base unit, precision in base unit) of one match."""
+    token = match.group(1).replace('\u2212', '-').lstrip('+-')
+    scale = 1000 if match.group(2) == 'kHz' else 1
+    decimals = len(token.split('.')[1]) if '.' in token else 0
+    return _UNIT_FAMILY[match.group(2)], float(token)*scale, 0.5*10**-decimals*scale+1e-9
+
+
+def unbacked_numbers(text, evidence):
+    """Numbers stated with a measurement unit that no host-supplied value supports.
+
+    Allowed values come from the evidence sent to the model: numeric fields whose
+    name carries the unit (rms_dbfs, rms_delta_db, gain_db, sample_rate_hz,
+    rms_counts, ...) and unit-bearing numbers inside its strings (fixture text).
+    A stated value may be rounded to its precision; sign is ignored.
+    """
+    allowed = {'db': [], 'hz': [], 'counts': []}
+    def collect(value, key=''):
+        if isinstance(value, bool) or value is None:
+            return
+        if isinstance(value, (int, float)):
+            family = next((f for suffix, f in _KEY_FAMILY if key.endswith(suffix)), None)
+            if family:
+                allowed[family].append(abs(float(value)))
+        elif isinstance(value, str):
+            for match in MEASURED_NUMBER.finditer(value):
+                family, number, _ = _measured(match)
+                allowed[family].append(number)
+        elif isinstance(value, dict):
+            for name, item in value.items():
+                collect(item, str(name))
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                collect(item, key)
+    collect(evidence)
+    unbacked = []
+    for match in MEASURED_NUMBER.finditer(text):
+        family, stated, tolerance = _measured(match)
+        if not any(abs(stated-value) <= tolerance for value in allowed[family]):
+            unbacked.append(match.group(0))
+    return unbacked
+
+
 def validate_request(request):
     require(isinstance(request, dict), 'request must be an object')
     require(type(request.get('version')) is int and request['version'] == VERSION, 'protocol version')
