@@ -14,6 +14,6 @@
 
 | Spec | Status | State |
 | --- | --- | --- |
-| [.01 Guided A/B vertical slice](G-0002.01-guided-ab-slice.md) | In progress | Mock loop, failure handling, SD archive/replay, live text model, the instrument view (live spectrum, A/B overlay), a context photo, a steadiness indicator and a spoken question (local speech-to-text, confirmed on screen) and operator-owned A/B with a repeat of A work. Next: three rated live loops. |
+| [.01 Guided A/B vertical slice](G-0002.01-guided-ab-slice.md) | In progress | Mock loop, failure handling, SD archive/replay, live text model, the instrument view (live spectrum, A/B overlay), a context photo, a steadiness indicator and a spoken question (local speech-to-text, confirmed on screen) and operator-owned A/B with a repeat of A work. Three rated live loops: responsiveness 4, usefulness 3, all inconclusive against repeat variation. Next: SD save off the wait, then conclusive results. |
 
 **Status:** In progress.

@@ -2,7 +2,7 @@
 
 Things that need the user's hands or equipment. Wait for a prepared procedure before starting any of them.
 
-- **Live loops:** three handheld Guided A/B sessions on comparisons you care about, with 1–5 responsiveness/usefulness ratings; ready now. Think of three real sound questions (e.g. an appliance, a room, a street).
+- **Re-rate usefulness:** after results become conclusive (G-0002.01 Open 2), repeat rated loops on real sound questions.
 - **Cold starts:** ten real power-off/on cycles (G-0001.01).
 - **Speaker level:** built-in speaker playback is faint; recheck after output changes. Headphones are fine.
 - **SD power loss:** interrupted-write recovery test (G-0001.05).
