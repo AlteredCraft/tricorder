@@ -2,8 +2,7 @@
 
 Things that need the user's hands or equipment. Wait for a prepared procedure before starting any of them.
 
-- **Live loops:** three handheld Guided A/B sessions with 1–5 responsiveness/usefulness ratings, after the broadband fixture.
-- **Broadband fixture:** choose a steady broadband source (e.g. a desk fan) for the next A/B loop; needs a quiet, controlled space.
+- **Live loops:** three handheld Guided A/B sessions on comparisons you care about, with 1–5 responsiveness/usefulness ratings, after operator-owned A/B is built. Think of three real sound questions (e.g. an appliance, a room, a street).
 - **Cold starts:** ten real power-off/on cycles (G-0001.01).
 - **Speaker level:** built-in speaker playback is faint; recheck after output changes. Headphones are fine.
 - **SD power loss:** interrupted-write recovery test (G-0001.05).
