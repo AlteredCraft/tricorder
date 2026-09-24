@@ -39,6 +39,28 @@ class CaptureSerialTests(unittest.TestCase):
             manifest=json.loads((root/'run/manifest.json').read_text());self.assertTrue(manifest['replay'])
             summary=json.loads((root/'run/summary.json').read_text());self.assertEqual(summary['replay_state'],'complete')
 
+    def test_reset_truncated_previous_run_line_is_counted_not_failed(self):
+        # --reset cuts the old firmware's line mid-write; it precedes our boot.
+        for reset in (True, False):
+            with self.subTest(reset=reset), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);stop=root/'stop';port=MagicMock()
+                chunks=[b'TRICORDER {"event":"telemetry","free_psraESP-ROM:esp32p4-eco2\n',
+                        ('TRICORDER '+json.dumps(dict(event='boot',boot_id='b',seq=0,device_us=1))+'\n').encode(),
+                        b'TRICORDER {"event":"broken\n']
+                def read(_):
+                    if not chunks:stop.touch();return b''
+                    return chunks.pop(0)
+                port.read.side_effect=read
+                modules={'serial':SimpleNamespace(Serial=lambda:port),'esptool.reset':SimpleNamespace(HardReset=MagicMock())}
+                argv=['capture','--port','test','--output',str(root/'run'),'--stop-file',str(stop),
+                      '--spec-id','G-0002.01','--spec-revision','2026-09-22','--workload','test']
+                if reset:argv.append('--reset')
+                with patch.object(sys,'argv',argv),patch.dict(sys.modules,modules),self.assertRaises(SystemExit):main()
+                summary=json.loads((root/'run/summary.json').read_text())
+                # A malformed line after our boot always fails the run.
+                self.assertEqual(summary['capture_errors'].count('malformed instrumentation'),1 if reset else 2)
+                self.assertEqual(summary.get('pre_reset_lines_discarded',0),1 if reset else 0)
+
     def test_explicit_spec_revision_and_workload_reach_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);stop=root/'stop';stop.touch();port=MagicMock()

@@ -267,6 +267,31 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaises(websockets.exceptions.ConnectionClosed):await socket.recv()
             self.assertEqual(json.loads((Path(directory)/'boot-session/captures/take-a.json').read_text())['status'],'complete')
 
+    async def test_operator_paced_phases_outlast_the_message_idle_limit(self):
+        # Reading guidance and moving takes longer than a message gap; ping/pong
+        # still detects a dead device. Transfers keep the short limit.
+        import websockets
+        from websockets.asyncio.client import connect
+        from tools.investigation_service import serve_mock
+        with tempfile.TemporaryDirectory() as directory:
+            server=await serve_mock('127.0.0.1',0,Path(directory),idle_s=0.3,operator_idle_s=5)
+            async with server:
+                uri=f'ws://127.0.0.1:{server.sockets[0].getsockname()[1]}'
+                async with connect(uri,proxy=None) as socket:
+                    async def send(kind,**fields):
+                        await socket.send(json.dumps(dict(version=1,type=kind,boot_id='boot',session_id='session',**fields)))
+                    async def receive():return json.loads(await asyncio.wait_for(socket.recv(),2))
+                    await send('hello',fixture=fixture().to_dict())
+                    self.assertEqual((await receive())['type'],'ready')
+                    await asyncio.sleep(0.8)  # operator deciding to record A
+                    meta,_=evidence()
+                    await send('capture_start',metadata=meta)
+                    self.assertEqual((await receive())['stage'],'start')
+                    await asyncio.sleep(0.8)  # stalled mid-transfer
+                    with self.assertRaises(websockets.exceptions.ConnectionClosed):await receive()
+            transcript=(Path(directory)/'boot-session/transcript.jsonl').read_text()
+            self.assertIn('"state": "incomplete"',transcript)
+
     async def test_real_connection_complete_ab(self):
         from websockets.asyncio.client import connect
         from tools.investigation_service import serve_mock

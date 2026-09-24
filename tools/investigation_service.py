@@ -226,7 +226,13 @@ class MockSession:
             self.archive.record({'type':'closed','state':self.phase,'incomplete_captures':incomplete})
 
 
-async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_only=False, provider=None):
+# Phases where the device waits for the person (record A; read guidance, move,
+# record B). WebSocket ping/pong (10 s + 10 s) still detects a dead device.
+OPERATOR_PHASES=('await_a','adjust')
+
+
+async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_only=False, provider=None,
+                     idle_s=30, operator_idle_s=600):
     from websockets.asyncio.server import serve
     from websockets.exceptions import ConnectionClosed
     output=Path(output)
@@ -242,7 +248,8 @@ async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_o
         session=MockSession(output,send,delay_s=delay_s,replay_only=replay_only,provider=provider)
         try:
             while True:
-                wire=await asyncio.wait_for(socket.recv(),timeout=30)
+                wire=await asyncio.wait_for(socket.recv(),
+                    timeout=operator_idle_s if session.phase in OPERATOR_PHASES else idle_s)
                 await session.receive(decode_message(wire))
         except ConnectionClosed as error:
             if session.archive:

@@ -50,6 +50,9 @@ def main():
                         replay_scope='SD transport replay; no new sensor acquisition')
     (args.output/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     events, errors = [], []
+    # --reset interrupts the previous firmware mid-line; such lines precede our
+    # first boot event and are counted, not treated as this run's evidence.
+    seen_boot, pre_reset_discarded = not args.reset, 0
     replay_boot=None;replay_sd=replay_network=replay_http=replay_sent=False;replay_state=None
     captures = CaptureStore(args.output/'captures')
     port = serial.Serial()
@@ -81,8 +84,10 @@ def main():
                     try:
                         event = parse_event(decoded)
                     except ValueError as error:
-                        errors.append(str(error))
+                        if seen_boot:errors.append(str(error))
+                        else:pre_reset_discarded+=1
                         continue
+                    if event is not None and event['event']=='boot':seen_boot=True
                     if event is not None:
                         event['host_receipt_ns'] = received
                         events.append(event)
@@ -114,6 +119,7 @@ def main():
     if summary['incomplete_captures']:
         errors.append('unfinished captures retained as incomplete')
     summary['capture_errors'] = errors
+    if pre_reset_discarded:summary['pre_reset_lines_discarded']=pre_reset_discarded
     if args.replay_session:
         summary.update(replay=True,replay_command_sent=replay_sent,replay_state=replay_state)
         if not replay_sent or replay_state!='complete':errors.append('SD replay did not reach complete in this collection window')
