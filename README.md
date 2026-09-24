@@ -35,6 +35,15 @@ python3 -m venv .tools/investigation-env
 .tools/investigation-env/bin/python -m unittest discover -s tests -q
 ```
 
+Bench operations TUI (needs only `uv`; tasks are in `tools/ops_tasks.py`). It currently sets up the Tab5's Wi-Fi and Mac service address and checks the Mac can reach it:
+
+```sh
+uv run tools/ops.py
+```
+
+![](./docs/img/tools-ui.png)
+
+
 Serial capture of a diagnostic run (see `--help` for `--checks`, `--stop-file`, `--spec-id`):
 
 ```sh
