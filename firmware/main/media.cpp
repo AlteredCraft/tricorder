@@ -4,6 +4,7 @@
 #include "audio_devices.h"
 #include "camera_baseline.h"
 #include "camera_ingress.h"
+#include "image_downsample.h"
 #include "speech_filter.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
@@ -75,9 +76,11 @@ struct VideoSession {
     }
 };
 
-void capture_camera(const char* boot_id) {
-    diagnostic_stage("CAMERA + JPEG / 60 seconds\n\nAutomatic frame timing, loss and image encoding checks.\nPlease leave the device powered and connected.");
-    auto fail = [](const char* detail) { diagnostic_check("camera_frame", "fail", detail); };
+// esp_video registers its devices once per boot; the diagnostic run and the
+// Guided A/B context shot share that registration.
+static bool video_init_once() {
+    static bool initialized=false;
+    if (initialized) return true;
     esp_video_init_csi_config_t csi{};
     csi.sccb_config.init_sccb = false;
     csi.sccb_config.i2c_handle = bsp_i2c_get_handle();
@@ -86,7 +89,103 @@ void capture_camera(const char* boot_id) {
     csi.pwdn_pin = -1;
     esp_video_init_config_t config{};
     config.csi = &csi;
-    if (esp_video_init(&config) != ESP_OK) return fail("esp_video_init failed");
+    initialized=esp_video_init(&config)==ESP_OK;
+    return initialized;
+}
+
+// Returns nullptr on success, else the failed step.
+static const char* map_buffers(VideoSession& video) {
+    v4l2_requestbuffers request{};
+    request.count = camera_capture_buffer_count;
+    request.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    request.memory = V4L2_MEMORY_MMAP;
+    if (ioctl(video.fd, VIDIOC_REQBUFS, &request) || request.count != camera_capture_buffer_count)
+        return "request video buffers failed";
+    for (unsigned i=0; i<camera_capture_buffer_count; ++i) {
+        v4l2_buffer buffer{};
+        buffer.type = request.type;
+        buffer.memory = request.memory;
+        buffer.index = i;
+        if (ioctl(video.fd, VIDIOC_QUERYBUF, &buffer)) return "query video buffer failed";
+        video.lengths[i] = buffer.length;
+        video.buffers[i] = static_cast<uint8_t*>(mmap(nullptr, buffer.length, PROT_READ | PROT_WRITE,
+                                                     MAP_SHARED, video.fd, buffer.m.offset));
+        // esp_video's mmap shim returns nullptr on failure (not POSIX MAP_FAILED).
+        if (!video.buffers[i]) return "map video buffer failed";
+        if (ioctl(video.fd, VIDIOC_QBUF, &buffer)) return "queue video buffer failed";
+    }
+    return nullptr;
+}
+
+bool camera_context_shot(uint16_t* output,size_t output_bytes,unsigned output_width,unsigned output_height,
+                         CameraContextShot& shot) {
+    shot={};
+    const int64_t started=esp_timer_get_time();
+    auto finish=[&](const char* error) {
+        shot.duration_us=esp_timer_get_time()-started;
+        auto* e=diagnostic_event("investigation_context_shot");
+        cJSON_AddBoolToObject(e,"ok",!error);
+        if (error) cJSON_AddStringToObject(e,"error",error);
+        cJSON_AddNumberToObject(e,"source_width",shot.source_width);
+        cJSON_AddNumberToObject(e,"source_height",shot.source_height);
+        cJSON_AddNumberToObject(e,"settle_frames",shot.settle_frames);
+        cJSON_AddNumberToObject(e,"completion_sequence",shot.sequence);
+        cJSON_AddNumberToObject(e,"completion_device_us",shot.finished_us);
+        cJSON_AddNumberToObject(e,"mean_luma",shot.luma);
+        cJSON_AddNumberToObject(e,"duration_us",shot.duration_us);
+        diagnostic_emit(e);
+        return !error;
+    };
+    if (!video_init_once()) return finish("esp_video_init failed");
+    VideoSession video;
+    video.fd = open(ESP_VIDEO_MIPI_CSI_DEVICE_NAME, O_RDONLY);
+    if (video.fd < 0) return finish("open video failed");
+    v4l2_format format{};
+    format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if (ioctl(video.fd, VIDIOC_G_FMT, &format)) return finish("get video format failed");
+    if (format.fmt.pix.pixelformat != V4L2_PIX_FMT_RGB565) {
+        format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE; // Vendor G_FMT returns type 0.
+        format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB565;
+        if (ioctl(video.fd, VIDIOC_S_FMT, &format)) return finish("RGB565 format failed");
+    }
+    format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if (ioctl(video.fd, VIDIOC_G_FMT, &format)) return finish("final video format read failed");
+    shot.source_width=format.fmt.pix.width;shot.source_height=format.fmt.pix.height;
+    const unsigned factor=output_width ? shot.source_width/output_width : 0;
+    if (!factor || shot.source_width!=output_width*factor || shot.source_height!=output_height*factor)
+        return finish("source is not an integer multiple of the context size");
+    const size_t frame_bytes=size_t(shot.source_width)*shot.source_height*2;
+    if (const char* error=map_buffers(video)) return finish(error);
+    configure_camera_ingress(frame_bytes);
+    int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if (ioctl(video.fd, VIDIOC_STREAMON, &type)) return finish("start video stream failed");
+    video.streaming = true;
+    auto dequeue=[&](v4l2_buffer& buffer) {
+        buffer={};buffer.type=V4L2_BUF_TYPE_VIDEO_CAPTURE;buffer.memory=V4L2_MEMORY_MMAP;
+        return ioctl(video.fd,VIDIOC_DQBUF,&buffer)==0 && buffer.index<camera_capture_buffer_count
+            && buffer.bytesused==frame_bytes && buffer.bytesused<=video.lengths[buffer.index];
+    };
+    // Discard frames while auto exposure settles (about 0.5 s at 30 fps).
+    v4l2_buffer buffer{};
+    for (;shot.settle_frames<camera_context_settle_frames;++shot.settle_frames)
+        if (!dequeue(buffer) || ioctl(video.fd,VIDIOC_QBUF,&buffer)) return finish("settling frame failed");
+    if (!dequeue(buffer)) return finish("context frame failed");
+    // The dequeued buffer stays owned until STREAMOFF in ~VideoSession.
+    CameraFrameEvidence evidence;
+    if (camera_frame_evidence(video.buffers[buffer.index],evidence)) {
+        shot.sequence=evidence.sequence;shot.finished_us=evidence.finished_us;
+    }
+    if (!rgb565_downsample(reinterpret_cast<const uint16_t*>(video.buffers[buffer.index]),frame_bytes,
+                           shot.source_width,shot.source_height,factor,output,output_bytes))
+        return finish("downsample failed");
+    shot.luma=rgb565_mean_luma(output,size_t(output_width)*output_height);
+    return finish(nullptr);
+}
+
+void capture_camera(const char* boot_id) {
+    diagnostic_stage("CAMERA + JPEG / 60 seconds\n\nAutomatic frame timing, loss and image encoding checks.\nPlease leave the device powered and connected.");
+    auto fail = [](const char* detail) { diagnostic_check("camera_frame", "fail", detail); };
+    if (!video_init_once()) return fail("esp_video_init failed");
     VideoSession video;
     video.fd = open(ESP_VIDEO_MIPI_CSI_DEVICE_NAME, O_RDONLY);
     if (video.fd < 0) return fail("open video failed");
@@ -131,25 +230,7 @@ void capture_camera(const char* boot_id) {
     }
     format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if (ioctl(video.fd, VIDIOC_G_FMT, &format)) return fail("final video format read failed");
-    v4l2_requestbuffers request{};
-    request.count = camera_capture_buffer_count;
-    request.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    request.memory = V4L2_MEMORY_MMAP;
-    if (ioctl(video.fd, VIDIOC_REQBUFS, &request) || request.count != camera_capture_buffer_count)
-        return fail("request video buffers failed");
-    for (unsigned i=0; i<camera_capture_buffer_count; ++i) {
-        v4l2_buffer buffer{};
-        buffer.type = request.type;
-        buffer.memory = request.memory;
-        buffer.index = i;
-        if (ioctl(video.fd, VIDIOC_QUERYBUF, &buffer)) return fail("query video buffer failed");
-        video.lengths[i] = buffer.length;
-        video.buffers[i] = static_cast<uint8_t*>(mmap(nullptr, buffer.length, PROT_READ | PROT_WRITE,
-                                                     MAP_SHARED, video.fd, buffer.m.offset));
-        // esp_video's mmap shim returns nullptr on failure (not POSIX MAP_FAILED).
-        if (!video.buffers[i]) return fail("map video buffer failed");
-        if (ioctl(video.fd, VIDIOC_QBUF, &buffer)) return fail("queue video buffer failed");
-    }
+    if (const char* error=map_buffers(video)) return fail(error);
     int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     configure_camera_ingress(size_t(format.fmt.pix.width)*format.fmt.pix.height*2);
     if (ioctl(video.fd, VIDIOC_STREAMON, &type)) return fail("start video stream failed");

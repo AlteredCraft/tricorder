@@ -7,6 +7,9 @@
 #include "diagnostic_events.h"
 #include "network.h"
 #include "spectrum_display.h"
+#include "steadiness.h"
+#include "imu_checked.h"
+#include "media.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_transport.h"
 #include "esp_transport_tcp.h"
@@ -36,6 +39,13 @@ lv_obj_t *setup_panel,*endpoint_field,*keyboard;
 // Instrument view: live spectrum while recording, then A and B overlaid.
 lv_obj_t *chart,*legend[3];
 lv_chart_series_t* series[3]; // live, A, B
+// Context photo (camera, once per session) and IMU steadiness before captures.
+constexpr unsigned context_width=320,context_height=180;
+lv_obj_t *context_image,*context_caption,*steady_label;
+uint16_t* context_pixels=nullptr;
+lv_image_dsc_t context_dsc{};
+SteadinessReading steady_reading;
+bool steady_fresh=false; // Guarded by live_lock.
 const uint32_t series_colors[3]={0x66bb6a,0x4fc3f7,0xffb74d};
 portMUX_TYPE live_lock=portMUX_INITIALIZER_UNLOCKED;
 float live_db[spectrum_band_count];
@@ -68,12 +78,21 @@ void live_tap(const float* db) {
     memcpy(live_db,db,sizeof(live_db));++live_sequence;
     portEXIT_CRITICAL(&live_lock);
 }
+void draw_steadiness(const SteadinessReading& r) {
+    char text[48];uint32_t color=0x90a4ae;
+    if(r.state==SteadinessReading::Steady){snprintf(text,sizeof(text),"Steady  %.1f deg/s",r.peak_dps);color=0x66bb6a;}
+    else if(r.state==SteadinessReading::Moving){snprintf(text,sizeof(text),"Hold still  %.0f deg/s",r.peak_dps);color=0xffb74d;}
+    else snprintf(text,sizeof(text),"Motion: no data");
+    lv_label_set_text(steady_label,text);lv_obj_set_style_text_color(steady_label,lv_color_hex(color),0);
+}
 void draw_live(lv_timer_t*) {
-    float db[spectrum_band_count];bool fresh;
+    float db[spectrum_band_count];bool fresh;SteadinessReading reading;bool steady;
     portENTER_CRITICAL(&live_lock);
     fresh=live_sequence!=live_drawn;
     if(fresh){memcpy(db,live_db,sizeof(db));live_drawn=live_sequence;}
+    steady=steady_fresh;reading=steady_reading;steady_fresh=false;
     portEXIT_CRITICAL(&live_lock);
+    if(steady)draw_steadiness(reading);
     if(!fresh)return;
     for(size_t i=0;i<spectrum_band_count;++i)lv_chart_set_value_by_id(chart,series[0],i,spectrum_chart_value(db[i]));
     lv_chart_refresh(chart);
@@ -94,6 +113,10 @@ void chart_capture(unsigned index,const float* db) {
     for(size_t i=0;i<spectrum_band_count;++i)lv_chart_set_value_by_id(chart,series[index+1],i,spectrum_chart_value(db[i]));
     show_series(0,false);show_series(index+1,true);
     lv_chart_refresh(chart);bsp_display_unlock();
+}
+void context_clear() {
+    lv_obj_add_flag(context_image,LV_OBJ_FLAG_HIDDEN);lv_label_set_text(context_caption,"");
+    lv_obj_add_flag(steady_label,LV_OBJ_FLAG_HIDDEN);
 }
 void chart_clear() {
     for(unsigned s=0;s<3;++s){lv_chart_set_all_value(chart,series[s],LV_CHART_POINT_NONE);show_series(s,false);}
@@ -124,7 +147,7 @@ const char* heading_text(InvestigationProtocol::State s) {
     case S::Waiting:case S::Acknowledging:return "Waiting for guidance";
     case S::Adjust:return "Step 2: move to B";
     case S::ReadyB:return "Step 3: record B";
-    case S::RecordingB:return "Recording B (A shown for reference)";
+    case S::RecordingB:return "Recording B over A";
     case S::Complete:return "Comparison: A vs B";
     case S::Cancelled:return "Cancelled";
     case S::Offline:return "Offline";
@@ -159,7 +182,7 @@ void start(lv_event_t*) {
     strcpy(endpoint_text,text);cancel_requested_us.store(0);cancelled.store(false);xQueueReset(actions);
     uint8_t command=4;
     if(xQueueSend(media_queue,&command,0)!=pdTRUE){lv_label_set_text(label,"Media owner busy. Try again.");return;}
-    set_running(true);chart_clear();
+    set_running(true);chart_clear();context_clear();
     lv_label_set_text(heading,"Connecting");
     lv_label_set_text(label,"Connecting to the Mac service...");
 }
@@ -173,6 +196,9 @@ void show(InvestigationProtocol& p,const char* message,const char* button_text=n
         // A worker completion must never overwrite a locally visible cancel.
         if(cancelled.load())p.cancel();
         lv_label_set_text(heading,heading_text(p.state()));
+        using S=InvestigationProtocol::State;const auto state=p.state();
+        if(state==S::ReadyA || state==S::Adjust || state==S::ReadyB)lv_obj_remove_flag(steady_label,LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(steady_label,LV_OBJ_FLAG_HIDDEN);
         if(p.state()==InvestigationProtocol::State::Cancelled)lv_label_set_text(label,"Cancelled. This session cannot resume. Start a new investigation.");
         else lv_label_set_text(label,message);
         lv_obj_add_state(action_button,LV_STATE_DISABLED);
@@ -308,13 +334,32 @@ bool wait_reply(Socket& s,InvestigationProtocol& p) {
     }
     return false;
 }
-bool wait_action(Socket& s,InvestigationProtocol& p) {
-    uint8_t command;
+// The media owner is the IMU's sequential owner; sample it while waiting.
+bool wait_action(Socket& s,InvestigationProtocol& p,const char* action) {
+    uint8_t command;Steadiness steadiness;uint64_t next_sample=0;SteadinessReading reading;
     while(active(p)) {
+        const uint64_t now=now_ms();
+        if(now>=next_sample) {
+            next_sample=now+40;bmi2_sens_data data{};
+            if(imu_read_checked(data)==BMI2_OK) {
+                const int16_t gyro[3]={data.gyr.x,data.gyr.y,data.gyr.z},accel[3]={data.acc.x,data.acc.y,data.acc.z};
+                steadiness.add(now,gyro,accel);
+            } else steadiness.fail(now);
+            reading=steadiness.read(now);
+            portENTER_CRITICAL(&live_lock);steady_reading=reading;steady_fresh=true;portEXIT_CRITICAL(&live_lock);
+        }
         int result=s.poll();
         if(result<0){p.disconnect();return false;}
         if(result==1){s.consumed();p.fail();return false;}
-        if(xQueueReceive(actions,&command,0)==pdTRUE)return active(p);
+        if(xQueueReceive(actions,&command,0)==pdTRUE) {
+            reading=steadiness.read(now_ms());
+            static const char* names[]={"unknown","steady","moving"};
+            auto* e=diagnostic_event("investigation_steadiness");cJSON_AddStringToObject(e,"action",action);
+            cJSON_AddStringToObject(e,"state",names[reading.state]);cJSON_AddNumberToObject(e,"peak_dps",reading.peak_dps);
+            cJSON_AddNumberToObject(e,"accel_span_g",reading.accel_span_g);cJSON_AddNumberToObject(e,"samples",reading.samples);
+            diagnostic_emit(e);
+            return active(p);
+        }
     }
     return false;
 }
@@ -360,6 +405,23 @@ bool upload(Socket& s,InvestigationProtocol& p,const InvestigationCapture& c,uns
     return s.send(o) && capture_ack(s,p,id,"complete",sha);
 }
 
+// Media task. The image is hidden (under the display lock) while its pixels
+// are rewritten, so the synchronous renderer never reads a partial frame.
+void take_context_photo() {
+    if(!context_pixels)return;
+    if(bsp_display_lock(1000)){lv_obj_add_flag(context_image,LV_OBJ_FLAG_HIDDEN);bsp_display_unlock();}
+    CameraContextShot shot;
+    const bool ok=camera_context_shot(context_pixels,context_width*context_height*2,context_width,context_height,shot);
+    if(bsp_display_lock(1000)) {
+        if(ok) {
+            lv_image_cache_drop(&context_dsc);lv_image_set_src(context_image,&context_dsc);
+            lv_obj_remove_flag(context_image,LV_OBJ_FLAG_HIDDEN);lv_obj_invalidate(context_image);
+            lv_label_set_text(context_caption,shot.luma<20?"Context (very dark)":"Context");
+        } else lv_label_set_text(context_caption,"No context photo (camera error)");
+        bsp_display_unlock();
+    }
+}
+
 // Device-side geometry check on LVGL's resolved rectangles: every control
 // inside its panel and no two main-flow controls overlapping.
 bool layout_ok(lv_obj_t* parent,std::initializer_list<lv_obj_t*> objects) {
@@ -386,6 +448,9 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_obj_set_style_bg_color(panel,lv_color_hex(0x101418),0);lv_obj_remove_flag(panel,LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);
     heading=text(panel,"Steady sound A/B",0,0,&lv_font_montserrat_28);
+    lv_obj_set_width(heading,500);lv_label_set_long_mode(heading,LV_LABEL_LONG_DOT);
+    steady_label=text(panel,"Motion: no data",520,6,&lv_font_montserrat_24,0x90a4ae);
+    lv_obj_set_width(steady_label,360);lv_label_set_long_mode(steady_label,LV_LABEL_LONG_DOT);
     const char* names[3]={"Live","A","B"};
     for(unsigned s=0;s<3;++s)legend[s]=text(panel,names[s],900+s*95,6,&lv_font_montserrat_24,series_colors[s]);
 
@@ -411,11 +476,17 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
         text(panel,hz<1000?"100 Hz":hz<10000?"1 kHz":"10 kHz",x-30,chart_y+chart_h+6,&lv_font_montserrat_18,0x90a4ae);
     }
 
-    auto* transcript=lv_obj_create(panel);lv_obj_set_pos(transcript,0,355);lv_obj_set_size(transcript,1170,190);
-    label=lv_label_create(transcript);lv_obj_set_width(label,1120);
+    auto* transcript=lv_obj_create(panel);lv_obj_set_pos(transcript,0,355);lv_obj_set_size(transcript,835,190);
+    label=lv_label_create(transcript);lv_obj_set_width(label,790);
     lv_obj_set_style_text_font(label,&lv_font_montserrat_22,0);
     lv_label_set_long_mode(label,LV_LABEL_LONG_WRAP);
     lv_label_set_text(label,"Steady sound A/B test. Record at A, move, record at B, then compare.\nKeep the source level and device orientation fixed. Tap Start.");
+    context_pixels=static_cast<uint16_t*>(heap_caps_calloc(1,context_width*context_height*2,MALLOC_CAP_SPIRAM));
+    context_dsc.header.magic=LV_IMAGE_HEADER_MAGIC;context_dsc.header.cf=LV_COLOR_FORMAT_RGB565;
+    context_dsc.header.w=context_width;context_dsc.header.h=context_height;context_dsc.header.stride=context_width*2;
+    context_dsc.data_size=context_width*context_height*2;context_dsc.data=reinterpret_cast<const uint8_t*>(context_pixels);
+    context_image=lv_image_create(panel);lv_obj_set_pos(context_image,850,355);lv_obj_set_size(context_image,context_width,context_height);
+    context_caption=text(panel,"",850,355+context_height+2,&lv_font_montserrat_16,0x90a4ae);
     start_button=button(panel,"Start",0,560,start);
     action_button=button(panel,"Record A",235,560,action);action_label=lv_obj_get_child(action_button,0);
     lv_obj_add_state(action_button,LV_STATE_DISABLED);
@@ -443,9 +514,10 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_obj_update_layout(screen);
     diagnostic_check("investigation_keyboard_layout",layout_ok(setup_panel,{done,endpoint_field,wifi,keyboard})?"pass":"fail",
                      "Resolved setup controls and keyboard stay inside the setup panel without overlap.");
-    diagnostic_check("investigation_layout",layout_ok(panel,{heading,chart,transcript,start_button,action_button,cancel_button,setup_button,back_button})?"pass":"fail",
+    diagnostic_check("investigation_layout",layout_ok(panel,{heading,steady_label,legend[0],chart,transcript,context_image,start_button,action_button,cancel_button,setup_button,back_button})?"pass":"fail",
                      "Resolved A/B heading, spectrum, guidance and buttons stay inside the panel without overlap.");
     for(auto* p:{panel,setup_panel,keyboard})lv_obj_add_flag(p,LV_OBJ_FLAG_HIDDEN);
+    context_clear();
 }
 void investigation_ui_open() {open(nullptr);}
 void investigation_ui_enable(bool enabled) {
@@ -474,11 +546,15 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         cJSON_AddItemToObject(hello,"fixture",cJSON_Duplicate(fixture.get(),true));
         if(!socket.send(hello))p->disconnect();else wait_reply(socket,*p);
     }
+    if(!replay && active(*p)) {
+        show(*p,"Point the camera at what you are investigating.\nTaking a context photo...");
+        take_context_photo();
+    }
     for(unsigned index=0;index<2 && active(*p);++index) {
         const std::string prompt=question+"\n\n"+(index==0?placement_a:placement_b)+
             "\nStop moving before recording. Three seconds; device speaker stays silent.";
         show(*p,replay?"SD REPLAY: loading original recordings. No new sensor acquisition.":prompt.c_str(),replay?nullptr:index==0?"Record A":"Record B");
-        if((!replay && !wait_action(socket,*p)) || !p->start_capture())break;
+        if((!replay && !wait_action(socket,*p,index==0?"record_a":"record_b")) || !p->start_capture())break;
         if(!replay)show(*p,index==0?"Settling 0.5s, then recording A / 3s\nHold still; speaker silent.":"Settling 0.5s, then recording B / 3s\nHold still; speaker silent.");
         {
             InvestigationCapture capture;char id[48];snprintf(id,sizeof(id),"%s-%c",session,index?'b':'a');
@@ -505,7 +581,7 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         if(!wait_reply(socket,*p))break;
         if(index==0) {
             show(*p,p->text(),replay?nullptr:"Confirm position B");
-            if((!replay && !wait_action(socket,*p)) || !p->adjust(replay?"SD replay of original recorded A/B adjustment; no new movement":("Moved to "+placement_b+"; same source level").c_str()))break;
+            if((!replay && !wait_action(socket,*p,"confirm_b")) || !p->adjust(replay?"SD replay of original recorded A/B adjustment; no new movement":("Moved to "+placement_b+"; same source level").c_str()))break;
         }
     }
     if(cancelled.load()) {
@@ -538,7 +614,7 @@ bool investigation_request_replay(const char* session) {
         cancel_requested_us.store(0);cancelled.store(false);xQueueReset(actions);
         uint8_t command=5;ok=xQueueSend(media_queue,&command,0)==pdTRUE;
         if(ok) {
-            set_running(true);chart_clear();lv_obj_add_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);
+            set_running(true);chart_clear();context_clear();lv_obj_add_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(panel);
             lv_label_set_text(label,"SD REPLAY: checking saved recording identity...");
         }
