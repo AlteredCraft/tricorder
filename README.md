@@ -51,6 +51,7 @@ Evidence assessors (`python3 -m tools.<name> RUN_DIR`): `camera_baseline_evidenc
 - The private `firmware/sdkconfig` sets `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` (boot straight to Guided A/B, skipping diagnostics).
 - Flash backups and recovery steps: `.local/runs/20260920-baseline/RECOVERY.md`.
 - Secrets live in ignored `.env.local.*` files. Never print or commit them.
+- Guest/café Wi-Fi usually blocks client-to-client traffic (the device can't reach the Mac). Use a phone hotspot on 2.4 GHz (iPhone: Maximize Compatibility) for both, and copy the SSID exactly (iPhone names use a curly ’).
 
 ## Live text provider
 

@@ -23,7 +23,7 @@ Every message carries `version`, `type`, `boot_id`, `session_id` (IDs 1–96 cha
 
 Capture metadata: format `pcm_s16le`, rate, channels, frames, requested `gain_db`, source/physical slot, size, acquisition start/end µs, `warmup_frames`, ingress block hashes, driver counters, `speaker_active:false`. **The host recomputes every measurement from the raw bytes**, and the model only writes prose.
 
-Bounds: one connection, one transfer, one pending reply, two captures per session, ≤ 1,152,000 B per capture, 640 incoming messages. Device timeouts: connect 3 s, send 2 s, read 1 s, upload 30 s total, capture ACK 5 s, reply 15 s. Host idle close after 30 s.
+Bounds: one connection, one transfer, one pending reply, two captures per session, ≤ 1,152,000 B per capture, 640 incoming messages. Device timeouts: connect 3 s, send 2 s, read 1 s, upload 30 s total, capture ACK 5 s, reply 15 s. Host idle close after 30 s between messages, or 10 min while the device waits for the operator (before Record A, and at adjust); ping/pong (10 s + 10 s) detects a dead device.
 
 Capture: 48 kHz, 4 slots, s16, requested gain 24 dB, 0.5 s discarded settling prefix, then 3 s (144,000 frames) retained. Measurement slot 0 = farther mic hole.
 
@@ -43,7 +43,7 @@ Capture: 48 kHz, 4 slots, s16, requested gain 24 dB, 0.5 s discarded settling pr
 .tools/investigation-env/bin/python -m tools.investigation_evidence .local/runs/NEW/mock/<session-dir>
 ```
 
-On the device: **Guided A/B** → **Start mock** → **Record A** → wait for guidance → move → **Confirm position B** → **Record B** → read the comparison.
+On the device (guided startup opens this screen): **Start** → **Record A** (live spectrum) → wait for guidance → move → **Confirm position B** → **Record B** (live over A) → comparison with A/B spectra overlaid. **Setup** holds the service address and Wi-Fi. The on-device spectra are display only: 48 log bands, 50 Hz–20 kHz, averaged 2048-point FFTs of slot 0.
 
 Firmware option `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` (private sdkconfig) skips automatic diagnostics at boot.
 
