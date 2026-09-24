@@ -10,13 +10,13 @@
 
 **Done when:** G-0001 and G-0002 are Met.
 
-**Stack (agreed 2026-09-20):** C++/ESP-IDF 5.4.2 + LVGL 9 on the device ([ADR-0003](adrs/ADR-0003-tab5-diagnostic-foundation.md)); Python service on the Mac, mock first, then a live provider ([ADR-0010](adrs/ADR-0010-device-owned-ab-lan-experiment.md), [ADR-0012](adrs/ADR-0012-live-prose-over-verified-summaries.md)).
+**Stack (agreed 2026-09-20):** C++/ESP-IDF 5.4.2 + LVGL 9 on the device ([ADR-0003](adrs/ADR-0003-tab5-diagnostic-foundation.md)); Python service on the Mac, mock first, then a live provider ([ADR-0010](adrs/ADR-0010-device-owned-ab-lan-experiment.md), [ADR-0012](adrs/ADR-0012-live-prose-over-verified-summaries.md)); local speech-to-text ([ADR-0013](adrs/ADR-0013-local-first-speech-to-text.md)).
 
 ### Goals
 
 | Goal | Status | Summary |
 | --- | --- | --- |
-| [G-0002 One usable end-to-end investigation](plans/G-0002-thin-investigation-slice.md) | In progress | **Priority.** Guided A/B works end to end with the mock service and a live text model, and the screen shows a live spectrum, an A/B overlay, a context photo and a steadiness indicator. Speech and live usefulness ratings are open. |
+| [G-0002 One usable end-to-end investigation](plans/G-0002-thin-investigation-slice.md) | In progress | **Priority.** Guided A/B works end to end with the mock service and a live text model, and the screen shows a live spectrum, an A/B overlay, a context photo and a steadiness indicator. Spoken ask (local speech-to-text chosen) and live usefulness ratings are open. |
 | [G-0001 A trustworthy live investigation](plans/G-0001-trustworthy-live-investigation.md) | In progress | Isolated hardware baselines pass. Combined workload, agent statistics and power/recovery are open. Hardening follows G-0002. |
 
 Sequencing: G-0002 (usefulness) first, then harden the same code under G-0001. G-0002 does not lower G-0001's checks.
