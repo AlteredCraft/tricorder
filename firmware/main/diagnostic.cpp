@@ -411,6 +411,11 @@ extern "C" void app_main() {
     }
     test_storage_init(boot_id,sd_ready,!resuming_restarts);
     media_idle();
+    // Guided startup opens the instrument directly; diagnostics stay behind Back.
+    if (guided_startup && !resuming_restarts && bsp_display_lock(1000)) {
+        investigation_ui_open();
+        bsp_display_unlock();
+    }
     for (;;) {
         uint8_t command;
         if (xQueueReceive(media_commands, &command, 0) == pdTRUE) {

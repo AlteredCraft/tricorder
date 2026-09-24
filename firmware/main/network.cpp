@@ -208,6 +208,11 @@ lv_obj_t* button(lv_obj_t* parent, const char* text, int x, int y, lv_event_cb_t
 }
 }
 
+void network_ui_open() {
+    lv_obj_remove_flag(panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(panel);
+}
+
 bool network_prepare(unsigned timeout_ms) {
     Credentials command{};
     command.initialize_only=true;

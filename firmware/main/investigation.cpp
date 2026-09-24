@@ -5,6 +5,8 @@
 #include "transport_write.h"
 #include "test_storage.h"
 #include "diagnostic_events.h"
+#include "network.h"
+#include "spectrum_display.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_transport.h"
 #include "esp_transport_tcp.h"
@@ -22,11 +24,22 @@
 #include <string>
 #include <algorithm>
 #include <cerrno>
+#include <cmath>
+#include <initializer_list>
+#include <vector>
 
 extern const uint8_t fixture_start[] asm("_binary_guided_ab_fixture_json_start");
 extern const uint8_t fixture_end[] asm("_binary_guided_ab_fixture_json_end");
 namespace {
-lv_obj_t *launch,*panel,*label,*endpoint_field,*keyboard,*start_button,*action_button,*action_label,*back_button,*cancel_button;
+lv_obj_t *launch,*panel,*heading,*label,*start_button,*action_button,*action_label,*back_button,*cancel_button,*setup_button;
+lv_obj_t *setup_panel,*endpoint_field,*keyboard;
+// Instrument view: live spectrum while recording, then A and B overlaid.
+lv_obj_t *chart,*legend[3];
+lv_chart_series_t* series[3]; // live, A, B
+const uint32_t series_colors[3]={0x66bb6a,0x4fc3f7,0xffb74d};
+portMUX_TYPE live_lock=portMUX_INITIALIZER_UNLOCKED;
+float live_db[spectrum_band_count];
+unsigned live_sequence=0,live_drawn=0; // Guarded by live_lock.
 QueueHandle_t media_queue,actions;
 std::atomic<bool> cancelled{false};
 std::atomic<int64_t> cancel_requested_us{0};
@@ -37,6 +50,87 @@ uint64_t now_ms(){return esp_timer_get_time()/1000;}
 
 void open(lv_event_t*) {lv_obj_remove_flag(panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(panel);}
 void back(lv_event_t*) {if(!running)lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);}
+void open_setup(lv_event_t*) {
+    if(running)return;
+    lv_obj_remove_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(setup_panel);
+}
+void close_setup(lv_event_t*) {
+    lv_obj_add_flag(keyboard,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);
+    InvestigationEndpoint endpoint;
+    if(!running)lv_label_set_text(label,endpoint.parse(lv_textarea_get_text(endpoint_field))?
+        "Service address saved for this session. Tap Start.":"Service address invalid. Open Setup and enter ws://Mac-LAN-IP:8765/");
+}
+void open_wifi(lv_event_t*) {network_ui_open();}
+
+// Capture-loop tap: copy only; the LVGL timer below draws.
+void live_tap(const float* db) {
+    portENTER_CRITICAL(&live_lock);
+    memcpy(live_db,db,sizeof(live_db));++live_sequence;
+    portEXIT_CRITICAL(&live_lock);
+}
+void draw_live(lv_timer_t*) {
+    float db[spectrum_band_count];bool fresh;
+    portENTER_CRITICAL(&live_lock);
+    fresh=live_sequence!=live_drawn;
+    if(fresh){memcpy(db,live_db,sizeof(db));live_drawn=live_sequence;}
+    portEXIT_CRITICAL(&live_lock);
+    if(!fresh)return;
+    for(size_t i=0;i<spectrum_band_count;++i)lv_chart_set_value_by_id(chart,series[0],i,spectrum_chart_value(db[i]));
+    lv_chart_refresh(chart);
+}
+void show_series(unsigned index,bool visible) {
+    lv_chart_hide_series(chart,series[index],!visible);
+    if(visible)lv_obj_remove_flag(legend[index],LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(legend[index],LV_OBJ_FLAG_HIDDEN);
+}
+// Media task: recording A shows only live; recording B shows live over A.
+void chart_recording(unsigned index) {
+    if(!bsp_display_lock(1000))return;
+    lv_chart_set_all_value(chart,series[0],LV_CHART_POINT_NONE);
+    show_series(0,true);show_series(1,index==1);show_series(2,false);
+    lv_chart_refresh(chart);bsp_display_unlock();
+}
+void chart_capture(unsigned index,const float* db) {
+    if(!bsp_display_lock(1000))return;
+    for(size_t i=0;i<spectrum_band_count;++i)lv_chart_set_value_by_id(chart,series[index+1],i,spectrum_chart_value(db[i]));
+    show_series(0,false);show_series(index+1,true);
+    lv_chart_refresh(chart);bsp_display_unlock();
+}
+void chart_clear() {
+    for(unsigned s=0;s<3;++s){lv_chart_set_all_value(chart,series[s],LV_CHART_POINT_NONE);show_series(s,false);}
+    lv_chart_refresh(chart);
+}
+// Whole-capture average of the measurement slot for the A/B overlay (display
+// only; the host's comparison is computed from the uploaded bytes).
+bool capture_bands(const InvestigationCapture& c,float* db) {
+    struct Scratch {SpectrumWorkspace workspace;float amplitudes[spectrum_max_frames/2+1];};
+    std::unique_ptr<Scratch,decltype(&free)> scratch(static_cast<Scratch*>(
+        heap_caps_aligned_alloc(16,sizeof(Scratch),MALLOC_CAP_SPIRAM)),free);
+    const int64_t started=esp_timer_get_time();SpectrumBands bands;
+    const bool ok=scratch && c.bytes && spectrum_bands_pcm16(reinterpret_cast<const int16_t*>(c.bytes),c.size/8,4,0,
+        spectrum_max_frames,48000,scratch->workspace,scratch->amplitudes,spectrum_max_frames/2+1,bands);
+    if(ok)spectrum_bands_db(bands,db);
+    auto* e=diagnostic_event("investigation_capture_spectrum");cJSON_AddBoolToObject(e,"ok",ok);
+    cJSON_AddNumberToObject(e,"windows",bands.windows);
+    cJSON_AddNumberToObject(e,"duration_us",esp_timer_get_time()-started);diagnostic_emit(e);
+    return ok;
+}
+const char* heading_text(InvestigationProtocol::State s) {
+    using S=InvestigationProtocol::State;
+    switch(s) {
+    case S::Idle:case S::Connecting:return "Connecting";
+    case S::ReadyA:return "Step 1: record A";
+    case S::RecordingA:return "Recording A";
+    case S::Uploading:return "Uploading";
+    case S::Waiting:case S::Acknowledging:return "Waiting for guidance";
+    case S::Adjust:return "Step 2: move to B";
+    case S::ReadyB:return "Step 3: record B";
+    case S::RecordingB:return "Recording B (A shown for reference)";
+    case S::Complete:return "Comparison: A vs B";
+    case S::Cancelled:return "Cancelled";
+    case S::Offline:return "Offline";
+    default:return "Incomplete";
+    }
+}
 void cancel(lv_event_t*) {
     if(!running)return;
     cancel_requested_us.store(esp_timer_get_time());
@@ -51,18 +145,23 @@ void action(lv_event_t*) {
 void edit_endpoint(lv_event_t*) {
     if(!running)lv_obj_remove_flag(keyboard,LV_OBJ_FLAG_HIDDEN);
 }
+void set_running(bool value) {
+    running=value;
+    for(auto* b:{start_button,back_button,setup_button,endpoint_field})
+        if(value)lv_obj_add_state(b,LV_STATE_DISABLED);else lv_obj_remove_state(b,LV_STATE_DISABLED);
+    if(value)lv_obj_remove_state(cancel_button,LV_STATE_DISABLED);else lv_obj_add_state(cancel_button,LV_STATE_DISABLED);
+}
 void start(lv_event_t*) {
     if(running)return;
     InvestigationEndpoint endpoint;
     const char* text=lv_textarea_get_text(endpoint_field);
-    if(!endpoint.parse(text)){lv_label_set_text(label,"Enter ws://Mac-LAN-IP:8765/ then start. Join Wi-Fi first.");return;}
+    if(!endpoint.parse(text)){lv_label_set_text(label,"No valid service address. Open Setup: join Wi-Fi and enter ws://Mac-LAN-IP:8765/");return;}
     strcpy(endpoint_text,text);cancel_requested_us.store(0);cancelled.store(false);xQueueReset(actions);
     uint8_t command=4;
     if(xQueueSend(media_queue,&command,0)!=pdTRUE){lv_label_set_text(label,"Media owner busy. Try again.");return;}
-    running=true;lv_obj_add_flag(keyboard,LV_OBJ_FLAG_HIDDEN);
-    for(auto* b:{start_button,back_button,endpoint_field})lv_obj_add_state(b,LV_STATE_DISABLED);
-    lv_obj_remove_state(cancel_button,LV_STATE_DISABLED);
-    lv_label_set_text(label,"Connecting to the mock service...");
+    set_running(true);chart_clear();
+    lv_label_set_text(heading,"Connecting");
+    lv_label_set_text(label,"Connecting to the Mac service...");
 }
 lv_obj_t* button(lv_obj_t* parent,const char* text,int x,int y,lv_event_cb_t callback) {
     auto* b=lv_button_create(parent);lv_obj_set_pos(b,x,y);lv_obj_set_size(b,220,60);
@@ -73,6 +172,7 @@ void show(InvestigationProtocol& p,const char* message,const char* button_text=n
     if(bsp_display_lock(1000)) {
         // A worker completion must never overwrite a locally visible cancel.
         if(cancelled.load())p.cancel();
+        lv_label_set_text(heading,heading_text(p.state()));
         if(p.state()==InvestigationProtocol::State::Cancelled)lv_label_set_text(label,"Cancelled. This session cannot resume. Start a new investigation.");
         else lv_label_set_text(label,message);
         lv_obj_add_state(action_button,LV_STATE_DISABLED);
@@ -259,41 +359,95 @@ bool upload(Socket& s,InvestigationProtocol& p,const InvestigationCapture& c,uns
     if(!active(p)){cJSON_Delete(o);return false;}
     return s.send(o) && capture_ack(s,p,id,"complete",sha);
 }
+
+// Device-side geometry check on LVGL's resolved rectangles: every control
+// inside its panel and no two main-flow controls overlapping.
+bool layout_ok(lv_obj_t* parent,std::initializer_list<lv_obj_t*> objects) {
+    lv_area_t outer{};lv_obj_get_coords(parent,&outer);
+    std::vector<lv_area_t> areas;
+    for(auto* o:objects) {
+        lv_area_t a{};lv_obj_get_coords(o,&a);
+        if(a.x1<outer.x1 || a.y1<outer.y1 || a.x2>outer.x2 || a.y2>outer.y2)return false;
+        for(auto& b:areas)if(a.x1<=b.x2 && b.x1<=a.x2 && a.y1<=b.y2 && b.y1<=a.y2)return false;
+        areas.push_back(a);
+    }
+    return true;
+}
+lv_obj_t* text(lv_obj_t* parent,const char* value,int x,int y,const lv_font_t* font,uint32_t color=0xffffff) {
+    auto* l=lv_label_create(parent);lv_label_set_text(l,value);lv_obj_set_pos(l,x,y);
+    lv_obj_set_style_text_font(l,font,0);lv_obj_set_style_text_color(l,lv_color_hex(color),0);return l;
+}
 }
 
 void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     media_queue=media_commands;actions=xQueueCreate(1,sizeof(uint8_t));configASSERT(actions);
     launch=button(screen,"Guided A/B",30,220,open);lv_obj_add_state(launch,LV_STATE_DISABLED);
     panel=lv_obj_create(screen);lv_obj_set_size(panel,1220,680);lv_obj_center(panel);
+    lv_obj_set_style_bg_color(panel,lv_color_hex(0x101418),0);lv_obj_remove_flag(panel,LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);
-    endpoint_field=lv_textarea_create(panel);lv_obj_set_pos(endpoint_field,15,10);lv_obj_set_size(endpoint_field,900,55);
+    heading=text(panel,"Steady sound A/B",0,0,&lv_font_montserrat_28);
+    const char* names[3]={"Live","A","B"};
+    for(unsigned s=0;s<3;++s)legend[s]=text(panel,names[s],900+s*95,6,&lv_font_montserrat_24,series_colors[s]);
+
+    // 48 log bands, 50 Hz-20 kHz; 0..100 maps floor..ceiling dB.
+    constexpr int chart_x=80,chart_y=50,chart_w=1090,chart_h=270;
+    chart=lv_chart_create(panel);lv_obj_set_pos(chart,chart_x,chart_y);lv_obj_set_size(chart,chart_w,chart_h);
+    lv_chart_set_type(chart,LV_CHART_TYPE_LINE);lv_chart_set_point_count(chart,spectrum_band_count);
+    lv_chart_set_range(chart,LV_CHART_AXIS_PRIMARY_Y,0,100);lv_chart_set_div_line_count(chart,5,0);
+    lv_obj_set_style_pad_all(chart,0,0);lv_obj_set_style_bg_color(chart,lv_color_hex(0x000000),0);
+    lv_obj_set_style_border_color(chart,lv_color_hex(0x37474f),0);
+    lv_obj_set_style_line_color(chart,lv_color_hex(0x263238),LV_PART_MAIN);
+    lv_obj_set_style_line_width(chart,3,LV_PART_ITEMS);lv_obj_set_style_size(chart,0,0,LV_PART_INDICATOR);
+    for(unsigned s=0;s<3;++s)series[s]=lv_chart_add_series(chart,lv_color_hex(series_colors[s]),LV_CHART_AXIS_PRIMARY_Y);
+    chart_clear();
+    for(int step=0;step<5;++step) {
+        char value[16];snprintf(value,sizeof(value),"%d",static_cast<int>(spectrum_ceiling_db)-20*step);
+        text(panel,value,0,chart_y+step*(chart_h-1)/4-10,&lv_font_montserrat_18,0x90a4ae);
+    }
+    text(panel,"dB",0,chart_y+chart_h+6,&lv_font_montserrat_18,0x90a4ae);
+    for(float hz:{100.0f,1000.0f,10000.0f}) {
+        const float band=std::log(hz/spectrum_band_low_hz)/std::log(spectrum_band_high_hz/spectrum_band_low_hz)*spectrum_band_count-0.5f;
+        const int x=chart_x+static_cast<int>(band/(spectrum_band_count-1)*chart_w);
+        text(panel,hz<1000?"100 Hz":hz<10000?"1 kHz":"10 kHz",x-30,chart_y+chart_h+6,&lv_font_montserrat_18,0x90a4ae);
+    }
+
+    auto* transcript=lv_obj_create(panel);lv_obj_set_pos(transcript,0,355);lv_obj_set_size(transcript,1170,190);
+    label=lv_label_create(transcript);lv_obj_set_width(label,1120);
+    lv_obj_set_style_text_font(label,&lv_font_montserrat_22,0);
+    lv_label_set_long_mode(label,LV_LABEL_LONG_WRAP);
+    lv_label_set_text(label,"Steady sound A/B test. Record at A, move, record at B, then compare.\nKeep the source level and device orientation fixed. Tap Start.");
+    start_button=button(panel,"Start",0,560,start);
+    action_button=button(panel,"Record A",235,560,action);action_label=lv_obj_get_child(action_button,0);
+    lv_obj_add_state(action_button,LV_STATE_DISABLED);
+    cancel_button=button(panel,"Cancel",470,560,cancel);lv_obj_add_state(cancel_button,LV_STATE_DISABLED);
+    setup_button=button(panel,"Setup",705,560,open_setup);
+    back_button=button(panel,"Back",940,560,back);
+    lv_timer_create(draw_live,60,nullptr);
+
+    // Setup stays off the main flow: service address, Wi-Fi and keyboard.
+    setup_panel=lv_obj_create(screen);lv_obj_set_size(setup_panel,1220,680);lv_obj_center(setup_panel);
+    lv_obj_add_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);
+    text(setup_panel,"Setup",0,0,&lv_font_montserrat_28,0x000000);
+    auto* done=button(setup_panel,"Done",955,0,close_setup);
+    text(setup_panel,"Mac service address (loaded from SD at boot)",0,75,&lv_font_montserrat_20,0x000000);
+    endpoint_field=lv_textarea_create(setup_panel);lv_obj_set_pos(endpoint_field,0,110);lv_obj_set_size(endpoint_field,920,60);
     lv_textarea_set_one_line(endpoint_field,true);lv_textarea_set_max_length(endpoint_field,240);
     lv_textarea_set_placeholder_text(endpoint_field,"ws://Mac-LAN-IP:8765/");
     lv_textarea_set_text(endpoint_field,CONFIG_TRICORDER_INVESTIGATION_ENDPOINT);
-    start_button=button(panel,"Start mock",935,10,start);
-    auto* transcript=lv_obj_create(panel);lv_obj_set_pos(transcript,0,85);lv_obj_set_size(transcript,1190,455);
-    label=lv_label_create(transcript);lv_obj_set_width(label,1140);
-    lv_label_set_long_mode(label,LV_LABEL_LONG_WRAP);
-    lv_label_set_text(label,"Steady speaker A/B test. Join Wi-Fi before opening this screen.\nEnter the Mac service address. Keep source level and orientation fixed.");
-    keyboard=lv_keyboard_create(panel);lv_obj_set_size(keyboard,1160,270);lv_obj_align(keyboard,LV_ALIGN_TOP_LEFT,15,270);
-    lv_keyboard_set_textarea(keyboard,endpoint_field);
+    auto* wifi=button(setup_panel,"Wi-Fi setup",955,110,open_wifi);
+    keyboard=lv_keyboard_create(setup_panel);lv_obj_set_size(keyboard,1160,300);lv_obj_align(keyboard,LV_ALIGN_BOTTOM_MID,0,0);
+    lv_keyboard_set_textarea(keyboard,endpoint_field);lv_obj_add_flag(keyboard,LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(endpoint_field,edit_endpoint,LV_EVENT_FOCUSED,nullptr);
-    action_button=button(panel,"Record A",15,560,action);action_label=lv_obj_get_child(action_button,0);
-    lv_obj_add_state(action_button,LV_STATE_DISABLED);
-    cancel_button=button(panel,"Cancel",260,560,cancel);lv_obj_add_state(cancel_button,LV_STATE_DISABLED);
-    back_button=button(panel,"Back",935,560,back);
-    // Device-side geometry check uses LVGL's resolved positions, including
-    // constructor alignment, rather than assuming set_pos is absolute.
-    lv_obj_remove_flag(panel,LV_OBJ_FLAG_HIDDEN);
-    lv_obj_update_layout(panel);
-    lv_area_t panel_area{},keyboard_area{};
-    lv_obj_get_coords(panel,&panel_area);lv_obj_get_coords(keyboard,&keyboard_area);
-    const bool inside=keyboard_area.x1>=panel_area.x1 && keyboard_area.y1>=panel_area.y1 &&
-        keyboard_area.x2<=panel_area.x2 && keyboard_area.y2<=panel_area.y2;
-    diagnostic_check("investigation_keyboard_layout",inside?"pass":"fail",
-                     "Resolved keyboard rectangle must stay inside the A/B panel.");
-    lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);
+
+    for(auto* p:{panel,setup_panel,keyboard})lv_obj_remove_flag(p,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_update_layout(screen);
+    diagnostic_check("investigation_keyboard_layout",layout_ok(setup_panel,{done,endpoint_field,wifi,keyboard})?"pass":"fail",
+                     "Resolved setup controls and keyboard stay inside the setup panel without overlap.");
+    diagnostic_check("investigation_layout",layout_ok(panel,{heading,chart,transcript,start_button,action_button,cancel_button,setup_button,back_button})?"pass":"fail",
+                     "Resolved A/B heading, spectrum, guidance and buttons stay inside the panel without overlap.");
+    for(auto* p:{panel,setup_panel,keyboard})lv_obj_add_flag(p,LV_OBJ_FLAG_HIDDEN);
 }
+void investigation_ui_open() {open(nullptr);}
 void investigation_ui_enable(bool enabled) {
     if(enabled)lv_obj_remove_state(launch,LV_STATE_DISABLED);else lv_obj_add_state(launch,LV_STATE_DISABLED);
 }
@@ -328,9 +482,12 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         if(!replay)show(*p,index==0?"Settling 0.5s, then recording A / 3s\nHold still; speaker silent.":"Settling 0.5s, then recording B / 3s\nHold still; speaker silent.");
         {
             InvestigationCapture capture;char id[48];snprintf(id,sizeof(id),"%s-%c",session,index?'b':'a');
-            const bool loaded=replay?test_storage_load_capture(id,capture):investigation_capture(boot,session,id,cancelled,capture);
+            if(!replay)chart_recording(index);
+            const bool loaded=replay?test_storage_load_capture(id,capture):investigation_capture(boot,session,id,cancelled,capture,live_tap);
             if(!loaded || !active(*p) ||
                !p->captured(capture.metadata,capture.measurement,now_ms())){p->fail();break;}
+            float db[spectrum_band_count];
+            if(capture_bands(capture,db))chart_capture(index,db);
             if(replay)show(*p,"SD REPLAY: uploading original verified recording...");
             else {
                 show(*p,"Saving the verified recording to SD...");
@@ -367,9 +524,7 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
     const std::string displayed=replay?std::string("SD REPLAY (no new acquisition)\n")+final_text:final_text;
     show(*p,displayed.c_str());
     if(bsp_display_lock(1000)) {
-        running=false;
-        for(auto* b:{start_button,back_button,endpoint_field})lv_obj_remove_state(b,LV_STATE_DISABLED);
-        lv_obj_add_state(cancel_button,LV_STATE_DISABLED);
+        set_running(false);show_series(0,false);
         bsp_display_unlock();
     }
 }
@@ -383,10 +538,8 @@ bool investigation_request_replay(const char* session) {
         cancel_requested_us.store(0);cancelled.store(false);xQueueReset(actions);
         uint8_t command=5;ok=xQueueSend(media_queue,&command,0)==pdTRUE;
         if(ok) {
-            running=true;lv_obj_remove_flag(panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(panel);
-            lv_obj_add_flag(keyboard,LV_OBJ_FLAG_HIDDEN);
-            for(auto* b:{start_button,back_button,endpoint_field})lv_obj_add_state(b,LV_STATE_DISABLED);
-            lv_obj_remove_state(cancel_button,LV_STATE_DISABLED);
+            set_running(true);chart_clear();lv_obj_add_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(panel);
             lv_label_set_text(label,"SD REPLAY: checking saved recording identity...");
         }
     }
@@ -408,9 +561,8 @@ void investigation_run_replay() {
     cJSON_AddStringToObject(e,"source_boot_id",boot.c_str());diagnostic_emit(e);
     if(valid){run_investigation(boot.c_str(),replay_session_text);return;}
     if(bsp_display_lock(1000)) {
-        running=false;lv_label_set_text(label,"SD REPLAY failed: saved recording missing or invalid.");
-        for(auto* b:{start_button,back_button,endpoint_field})lv_obj_remove_state(b,LV_STATE_DISABLED);
-        lv_obj_add_state(cancel_button,LV_STATE_DISABLED);bsp_display_unlock();
+        set_running(false);lv_label_set_text(label,"SD REPLAY failed: saved recording missing or invalid.");
+        bsp_display_unlock();
     }
 }
 

@@ -1,6 +1,8 @@
 #include "investigation_capture.h"
 #include "audio_devices.h"
 #include "audio_ingress.h"
+#include "diagnostic_events.h"
+#include "spectrum_display.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "mbedtls/sha256.h"
@@ -9,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
 namespace {
 bool hash(const void* data,size_t size,char out[65]) {
@@ -27,7 +30,8 @@ cJSON* counters(const AudioIngressSnapshot& s) {
 }
 InvestigationCapture::~InvestigationCapture(){free(bytes);cJSON_Delete(metadata);cJSON_Delete(measurement);}
 bool investigation_capture(const char* boot,const char* session,const char* id,
-                           const std::atomic<bool>& cancel,InvestigationCapture& out) {
+                           const std::atomic<bool>& cancel,InvestigationCapture& out,
+                           CaptureSpectrumTap tap) {
     constexpr size_t frames=144000,bytes=frames*8,block_bytes=8192,warmup_frames=24000;
     if(out.bytes || out.metadata || out.measurement)return false;
     out.bytes=static_cast<unsigned char*>(heap_caps_malloc(bytes,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
@@ -38,6 +42,10 @@ bool investigation_capture(const char* boot,const char* session,const char* id,
     struct Proof {uint64_t read_us;char sha[65];};
     auto* proofs=static_cast<Proof*>(heap_caps_calloc((bytes+block_bytes-1)/block_bytes,sizeof(Proof),MALLOC_CAP_SPIRAM));
     if(!proofs)return false;
+    struct LiveView {SpectrumWorkspace workspace;float amplitudes[spectrum_max_frames/2+1];};
+    std::unique_ptr<LiveView,decltype(&free)> live(tap?static_cast<LiveView*>(
+        heap_caps_aligned_alloc(16,sizeof(LiveView),MALLOC_CAP_SPIRAM)):nullptr,free);
+    unsigned live_views=0;uint64_t live_max_us=0;
     auto mic=diagnostic_microphone();auto speaker=diagnostic_speaker();
     esp_codec_dev_sample_info_t input{};input.sample_rate=48000;input.channel=4;input.bits_per_sample=16;
     auto output=input;output.channel=2;
@@ -70,6 +78,16 @@ bool investigation_capture(const char* boot,const char* session,const char* id,
             peak=std::max(peak,static_cast<unsigned>(std::abs(v)));clipped+=v==-32768 || v==32767;
         }
         ++count;
+        if(ok && live && count%4==0 && offset+n>=spectrum_max_frames*8) {
+            const uint64_t started=esp_timer_get_time();SpectrumResult result;SpectrumBands bands;float db[spectrum_band_count];
+            const auto* window=reinterpret_cast<const int16_t*>(out.bytes+offset+n)-spectrum_max_frames*4;
+            if(spectrum_pcm16(window,spectrum_max_frames,4,0,live->workspace,live->amplitudes,
+                              spectrum_max_frames/2+1,result) &&
+               spectrum_bands_add(live->amplitudes,spectrum_max_frames,48000,bands)) {
+                spectrum_bands_db(bands,db);tap(db);++live_views;
+            }
+            live_max_us=std::max(live_max_us,esp_timer_get_time()-started);
+        }
     }
     after=audio_ingress_snapshot();uint64_t end=esp_timer_get_time();
     // RX must be stopped before any network or JSON work; never upload while
@@ -86,7 +104,12 @@ bool investigation_capture(const char* boot,const char* session,const char* id,
         cJSON_AddNumberToObject(b,"frames",n/8);cJSON_AddNumberToObject(b,"read_end_us",proofs[i].read_us);
         cJSON_AddStringToObject(b,"sha256",proofs[i].sha);cJSON_AddItemToArray(blocks,b);
     }
-    free(proofs);if(!ok)return false;
+    free(proofs);
+    if(live) {
+        auto* e=diagnostic_event("investigation_live_spectrum");cJSON_AddStringToObject(e,"capture_id",id);
+        cJSON_AddNumberToObject(e,"views",live_views);cJSON_AddNumberToObject(e,"max_us",live_max_us);diagnostic_emit(e);
+    }
+    if(!ok)return false;
     char digest[65];if(!hash(out.bytes,bytes,digest))return false;
     out.size=bytes;auto* m=out.metadata;
     cJSON_AddStringToObject(m,"boot_id",boot);cJSON_AddStringToObject(m,"session_id",session);

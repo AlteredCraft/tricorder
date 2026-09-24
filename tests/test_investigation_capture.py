@@ -23,6 +23,7 @@ int esp_codec_dev_read(void*,void*,int);
 constexpr int MALLOC_CAP_SPIRAM=1,MALLOC_CAP_8BIT=2;
 inline void* heap_caps_malloc(size_t n,int){return malloc(n);}
 inline void* heap_caps_calloc(size_t n,size_t s,int){return calloc(n,s);}
+inline void* heap_caps_aligned_alloc(size_t a,size_t n,int){return aligned_alloc(a,(n+a-1)/a*a);}
 ''')
             (p/'esp_timer.h').write_text('#pragma once\n#include <cstdint>\nint64_t esp_timer_get_time();\n')
             (p/'mbedtls/sha256.h').write_text('''#pragma once
@@ -37,6 +38,8 @@ inline int mbedtls_sha256(const unsigned char* p,size_t n,unsigned char* out,int
 #include "investigation_capture.h"
 #include "audio_devices.h"
 #include "audio_ingress.h"
+#include "diagnostic_events.h"
+#include "spectrum_display.h"
 #include <cassert>
 #include <cstring>
 #include <cstdio>
@@ -59,6 +62,16 @@ int esp_codec_dev_read(void*,void* target,int size){
  if(mode==4)cancel_flag=true;
  return 0;
 }
+static int taps=0,events=0;
+cJSON* diagnostic_event(const char* name){
+ assert(!strcmp(name,"investigation_live_spectrum"));++events;return cJSON_CreateObject();
+}
+void diagnostic_emit(cJSON* e){
+ assert(cJSON_GetObjectItem(e,"views")->valuedouble==taps);cJSON_Delete(e);
+}
+void tap(const float* db){
+ ++taps;for(size_t i=0;i<spectrum_band_count;++i)assert(db[i]>=spectrum_floor_db && db[i]<0);
+}
 AudioIngressSnapshot audio_ingress_snapshot(){return counters;}
 bool begin_audio_epoch(AudioIngressSnapshot& before){before=counters;return true;}
 int64_t esp_timer_get_time(){static int64_t t=0;return ++t;}
@@ -68,7 +81,7 @@ int main(int argc,char** argv){
   opens=closes=reads=0;cancel_flag=false;
   InvestigationCapture capture;
   bool ok=investigation_capture("boot","session","take",cancel_flag,capture);
-  assert(opens==2 && closes==2);
+  assert(opens==2 && closes==2 && !events);
   if(!mode){
    assert(ok && capture.size==1152000 && reads==165);
    assert(cJSON_GetObjectItem(capture.metadata,"warmup_frames")->valuedouble==24000);
@@ -79,6 +92,11 @@ int main(int argc,char** argv){
    assert(cJSON_GetArraySize(cJSON_GetObjectItem(capture.metadata,"ingress_blocks"))==141);
    assert(cJSON_GetObjectItem(capture.measurement,"rms_counts")->valuedouble==1000);
    assert(cJSON_GetObjectItem(capture.measurement,"frames")->valuedouble==144000);
+   // The display tap sees every 4th retained block and changes no evidence.
+   { InvestigationCapture viewed;opens=closes=0;
+     assert(investigation_capture("boot","session","take",cancel_flag,viewed,tap));
+     assert(taps==35 && events==1 && viewed.size==capture.size && !memcmp(viewed.bytes,capture.bytes,viewed.size));
+     events=0; }
    auto* wire=cJSON_PrintUnformatted(capture.metadata);assert(strlen(wire)<32000);cJSON_free(wire);
    std::string base=std::string(argv[1])+"/saved";
    FILE* file=fopen((base+".raw").c_str(),"wb");assert(file);assert(fwrite(capture.bytes,1,capture.size,file)==capture.size);fclose(file);
@@ -109,7 +127,8 @@ int main(int argc,char** argv){
             self.assertEqual(r.returncode,0,r.stderr)
             r=subprocess.run(['clang++','-std=c++17','-Wall','-Wextra','-Werror','-fsanitize=address',
                               '-I',str(p),'-I','firmware/main','-I',str(cjson),str(p/'driver.cpp'),
-                              'firmware/main/investigation_capture.cpp','firmware/main/investigation_replay.cpp',str(p/'json.o'),'-o',str(p/'test')],capture_output=True,text=True)
+                              'firmware/main/investigation_capture.cpp','firmware/main/investigation_replay.cpp',
+                              'firmware/main/spectrum.cpp','firmware/main/spectrum_display.cpp',str(p/'json.o'),'-o',str(p/'test')],capture_output=True,text=True)
             self.assertEqual(r.returncode,0,r.stderr)
             r=subprocess.run([str(p/'test'),str(p)],capture_output=True,text=True,timeout=15)
             self.assertEqual(r.returncode,0,r.stderr)
