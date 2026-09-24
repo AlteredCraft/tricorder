@@ -223,6 +223,42 @@ int main() {
         overlap,_=self.capture('take-r',900,4500)
         self.assertFalse(self.run_commands(before_b+[dict(op='await_repeat'),dict(op='start'),overlap])[-1]['ok'])
 
+    def test_device_turns_are_accepted_by_the_host_service(self):
+        # Join the two implementations: the reducer's own turn messages must pass the service.
+        import asyncio,base64
+        from tools.investigation_service import MockSession
+        commands,a=self.prefix()
+        cap_b,b=self.capture('take-b',500,4000);cap_r,r=self.capture('take-r',900,7000)
+        rows=self.run_commands(commands+[self.receive(self.reply([a])),dict(op='ack'),
+            self.receive(self.envelope('acknowledged',request_id='r1',state='adjust')),
+            dict(op='adjust'),dict(op='start'),cap_b,dict(op='await_repeat'),dict(op='start'),cap_r,dict(op='uploaded')])
+        turns=[rows[4]['out'],rows[-1]['out']]
+        self.assertEqual(turns[1]['adjustment'],'Moved to 40 cm')
+        async def run():
+            sent=[]
+            async def send(message):sent.append(message)
+            with tempfile.TemporaryDirectory() as directory:
+                service=MockSession(Path(directory),send)
+                async def message(kind,**fields):
+                    await service.receive(dict(version=1,type=kind,boot_id='boot',session_id='session',**fields))
+                async def upload(key,amplitude,start):
+                    meta,raw=evidence(key,amplitude,acquisition_start_us=start,acquisition_end_us=start+1000)
+                    await message('capture_start',metadata=meta)
+                    for offset in range(0,len(raw),4096):
+                        await message('capture_chunk',capture_id=key,offset=offset,
+                                      data=base64.b64encode(raw[offset:offset+4096]).decode())
+                    await message('capture_end',capture_id=key,sha256=meta['sha256'])
+                await message('hello',fixture=fixture().to_dict())
+                await upload('take-a',1000,1000)
+                await service.receive(turns[0]);await service.drain();await message('ack',request_id='r1')
+                await upload('take-b',500,4000);await upload('take-r',900,7000)
+                await service.receive(turns[1]);await service.drain()
+                await service.close()
+            return sent
+        sent=asyncio.run(run())
+        self.assertEqual(sent[-1]['type'],'comparison')
+        self.assertIsNotNone(sent[-1]['comparison']['repeat_delta_db'])
+
     def test_complete_host_provider_exchange_and_ack_gate(self):
         commands,a=self.prefix()
         cap,b=self.capture('take-b',500,4000)

@@ -153,7 +153,7 @@ cJSON* InvestigationProtocol::turn(uint64_t now) {
     auto* ids=cJSON_AddArrayToObject(o,"capture_ids");
     for(unsigned i=0;i<count_;++i)cJSON_AddItemToArray(ids,cJSON_CreateString(capture_id(i)));
     deadline_=now+15000;cJSON_AddNumberToObject(o,"device_ms",now);cJSON_AddNumberToObject(o,"deadline_ms",deadline_);
-    if(count_==2)cJSON_AddStringToObject(o,"adjustment",adjustment_);
+    if(count_>1)cJSON_AddStringToObject(o,"adjustment",adjustment_);
     state_=State::Waiting;return o;
 }
 bool InvestigationProtocol::receive(const char* wire,uint64_t now) {
