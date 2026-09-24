@@ -16,7 +16,7 @@
 
 | Goal | Status | Summary |
 | --- | --- | --- |
-| [G-0002 One usable end-to-end investigation](plans/G-0002-thin-investigation-slice.md) | In progress | **Priority.** Guided A/B works end to end with the mock service and a live text model, and the screen shows a live spectrum and an A/B overlay. Camera/IMU context, speech and live usefulness ratings are open. |
+| [G-0002 One usable end-to-end investigation](plans/G-0002-thin-investigation-slice.md) | In progress | **Priority.** Guided A/B works end to end with the mock service and a live text model, and the screen shows a live spectrum, an A/B overlay, a context photo and a steadiness indicator. Speech and live usefulness ratings are open. |
 | [G-0001 A trustworthy live investigation](plans/G-0001-trustworthy-live-investigation.md) | In progress | Isolated hardware baselines pass. Combined workload, agent statistics and power/recovery are open. Hardening follows G-0002. |
 
 Sequencing: G-0002 (usefulness) first, then harden the same code under G-0001. G-0002 does not lower G-0001's checks.

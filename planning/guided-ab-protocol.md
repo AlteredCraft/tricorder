@@ -43,7 +43,7 @@ Capture: 48 kHz, 4 slots, s16, requested gain 24 dB, 0.5 s discarded settling pr
 .tools/investigation-env/bin/python -m tools.investigation_evidence .local/runs/NEW/mock/<session-dir>
 ```
 
-On the device (guided startup opens this screen): **Start** → **Record A** (live spectrum) → wait for guidance → move → **Confirm position B** → **Record B** (live over A) → comparison with A/B spectra overlaid. **Setup** holds the service address and Wi-Fi. The on-device spectra are display only: 48 log bands, 50 Hz–20 kHz, averaged 2048-point FFTs of slot 0.
+On the device (guided startup opens this screen): **Start** (context photo, device-only) → **Record A** (steadiness label before each tap) (live spectrum) → wait for guidance → move → **Confirm position B** → **Record B** (live over A) → comparison with A/B spectra overlaid. **Setup** holds the service address and Wi-Fi. The on-device spectra are display only: 48 log bands, 50 Hz–20 kHz, averaged 2048-point FFTs of slot 0.
 
 Firmware option `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` (private sdkconfig) skips automatic diagnostics at boot.
 
