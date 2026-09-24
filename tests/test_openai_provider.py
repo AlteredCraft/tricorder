@@ -126,6 +126,9 @@ class OpenAIProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(payload['comparison']['repeat_delta_db'],-0.915,places=3)
         self.assertIn('repeat_delta_db',self.calls[-1]['instructions'])
         self.assertNotIn('placement_b',self.calls[-1]['instructions'])
+        # Written for the person holding the device: no counts, peaks or dBFS as chatter.
+        self.assertIn('plain words',self.calls[-1]['instructions'])
+        self.assertIn('counts, peaks',self.calls[-1]['instructions'])
         with self.assertRaises(ProtocolError):
             await self.provider(dict(text='Returning to A changed it by 2.5 dB.',capture_ids=ids)).respond(request)
 
