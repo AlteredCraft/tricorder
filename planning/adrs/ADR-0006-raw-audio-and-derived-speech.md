@@ -1,6 +1,6 @@
 # ADR-0006. Immutable raw audio; speech gets its own buffers
 
-Status: Active · Decided: 2026-09-20 · Evidence: [G-0001.03](../plans/G-0001.03-audio-integrity.md#observed) (`speech-replay-1`, `live-audio-1`)
+Status: Active · Decided: 2026-09-20 · Revised: 2026-09-24 (spoken ask uses the filter) · Evidence: [G-0001.03](../plans/G-0001.03-audio-integrity.md#observed) (`speech-replay-1`, `live-audio-1`)
 
 ## Context
 
@@ -14,4 +14,4 @@ Codec-read blocks are hashed at ingress and never modified. Speech and playback 
 
 ## Consequences
 
-Any asynchronous consumer needs new ownership/loss evidence before buffers are reused. Filter/decimation settings (80 Hz HPF, 63-tap LPF, 48→16 kHz) are experiment settings, not a chosen speech stack.
+Any asynchronous consumer needs new ownership/loss evidence before buffers are reused. Filter/decimation settings (80 Hz HPF, 63-tap LPF, 48→16 kHz) now shape the spoken question sent to the Mac ([ADR-0013](ADR-0013-local-first-speech-to-text.md)). That recording is its own buffer and never overlaps a measurement capture. The settings are still not a chosen speech stack.

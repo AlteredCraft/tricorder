@@ -1,6 +1,6 @@
 # ADR-0013. Spoken questions: local-first speech-to-text on the Mac
 
-Status: Active · Decided: 2026-09-24 · Evidence: [G-0002.01](../plans/G-0002.01-guided-ab-slice.md#observed) (`20260924-stt-cafe`)
+Status: Active · Decided: 2026-09-24 · Evidence: [G-0002.01](../plans/G-0002.01-guided-ab-slice.md#observed) (`20260924-stt-cafe`, `20260924-spoken-ask`)
 
 ## Context
 
