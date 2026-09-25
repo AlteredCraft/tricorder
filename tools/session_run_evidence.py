@@ -6,7 +6,8 @@ input-to-submit p95 <= 100 ms (console tap to the media owner receiving the
 action). C4: after two warm-up sessions, free internal RAM and PSRAM at each
 session end stay within 5% of the third session's. G-0001.04 C2: round trips
 on the device clock, turn sent to ack sent (the reply arrived in between) and
-ack sent to the next state (the Mac's acknowledgement arrived in between).
+ack sent to the next state (the Mac's acknowledgement arrived in between);
+reported only.
 """
 import argparse
 from collections import Counter
@@ -28,8 +29,7 @@ def stats(values):
     return dict(count=len(values), p95=p95(values), max=max(values) if values else None)
 
 
-def assess(events, *, ui_p95_ms=50, ui_max_ms=200, submit_p95_ms=100, memory_pct=5, min_inputs=100,
-           round_trip_p95_ms=200):
+def assess(events, *, ui_p95_ms=50, ui_max_ms=200, submit_p95_ms=100, memory_pct=5, min_inputs=100):
     errors = []
     boots = {e['boot_id'] for e in events if e.get('event') == 'boot'}
     if len(boots) != 1:
@@ -71,9 +71,8 @@ def assess(events, *, ui_p95_ms=50, ui_max_ms=200, submit_p95_ms=100, memory_pct
     if submits and submit['p95'] > submit_p95_ms:
         errors.append(f"input-to-submit p95 {submit['p95']} ms > {submit_p95_ms} ms")
     trips = dict(turn_to_reply=stats(turns), ack_to_state=stats(acks))
-    for name, value in trips.items():
-        if value['count'] and value['p95'] > round_trip_p95_ms:
-            errors.append(f"{name} p95 {value['p95']} ms > {round_trip_p95_ms} ms")
+    # Reported for G-0001.04 C2, not judged here: in live sessions the device saves the
+    # previous capture to SD between sending a turn and reading its reply.
 
     memory = {}
     if len(ends) > WARMUP_SESSIONS:
