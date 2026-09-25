@@ -2,7 +2,6 @@
 
 Things that need the user's hands or equipment. Wait for a prepared procedure before starting any of them.
 
-- **Re-rate usefulness:** three rated live loops on real sound questions (G-0002.01 Open 1); ready now. Steady sounds (fridge, fan, traffic) suit it best.
 - **Cold starts:** ten real power-off/on cycles (G-0001.01).
 - **Speaker level:** built-in speaker playback is faint; recheck after output changes. Headphones are fine.
 - **SD power loss:** interrupted-write recovery test (G-0001.05).
