@@ -14,6 +14,6 @@
 
 | Spec | Status | State |
 | --- | --- | --- |
-| [.01 Guided A/B vertical slice](G-0002.01-guided-ab-slice.md) | In progress | Mock loop, failure handling, SD archive/replay, live text model, the instrument view (live spectrum, A/B overlay), a context photo, a steadiness indicator and a spoken question (local speech-to-text, confirmed on screen) and operator-owned A/B with a repeat of A work. Three rated live loops: responsiveness 4, usefulness 3 (inconclusive against repeat variation); the comparison now uses a median level, and the user judged the loop good enough to move on without re-rating. Next: spoken guidance, then whether the photo goes to the model. |
+| [.01 Guided A/B vertical slice](G-0002.01-guided-ab-slice.md) | In progress | Mock loop, failure handling, SD archive/replay, live text model, the instrument view (live spectrum, A/B overlay), a context photo, a steadiness indicator and a spoken question (local speech-to-text, confirmed on screen) and operator-owned A/B with a repeat of A work. Three rated live loops: responsiveness 4, usefulness 3 (inconclusive against repeat variation); the comparison now uses a median level, and the user judged the loop good enough to move on without re-rating. Spoken guidance (Pocket TTS "alba") works on the device. Next: decide whether the photo goes to the model. |
 
 **Status:** In progress.
