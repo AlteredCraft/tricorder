@@ -139,6 +139,23 @@ esp_err_t initialize() {
     return version_result;
 }
 
+// G-0001.02 Wi-Fi loss: every 5 s ask the co-processor for the AP record over
+// ESP-Hosted RPC. A normal answer during an outage clears the host link; a slow
+// or failed one points at it.
+void wifi_link_probe(void*) {
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        wifi_ap_record_t ap{};
+        const int64_t started=esp_timer_get_time();
+        const esp_err_t result=esp_wifi_sta_get_ap_info(&ap);
+        auto* e=diagnostic_event("wifi_link");
+        cJSON_AddStringToObject(e,"result",esp_err_to_name(result));
+        cJSON_AddNumberToObject(e,"rpc_us",esp_timer_get_time()-started);
+        if (result==ESP_OK) {cJSON_AddNumberToObject(e,"rssi",ap.rssi);cJSON_AddNumberToObject(e,"channel",ap.primary);}
+        diagnostic_emit(e);
+    }
+}
+
 void network_task(void*) {
     Credentials credentials{};
     bool attempted=false, started=false;
@@ -158,6 +175,8 @@ void network_task(void*) {
             for (size_t i=0; i<sizeof(config); ++i) clear[i]=0;
             if (result==ESP_OK) {
                 result=started ? esp_wifi_connect() : esp_wifi_start();
+                if (result==ESP_OK && !started)
+                    configASSERT(xTaskCreate(wifi_link_probe,"wifi_probe",4096,nullptr,2,nullptr)==pdPASS);
                 if (result==ESP_OK) started=true;
             }
         }
