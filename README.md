@@ -66,7 +66,7 @@ Evidence assessors (`python3 -m tools.<name> RUN_DIR`): `camera_baseline_evidenc
 
 - The Tab5's USB serial is **E8:F6:0A:E2:E0:0E**. Rediscover the port with `.tools/python-env/bin/python -m serial.tools.list_ports -v`; another attached board may show up too.
 - **Opening the serial port can reset the Tab5.** Keep one collector open for a whole trial, and prefix long runs with `/usr/bin/caffeinate -is` (Mac sleep drops USB data).
-- Wi-Fi and the service endpoint load from SD at boot. Provision them with `tools.provision_device` ([operations doc](planning/guided-ab-operations.md#sd-provisioning-archive-and-download)). The SD card holds plaintext Wi-Fi credentials, so keep it private. Currently provisioned (2026-09-25) for nossa-7c-guest (`.env.local.nossa-7c-guest`, endpoint 192.168.68.67; this guest network passes device-to-Mac traffic, ping 93–187 ms).
+- Wi-Fi and the service endpoint load from SD at boot. Provision them with `tools.provision_device` ([operations doc](planning/guided-ab-operations.md#sd-provisioning-archive-and-download)). The SD card holds plaintext Wi-Fi credentials, so keep it private. Currently provisioned (2026-09-25) for Newnet (`.env.local.newnet`, endpoint 192.168.0.44:8765). Live sessions on Newnet lose Wi-Fi intermittently ([G-0001.02](planning/plans/G-0001.02-concurrent-workload.md#open)). nossa-7c-guest (`.env.local.nossa-7c-guest`) passes device-to-Mac traffic, ping 93–187 ms.
 - The private `firmware/sdkconfig` sets `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` (boot straight to Guided A/B, skipping diagnostics).
 - Flash backups and recovery steps: `.local/runs/20260920-baseline/RECOVERY.md`.
 - Secrets live in ignored `.env.local.*` files. Never print or commit them.
