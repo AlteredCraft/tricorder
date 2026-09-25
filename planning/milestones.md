@@ -23,4 +23,5 @@
 
 - Hosted agent service (device auth, TLS, credential provisioning, internet latency).
 - Send the context photo and steadiness reading to the model (device-only now; not needed for the dB comparison). The user asked "What is this a picture of?" in a live loop.
+- Sleep and wake (removed from G-0001.05 on 2026-09-25; the device is always on). Start with screen-off on idle and touch wake, once on-battery power shows the backlight's share.
 - Candidate later milestones: local ESP-DL inference, full-duplex speech/AEC, wake words, higher-resolution video, USB/RS-485 peripherals, external environmental sensors.
