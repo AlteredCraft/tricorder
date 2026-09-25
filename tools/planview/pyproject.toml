@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "planview"
+version = "0.1.0"
+description = "Read-only web view over a Milestone → Goal → Spec planning directory"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+planview = "planview.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/planview"]

@@ -45,6 +45,13 @@ uv run tools/ops.py
 
 ![](./docs/img/tools-ui.png)
 
+Planning view (needs only `uv`; standalone package in [`tools/planview`](tools/planview/README.md)): milestone progress, the active spec's next Open item, the goal → spec tree with check verdicts, the Observed log across specs, and planning-rule checks. It reloads when the docs change:
+
+```sh
+uvx --from ./tools/planview planview planning     # http://localhost:8420/
+uvx --from ./tools/planview planview --check planning
+```
+
 
 Serial capture of a diagnostic run (see `--help` for `--checks`, `--stop-file`, `--spec-id`):
 
