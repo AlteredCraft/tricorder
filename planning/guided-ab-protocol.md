@@ -60,7 +60,7 @@ Firmware option `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` (private sdkconfig) skips
 
 - Provision Wi-Fi + endpoint over USB (stored in plaintext on SD, so keep the card private):
   `.tools/python-env/bin/python -m tools.provision_device --env .env.local.<net> --port PORT --endpoint ws://MAC_LAN_IP:8765/ --output .local/runs/NEW-provision`
-- Every capture is saved to `/sdcard/tricorder/captures/<id>.raw/.json` before upload (`.part` + sync + readback, metadata written last, never overwritten).
+- Every capture is saved to `/sdcard/tricorder/captures/<id>.raw/.json` after its upload's hash ACK, while the person waits anyway (for the Mac's reply, or walking back to A), and also when an upload fails (`.part` + sync + readback, metadata written last, never overwritten).
 - Download and verify: `.tools/investigation-env/bin/python -m tools.download_storage --url http://DEVICE_IP --output .local/runs/NEW-download`. Only capture files are served.
 
 ## SD replay (no microphone, no operator)

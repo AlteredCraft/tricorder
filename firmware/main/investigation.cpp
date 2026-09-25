@@ -711,18 +711,22 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
                !p->captured(capture.metadata,capture.measurement,now_ms())){p->fail();break;}
             float db[spectrum_band_count];
             if(capture_bands(capture,db))chart_capture(index,db);
-            if(replay)show(*p,"SD REPLAY: uploading original verified recording...");
-            else {
-                show(*p,"Saving the verified recording to SD...");
-                const bool saved=test_storage_archive(capture.bytes,capture.size,capture.metadata);
-                show(*p,saved?"Saved to SD. Uploading the verified recording...":"SD save unavailable. Uploading the verified recording...");
+            show(*p,replay?"SD REPLAY: uploading original verified recording...":"Uploading the verified recording...");
+            // The SD copy (about 3.4 s) is written after the Mac holds the verified
+            // bytes, during a wait the person has anyway: the Mac's reply, or the
+            // walk back to A. A failed upload is still saved so it isn't lost.
+            auto save=[&]{if(!replay)test_storage_archive(capture.bytes,capture.size,capture.metadata);};
+            if(!upload(socket,*p,capture,index)){save();p->fail();break;}
+            if(!active(*p))break;
+            if(index==1 && !replay) {
+                if(!p->await_repeat())break;
+                show(*p,(std::string(steps_text[2])+"\n(Saving B to SD...)").c_str());
+                save();continue;
             }
-            if(!upload(socket,*p,capture,index)){p->fail();break;}
-        } // Free raw PCM only after the service's matching completion/hash ACK.
-        if(!active(*p))break;
-        if(index==1 && !replay) {if(!p->await_repeat())break;continue;}
-        if(!socket.send(p->turn(now_ms()))){p->disconnect();break;}
-        show(*p,"Waiting for evidence-linked guidance...\nCancel is available.");
+            if(!socket.send(p->turn(now_ms()))){p->disconnect();break;}
+            show(*p,"Waiting for evidence-linked guidance...\nCancel is available.");
+            save();
+        } // Raw PCM is freed after its hash ACK and SD copy.
         if(!wait_reply(socket,*p))break;
         if(!active(*p))break;
         if(!socket.send(p->ack())){p->disconnect();break;}
