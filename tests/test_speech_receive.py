@@ -28,6 +28,7 @@ int main(int,char** argv) {
     const size_t messages=(total_frames+message_frames-1)/message_frames;
     double now=0,last_block=0,started=-1;
     size_t sent=0,in_message=0,received=0,played=0,underruns=0,max_gap_us=0,margin=total_frames;
+    double last_read=0,max_read_gap=0;
     bool playing=false;
     // The sender stops when the device's TCP window (CONFIG_LWIP_TCP_WND_DEFAULT)
     // holds unread data, so the socket never banks more than 5,760 bytes.
@@ -38,7 +39,8 @@ int main(int,char** argv) {
     };
     auto read=[&]()->int {
         now+=100; // per-read cost
-        if(sent>=messages)return 0;
+        max_read_gap=std::max(max_read_gap,now-last_read);last_read=now;
+        if(sent>=messages)return 0; // e.g. a keepalive ping, answered inside the read
         const double consumed=static_cast<double>(sent*message+in_message);
         wire=std::min(wire+rate*(active()-active_before),consumed+window);active_before=active();
         const double waiting=wire-consumed;
@@ -52,7 +54,7 @@ int main(int,char** argv) {
         if(sent<messages) {
             const int result=speech_receive(read,limit);
             if(result==1 && old_loop)continue; // the old loop went straight back to reading
-        }
+        } else if(!old_loop)read(); // after the reply ends, keep reading while buffered audio plays
         const size_t buffered=received-played;
         if(!playing)playing=buffered>=prebuffer || (sent>=messages && buffered);
         if(!playing){now+=1000;continue;}
@@ -64,7 +66,7 @@ int main(int,char** argv) {
         now+=n*1e6/24000; // the codec write blocks for the block's duration
         last_block=now;played+=n;
     }
-    printf("%zu %zu %zu\n",underruns,max_gap_us,margin);
+    printf("%zu %zu %zu %.0f\n",underruns,max_gap_us,margin,max_read_gap);
 }
 '''
 
@@ -90,24 +92,28 @@ class SpeechReceiveTests(unittest.TestCase):
         result = subprocess.run([str(self.binary), str(limit), str(int(old_loop)), str(rate), str(pause_ms)],
                                 capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
-        underruns, max_gap_us, margin = map(int, result.stdout.split())
-        return underruns, max_gap_us, margin
+        underruns, max_gap_us, margin, max_read_gap_us = map(int, result.stdout.split())
+        return underruns, max_gap_us, margin, max_read_gap_us
 
     def test_one_read_per_block_leaves_no_margin_for_wifi_pauses(self):
         # 190 KB/s: measured upload throughput 2026-09-25.
-        _, _, margin = self.run_loop(1, True, 190_000, 0)
+        _, _, margin, _ = self.run_loop(1, True, 190_000, 0)
         self.assertLess(margin, 480)  # under one 20 ms block of cushion
-        underruns, _, _ = self.run_loop(1, True, 190_000, 300)
+        underruns, _, _, _ = self.run_loop(1, True, 190_000, 300)
         self.assertGreater(underruns, 0)
 
     def test_one_message_per_block_builds_a_cushion_without_starving_the_codec(self):
         # A 1.5 s stall needs a faster link to have banked enough; 190 KB/s was measured.
         for rate, pause_ms in ((100_000, 0), (100_000, 300), (190_000, 300), (190_000, 1500), (2_000_000, 1500)):
                 with self.subTest(rate=rate, pause_ms=pause_ms):
-                    underruns, max_gap_us, _ = self.run_loop(8, False, rate, pause_ms)
+                    underruns, max_gap_us, _, max_read_gap_us = self.run_loop(8, False, rate, pause_ms)
                     self.assertEqual(underruns, 0)
                     # Between codec writes the loop reads at most one message.
                     self.assertLess(max_gap_us, 1_000)
+                    # The reply can arrive seconds before it finishes playing. The socket is
+                    # still read every block, or the Mac's keepalive (10 s ping + 10 s) closes
+                    # it (2026-09-25: offline 13.8 s after speech_end).
+                    self.assertLess(max_read_gap_us, 50_000)
 
 
 if __name__ == '__main__':

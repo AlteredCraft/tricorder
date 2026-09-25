@@ -514,7 +514,14 @@ int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions
         }
         if(stream.ended() && (stopped || played>=stream.frames()))break;
         if(now_ms()>=deadline){failed=true;break;}
-        if(!stream.ended()) {
+        if(stream.ended()) {
+            // The reply can arrive seconds before it finishes playing. Keep reading so the
+            // pinned IDF answers the Mac's keepalive pings (10 s + 10 s, then it closes the
+            // socket). No other message is due until the device sends one.
+            const int result=s.poll(0);
+            if(result<0){p.disconnect();failed=true;break;}
+            if(result==1){s.consumed();p.fail();failed=true;break;}
+        } else {
             // Up to one whole message per block (speech_receive.h); only the first read may wait.
             int timeout=playing && !stopped?0:20;
             const int result=speech_receive([&]{const int r=s.poll(timeout);timeout=0;return r;},8);
