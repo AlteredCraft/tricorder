@@ -44,7 +44,7 @@ Confirmed, Refuted and Partial are closed. A closed spec only gains strike-throu
 
 ## Specs
 
-- **Checks** are numbered, concrete and numeric where possible: evidence source → pass condition. Each check starts with a verdict: `[open]`, `[pass]` or `[fail]`. The Observed entry tagged `C<n>` is its evidence.
+- **Checks** are numbered, concrete and numeric where possible: evidence source → pass condition. Device performance is recorded as a baseline (a measured number) until a real need sets a target; don't invent one. Each check starts with a verdict: `[open]`, `[pass]` or `[fail]`. The Observed entry tagged `C<n>` is its evidence.
 - **Build** (optional) is a few one-line steps, and each step serves a check. If new work isn't validated by any check, add a check (Revision) or open a new spec.
 - **Observed** is the append-only log: `- YYYY-MM-DD — [C2 pass] result (key numbers). Evidence: <ref> · <commit or PR>. → ADR-NNNN`. Every entry cites a commit SHA or PR. Record results, bugs fixed and decisions; not plans or process chatter.
 - **Open** is the ordered next work. Each item fits in one session. It's current state, edited freely. Items waiting on a decision link the GitHub issue.
