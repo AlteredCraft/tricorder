@@ -96,6 +96,17 @@ class SessionDriverTests(unittest.TestCase):
         d.on_event(state('uploading'))                      # once per session
         self.assertEqual(self.run_until(d, 12), [])
 
+    def test_pause_count_limits_pauses_across_sessions(self):
+        d = SessionDriver(5, delay_s=1.0, pause_at='waiting', pause_s=1, pause_count=1, clock=self.clock)
+        d.on_event(READY)
+        self.run_until(d, 1.05)
+        d.on_event(state('waiting'))
+        self.assertEqual(self.run_until(d, 1.2), [('pause', None), ('resume', None)])
+        d.on_event(end('incomplete'))
+        self.run_until(d, 1.05)
+        d.on_event(state('waiting'))
+        self.assertEqual(self.run_until(d, 3), [])
+
     def test_bounds(self):
         with self.assertRaises(ValueError):
             SessionDriver(0)

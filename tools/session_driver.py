@@ -18,7 +18,7 @@ STATES = ('connecting', 'ready_a', 'recording_a', 'uploading', 'waiting', 'ackno
 
 class SessionDriver:
     def __init__(self, sessions, *, replay=None, delay_s=1.0, cancel_at=None, cancel_delay_s=1.0,
-                 pause_at=None, pause_s=10.0, pause_every=1, clock=None):
+                 pause_at=None, pause_s=10.0, pause_every=1, pause_count=None, clock=None):
         if not 1 <= sessions <= 500:
             raise ValueError('sessions is 1 to 500')
         for name in (cancel_at, pause_at):
@@ -27,6 +27,7 @@ class SessionDriver:
         self.sessions, self.replay, self.delay_s = sessions, replay, delay_s
         self.cancel_at, self.cancel_delay_s = cancel_at, cancel_delay_s
         self.pause_at, self.pause_s, self.pause_every = pause_at, pause_s, pause_every
+        self.pauses_left = pause_count  # None: no limit
         self.clock = clock or time.monotonic
         self.ready = False
         self.state = None
@@ -49,8 +50,11 @@ class SessionDriver:
             self.schedule(self.delay_s, *self.start_action())
         elif kind == 'investigation_state':
             self.state = event.get('state')
-            if self.pause_at == self.state and not self.paused_this and self.started % self.pause_every == 0:
+            if self.pause_at == self.state and not self.paused_this and self.started % self.pause_every == 0 \
+                    and self.pauses_left != 0:
                 self.paused_this = True
+                if self.pauses_left is not None:
+                    self.pauses_left -= 1
                 self.pending = None
                 self.schedule(0, 'pause')
             elif self.cancel_at == self.state and not self.cancel_sent:

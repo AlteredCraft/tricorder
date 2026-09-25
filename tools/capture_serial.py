@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--pause-at', help='Pause the service (SIGSTOP) when a session reaches this state')
     parser.add_argument('--pause-s', type=float, default=10.0)
     parser.add_argument('--pause-every', type=int, default=1, help='Pause in every Nth session')
+    parser.add_argument('--pause-count', type=int, help='Pause at most this many times')
     parser.add_argument('--service-pid', type=int, help='Service process to pause and resume')
     parser.add_argument('--observation-boot', help='Observe this existing boot without claiming startup or continuity before attachment')
     parser.add_argument('--stop-file', type=Path, help='Finish and summarize when this file appears')
@@ -55,7 +56,7 @@ def main():
         try:
             driver=SessionDriver(args.drive_sessions,replay=args.drive_replay,delay_s=args.tap_delay_s,
                                  cancel_at=args.cancel_at,cancel_delay_s=args.cancel_delay_s,pause_at=args.pause_at,
-                                 pause_s=args.pause_s,pause_every=args.pause_every)
+                                 pause_s=args.pause_s,pause_every=args.pause_every,pause_count=args.pause_count)
         except ValueError as error:
             parser.error(str(error))
     if (args.spec_id != 'G-0001.01' or args.spec_revision or args.workload) and not (
@@ -78,7 +79,7 @@ def main():
     if driver:
         manifest.update(driven_sessions=args.drive_sessions,drive_replay=args.drive_replay,tap_delay_s=args.tap_delay_s,
                         cancel_at=args.cancel_at,cancel_delay_s=args.cancel_delay_s,pause_at=args.pause_at,
-                        pause_s=args.pause_s,pause_every=args.pause_every,
+                        pause_s=args.pause_s,pause_every=args.pause_every,pause_count=args.pause_count,
                         input_scope='USB console taps through the LVGL click handlers; no touch controller')
     (args.output/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     events, errors = [], []
