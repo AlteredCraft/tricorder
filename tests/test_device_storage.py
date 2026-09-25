@@ -11,10 +11,11 @@ class DeviceStorageTests(unittest.TestCase):
             p = Path(directory)
             (p/'esp_heap_caps.h').write_text('''#pragma once
 #include <cstdlib>
-constexpr int MALLOC_CAP_SPIRAM=1,MALLOC_CAP_8BIT=2;
-extern int requested_caps;
+constexpr int MALLOC_CAP_SPIRAM=1,MALLOC_CAP_8BIT=2,MALLOC_CAP_DMA=4,MALLOC_CAP_INTERNAL=8;
+extern int requested_caps;extern size_t requested_alignment;
 extern bool fail_scratch;
 inline void* heap_caps_malloc(size_t n,int caps){requested_caps=caps;return fail_scratch?nullptr:malloc(n);}
+inline void* heap_caps_aligned_alloc(size_t a,size_t n,int caps){requested_alignment=a;requested_caps=caps;return fail_scratch?nullptr:aligned_alloc(a,n);}
 ''')
             (p/'driver.cpp').write_text(r'''
 #include "storage_files.h"
@@ -23,13 +24,14 @@ inline void* heap_caps_malloc(size_t n,int caps){requested_caps=caps;return fail
 #include <string>
 #include <vector>
 #include <unistd.h>
-int requested_caps=0;bool fail_scratch=false;
+int requested_caps=0;size_t requested_alignment=0;bool fail_scratch=false;
 int main(int argc,char** argv) {
  assert(argc==2);std::string root=argv[1];
  const unsigned char data[]={1,0,3,4};
  auto path=root+"/take.raw";
  assert(storage_write_verified(path.c_str(),data,sizeof(data)));
- assert(requested_caps==3);
+ // SDMMC DMA: an aligned, DMA-capable internal stage, not the PSRAM source.
+ assert(requested_caps==(4|8) && requested_alignment==128); // MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL
  assert(!storage_write_verified(path.c_str(),data,sizeof(data)));
  assert(access((path+".part").c_str(),F_OK)!=0);
  auto partial=root+"/interrupted.raw";
@@ -43,7 +45,7 @@ int main(int argc,char** argv) {
  fail_scratch=true;
  assert(!storage_write_verified((root+"/no-memory.raw").c_str(),data,sizeof(data)));
  assert(access((root+"/no-memory.raw").c_str(),F_OK)!=0);
- assert(access((root+"/no-memory.raw.part").c_str(),F_OK)==0);
+ assert(access((root+"/no-memory.raw.part").c_str(),F_OK)!=0); // fails before touching the card
  fail_scratch=false;
  assert(storage_replace_config(root.c_str(),R"({"ssid":"old","password":"one"})"));
  assert(storage_replace_config(root.c_str(),R"({"ssid":"new","password":"two"})"));

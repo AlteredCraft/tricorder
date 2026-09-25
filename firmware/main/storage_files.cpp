@@ -41,35 +41,45 @@ bool storage_public_name(const char* name) {
     return dot && (!strcmp(dot,".raw") || !strcmp(dot,".json"));
 }
 
+// Writes and reads go through one aligned, DMA-capable 16 KiB stage. From an
+// unaligned PSRAM source the SDMMC driver writes one 512-byte sector per command
+// (about 2.3 s per 1.15 MB capture, during which the LVGL probe stalled for as long;
+// G-0001.02 C2); an aligned stage lets FatFs pass whole sectors in one transfer.
 bool storage_write_verified(const char* path,const unsigned char* data,size_t size) {
     if(!data || !size || access(path,F_OK)==0)return false;
+    constexpr size_t chunk=16384;
+#ifdef ESP_PLATFORM
+    auto* stage=static_cast<unsigned char*>(heap_caps_aligned_alloc(128,chunk,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL));
+#else
+    auto* stage=static_cast<unsigned char*>(malloc(chunk));
+#endif
+    if(!stage)return false;
     const std::string partial=std::string(path)+".part";
     int fd=open(partial.c_str(),O_WRONLY|O_CREAT|O_EXCL,0600);
-    if(fd<0)return false;
+    if(fd<0){free(stage);return false;}
     bool ok=true;size_t offset=0;
-    while(offset<size) {
-        size_t count=size-offset;if(count>16384)count=16384;
-        auto n=write(fd,data+offset,count);
-        if(n<=0){ok=false;break;}offset+=n;
+    while(ok && offset<size) {
+        const size_t count=size-offset<chunk?size-offset:chunk;
+        memcpy(stage,data+offset,count);
+        size_t done=0;
+        while(done<count) {
+            auto n=write(fd,stage+done,count-done);
+            if(n<=0){ok=false;break;}done+=n;
+        }
+        offset+=done;
     }
     ok=fsync(fd)==0 && ok;ok=close(fd)==0 && ok;
-    if(!ok)return false;
-    fd=open(partial.c_str(),O_RDONLY);if(fd<0)return false;
-#ifdef ESP_PLATFORM
-    auto* buffer=static_cast<unsigned char*>(heap_caps_malloc(16384,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
-#else
-    auto* buffer=static_cast<unsigned char*>(malloc(16384));
-#endif
-    if(!buffer){close(fd);return false;}
+    if(!ok){free(stage);return false;}
+    fd=open(partial.c_str(),O_RDONLY);if(fd<0){free(stage);return false;}
     offset=0;
     while(offset<size) {
-        size_t count=size-offset;if(count>16384)count=16384;
-        auto n=read(fd,buffer,count);
-        if(n<=0 || memcmp(buffer,data+offset,n)){ok=false;break;}offset+=n;
+        const size_t count=size-offset<chunk?size-offset:chunk;
+        auto n=read(fd,stage,count);
+        if(n<=0 || memcmp(stage,data+offset,n)){ok=false;break;}offset+=n;
     }
-    if(ok)ok=read(fd,buffer,1)==0;
+    if(ok)ok=read(fd,stage,1)==0;
     ok=close(fd)==0 && ok;
-    free(buffer);
+    free(stage);
     return ok && access(path,F_OK)!=0 && rename(partial.c_str(),path)==0;
 }
 
