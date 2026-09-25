@@ -50,8 +50,7 @@ int main(int argc,char** argv) {
  for(size_t i=0;i<large.size();++i)large[i]=(i*37+11)&255;
  delays=0;
  assert(storage_write_verified((root+"/large.raw").c_str(),large.data(),large.size()));
- // The SD card shares the SDMMC host with the Wi-Fi link: 4 KiB transfers, a yield after each.
- assert(delays==static_cast<int>((large.size()+4095)/4096));
+ assert(delays==0);
  fail_scratch=true;
  assert(!storage_write_verified((root+"/no-memory.raw").c_str(),data,sizeof(data)));
  assert(access((root+"/no-memory.raw").c_str(),F_OK)!=0);

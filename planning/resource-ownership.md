@@ -29,7 +29,7 @@ One owner per resource, from the init code. Audited 2026-09-25 at `e87cb9c`. "Me
 
 - **LEDC timer 0 had two owners.** `bsp_cam_osc_init` set it to 24 MHz for a camera clock on GPIO36, and the BSP backlight setup then reset it to 5 kHz. Boot logs `ledc_timer0` = 5000 Hz, and the camera has always worked at that, so the call is dropped (`f97f7b4`). Context photos in the driven runs confirm the camera still works.
 - **A failed codec open could leave the device marked open.** `esp_codec_dev_open` sets its opened flag before configuring the device, and a later open of a marked device returns OK without configuring it. Captures and `speak()` now close whenever the device exists (`e930f89`). This is found by reading the code, not reproduced.
-- **The SD card and the Wi-Fi link share one SDMMC host.** Unaligned SD writes went one sector per command (2.3 s per capture) and the LVGL probe stalled as long. 16 KiB aligned transfers fixed that, but were followed by stalled, then dead, Wi-Fi. 4 KiB aligned transfers with a 2 ms yield keep both working (`f3d4073`; see G-0001.02).
+- **The SD card and the Wi-Fi link share one SDMMC host.** Unaligned SD writes went one sector per command (2.3 s per capture) and the LVGL probe stalled as long; a 16 KiB aligned stage takes 0.9 s with no stall. Live sessions later lost Wi-Fi, but did so with SD archiving off too, so the shared host is not the cause (G-0001.02).
 
 ## Not determined
 
