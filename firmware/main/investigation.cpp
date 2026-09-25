@@ -63,6 +63,8 @@ UiPulse ui_pulse; // display lock: probe timer, session reset and report
 // Touch-down time of the last button press (G-0001.04 C2 touch-to-submit). Console
 // taps send CLICKED only, so they leave this unchanged.
 std::atomic<int64_t> pressed_us{0};
+// Diagnostic switches over USB (TRICORDER_SET), for fault attribution only; both on by default.
+std::atomic<bool> sd_archive_enabled{true},context_photo_enabled{true};
 unsigned live_sequence=0,live_drawn=0; // Guarded by live_lock.
 QueueHandle_t media_queue,actions;
 std::atomic<bool> cancelled{false};
@@ -804,7 +806,7 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
     }
     if(!replay && active(*p)) {
         show(*p,"Point the camera at what you are investigating.\nTaking a context photo...");
-        take_context_photo();
+        if(context_photo_enabled.load())take_context_photo();
     }
     // A, B, then back to A for a repeat (SD replay resends a saved pair only).
     static const char* steps_text[3]={
@@ -839,7 +841,7 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
             // The SD copy (about 3.4 s) is written after the Mac holds the verified
             // bytes, during a wait the person has anyway: the Mac's reply, or the
             // walk back to A. A failed upload is still saved so it isn't lost.
-            auto save=[&]{if(!replay)test_storage_archive(capture.bytes,capture.size,capture.metadata);};
+            auto save=[&]{if(!replay && sd_archive_enabled.load())test_storage_archive(capture.bytes,capture.size,capture.metadata);};
             if(!upload(socket,*p,capture,index)){save();p->fail();break;}
             if(!active(*p))break;
             if(index==1 && !replay) {
@@ -916,6 +918,12 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
 }
 
 void investigation_run(const char* boot) {run_investigation(boot);}
+bool investigation_set(const char* name,bool value) {
+    if(!strcmp(name,"sd_archive"))sd_archive_enabled.store(value);
+    else if(!strcmp(name,"context_photo"))context_photo_enabled.store(value);
+    else return false;
+    return true;
+}
 // USB console input for automated sessions: the same LVGL click handler a
 // finger reaches, and only on a visible, enabled button.
 bool investigation_tap(const char* name) {

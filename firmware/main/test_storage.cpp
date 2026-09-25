@@ -64,6 +64,14 @@ void console_task(void*) {
                 auto* e=diagnostic_event("power_steps_requested");
                 cJSON_AddBoolToObject(e,"accepted",diagnostic_request_power_steps());diagnostic_emit(e);
             }
+            constexpr const char* set="TRICORDER_SET ";
+            if(!overflow && !strncmp(line,set,strlen(set))) {
+                char name[32]{};int value=-1;
+                const bool parsed=sscanf(line+strlen(set),"%31s %d",name,&value)==2 && (value==0 || value==1);
+                auto* e=diagnostic_event("console_set");cJSON_AddStringToObject(e,"name",name);
+                cJSON_AddNumberToObject(e,"value",value);
+                cJSON_AddBoolToObject(e,"accepted",parsed && investigation_set(name,value==1));diagnostic_emit(e);
+            }
             constexpr const char* tap="TRICORDER_TAP ";
             if(!overflow && !strncmp(line,tap,strlen(tap))) {
                 const int64_t tapped=esp_timer_get_time();

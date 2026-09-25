@@ -13,6 +13,8 @@ void investigation_run(const char* boot);
 void investigation_set_endpoint(const char* endpoint);
 // USB console tap on start/action/ask/cancel; false when that button is hidden or disabled.
 bool investigation_tap(const char* name);
+// USB console diagnostic switch: sd_archive or context_photo, 0 or 1.
+bool investigation_set(const char* name,bool value);
 // USB-only replay of committed SD bytes; never starts sensors.
 bool investigation_request_replay(const char* session);
 void investigation_run_replay();
