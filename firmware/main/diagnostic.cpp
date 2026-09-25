@@ -28,6 +28,7 @@
 #include "esp_rom_crc.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "driver/ledc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
@@ -317,6 +318,10 @@ extern "C" void app_main() {
     display_config.flags.buff_spiram = true;
     display_config.flags.sw_rotate = true;
     auto* display = bsp_display_start_with_config(&display_config);
+    // G-0001.01 C4: bsp_cam_osc_init set LEDC timer 0 to 24 MHz for the camera
+    // clock; the BSP backlight setup reuses timer 0. Record what it runs at now.
+    auto* ledc=diagnostic_event("ledc_timer0");
+    cJSON_AddNumberToObject(ledc,"hz",ledc_get_freq(LEDC_LOW_SPEED_MODE,LEDC_TIMER_0));diagnostic_emit(ledc);
     configASSERT(display);
     // The BSP has already started the LVGL task and returns with no lock held.
     // Protect the entire object-construction phase from concurrent refresh.

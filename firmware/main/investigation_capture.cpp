@@ -51,8 +51,8 @@ bool investigation_capture(const char* boot,const char* session,const char* id,
     auto mic=diagnostic_microphone();auto speaker=diagnostic_speaker();
     esp_codec_dev_sample_info_t input{};input.sample_rate=48000;input.channel=4;input.bits_per_sample=16;
     auto output=input;output.channel=2;
-    bool mic_open=mic && esp_codec_dev_open(mic,&input)==ESP_OK;
-    bool speaker_open=speaker && esp_codec_dev_open(speaker,&output)==ESP_OK;
+    const bool mic_open=mic && esp_codec_dev_open(mic,&input)==ESP_OK;
+    const bool speaker_open=speaker && esp_codec_dev_open(speaker,&output)==ESP_OK;
     bool ok=mic_open && speaker_open && esp_codec_dev_set_out_mute(speaker,true)==ESP_OK &&
         esp_codec_dev_set_in_gain(mic,24)==ESP_OK && !cancel.load();
     AudioIngressSnapshot before{},after{};
@@ -94,8 +94,10 @@ bool investigation_capture(const char* boot,const char* session,const char* id,
     after=audio_ingress_snapshot();uint64_t end=esp_timer_get_time();
     // RX must be stopped before any network or JSON work; never upload while
     // the bounded capture is still being filled.
-    if(mic_open && esp_codec_dev_close(mic)!=ESP_OK)ok=false;
-    if(speaker_open && esp_codec_dev_close(speaker)!=ESP_OK)ok=false;
+    // Close even after a failed open: esp_codec_dev marks a device open before
+    // configuring it, and a later open of a marked device skips configuration.
+    if(mic && esp_codec_dev_close(mic)!=ESP_OK)ok=false;
+    if(speaker && esp_codec_dev_close(speaker)!=ESP_OK)ok=false;
     ok=ok && !cancel.load() && after.read_bytes-before.read_bytes==bytes+warmup_frames*8 && after.dma_bytes-before.dma_bytes>=bytes+warmup_frames*8 &&
         after.overflows==before.overflows && after.overwritten_bytes==before.overwritten_bytes &&
         after.short_reads==before.short_reads && after.read_errors==before.read_errors;
@@ -147,8 +149,8 @@ bool investigation_record_question(const char* boot,const char* session,const ch
     auto mic=diagnostic_microphone();auto speaker=diagnostic_speaker();
     esp_codec_dev_sample_info_t input{};input.sample_rate=48000;input.channel=4;input.bits_per_sample=16;
     auto output=input;output.channel=2;
-    bool mic_open=mic && esp_codec_dev_open(mic,&input)==ESP_OK;
-    bool speaker_open=speaker && esp_codec_dev_open(speaker,&output)==ESP_OK;
+    const bool mic_open=mic && esp_codec_dev_open(mic,&input)==ESP_OK;
+    const bool speaker_open=speaker && esp_codec_dev_open(speaker,&output)==ESP_OK;
     bool ok=mic_open && speaker_open && esp_codec_dev_set_out_mute(speaker,true)==ESP_OK &&
         esp_codec_dev_set_in_gain(mic,24)==ESP_OK && !cancel.load();
     AudioIngressSnapshot before{},after{};
@@ -177,8 +179,10 @@ bool investigation_record_question(const char* boot,const char* session,const ch
         if(stop.load())break;
     }
     after=audio_ingress_snapshot();const uint64_t end=esp_timer_get_time();
-    if(mic_open && esp_codec_dev_close(mic)!=ESP_OK)ok=false;
-    if(speaker_open && esp_codec_dev_close(speaker)!=ESP_OK)ok=false;
+    // Close even after a failed open: esp_codec_dev marks a device open before
+    // configuring it, and a later open of a marked device skips configuration.
+    if(mic && esp_codec_dev_close(mic)!=ESP_OK)ok=false;
+    if(speaker && esp_codec_dev_close(speaker)!=ESP_OK)ok=false;
     const size_t read=(source+warmup_frames)*8;
     ok=ok && !cancel.load() && frames && after.read_bytes-before.read_bytes==read &&
         after.dma_bytes-before.dma_bytes>=read && after.overflows==before.overflows &&

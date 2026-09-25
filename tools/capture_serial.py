@@ -1,13 +1,16 @@
 """Capture a bounded serial run, retaining raw output and strict evidence summaries."""
 import argparse
 import json
+import os
 import re
+import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.evidence import assess, parse_event
 from tools.captures import CaptureStore
+from tools.session_driver import SessionDriver
 
 
 def main():
@@ -18,6 +21,15 @@ def main():
     parser.add_argument('--reset', action='store_true')
     parser.add_argument('--replay-session', help='After reset/SD/network readiness, replay this saved ab-<32 lowercase hex> session; no new acquisition')
     parser.add_argument('--replay-count', type=int, default=1, help='Replay the saved session this many times, each after the previous one ends (G-0001.02 baselines)')
+    parser.add_argument('--drive-sessions', type=int, help='Run this many guided sessions by console taps (tools/session_driver.py)')
+    parser.add_argument('--drive-replay', help='Driven sessions are SD replays of this saved session')
+    parser.add_argument('--tap-delay-s', type=float, default=1.0)
+    parser.add_argument('--cancel-at', help='Tap Cancel when a session reaches this state')
+    parser.add_argument('--cancel-delay-s', type=float, default=1.0)
+    parser.add_argument('--pause-at', help='Pause the service (SIGSTOP) when a session reaches this state')
+    parser.add_argument('--pause-s', type=float, default=10.0)
+    parser.add_argument('--pause-every', type=int, default=1, help='Pause in every Nth session')
+    parser.add_argument('--service-pid', type=int, help='Service process to pause and resume')
     parser.add_argument('--observation-boot', help='Observe this existing boot without claiming startup or continuity before attachment')
     parser.add_argument('--stop-file', type=Path, help='Finish and summarize when this file appears')
     parser.add_argument('--checks', nargs='*', default=[])
@@ -34,6 +46,18 @@ def main():
         parser.error('--replay-session requires a valid saved session, --reset and --spec-id G-0002.01 or G-0001.02')
     if not 1<=args.replay_count<=50 or (args.replay_count>1 and not args.replay_session):
         parser.error('--replay-count is 1 to 50 and needs --replay-session')
+    driver=None
+    if args.drive_sessions is not None:
+        if args.replay_session or not args.reset or (args.pause_at and not args.service_pid):
+            parser.error('--drive-sessions needs --reset, excludes --replay-session, and --pause-at needs --service-pid')
+        if args.drive_replay and not re.fullmatch(r'ab-[0-9a-f]{32}',args.drive_replay):
+            parser.error('--drive-replay needs a saved ab-<32 hex> session')
+        try:
+            driver=SessionDriver(args.drive_sessions,replay=args.drive_replay,delay_s=args.tap_delay_s,
+                                 cancel_at=args.cancel_at,cancel_delay_s=args.cancel_delay_s,pause_at=args.pause_at,
+                                 pause_s=args.pause_s,pause_every=args.pause_every)
+        except ValueError as error:
+            parser.error(str(error))
     if (args.spec_id != 'G-0001.01' or args.spec_revision or args.workload) and not (
             args.spec_revision and args.spec_revision.strip() and args.workload and args.workload.strip()):
         parser.error('explicit spec metadata requires both --spec-revision and --workload')
@@ -51,6 +75,11 @@ def main():
     if args.replay_session:
         manifest.update(replay=True,source_session_id=args.replay_session,replay_count=args.replay_count,
                         replay_scope='SD transport replay; no new sensor acquisition')
+    if driver:
+        manifest.update(driven_sessions=args.drive_sessions,drive_replay=args.drive_replay,tap_delay_s=args.tap_delay_s,
+                        cancel_at=args.cancel_at,cancel_delay_s=args.cancel_delay_s,pause_at=args.pause_at,
+                        pause_s=args.pause_s,pause_every=args.pause_every,
+                        input_scope='USB console taps through the LVGL click handlers; no touch controller')
     (args.output/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     events, errors = [], []
     # --reset interrupts the previous firmware mid-line; such lines precede our
@@ -62,7 +91,16 @@ def main():
     port = serial.Serial()
     port.port, port.baudrate, port.timeout = args.port, 115200, .2
     port.dtr, port.rts = False, False
-    if args.replay_session:port.write_timeout=2
+    if args.replay_session or driver:port.write_timeout=2
+    driven_boot=None;host_actions=[]
+    def perform(action):
+        kind,argument=action
+        if kind in ('pause','resume'):
+            os.kill(args.service_pid,signal.SIGSTOP if kind=='pause' else signal.SIGCONT)
+            host_actions.append({'action':'service_'+kind,'host_ns':time.monotonic_ns()});return
+        command=(f'TRICORDER_TAP {argument}\n' if kind=='tap' else f'TRICORDER_REPLAY {argument}\n').encode()
+        if port.write(command)!=len(command):raise OSError('short console command write')
+        port.flush()
     try:
         port.open()
         with port, (args.output/'serial.log').open('xb') as raw, (args.output/'events.jsonl').open('x') as out:
@@ -71,7 +109,9 @@ def main():
             end = time.monotonic() + args.seconds
             pending = b''
             while time.monotonic() < end and not (args.stop_file and args.stop_file.exists()) and not (
-                    args.replay_count>1 and replays_ended==args.replay_count):
+                    args.replay_count>1 and replays_ended==args.replay_count) and not (driver and driver.done):
+                if driver:
+                    for action in driver.due():perform(action)
                 chunk = port.read(8192)
                 if not chunk:
                     continue
@@ -98,6 +138,10 @@ def main():
                         events.append(event)
                         out.write(json.dumps(event)+'\n')
                         out.flush()
+                        if driver:
+                            # Only the boot this run reset into drives sessions.
+                            if event['event']=='boot' and driven_boot is None:driven_boot=event['boot_id']
+                            if event['boot_id']==driven_boot:driver.on_event(event)
                         if args.replay_session:
                             if event['event']=='boot':
                                 replay_boot=event['boot_id'];replay_sd=replay_network=replay_http=False
@@ -135,6 +179,13 @@ def main():
         if not replays_sent or replay_state!='complete':errors.append('SD replay did not reach complete in this collection window')
         if args.replay_count>1 and replays_completed<args.replay_count:
             errors.append(f'{replays_completed} of {args.replay_count} SD replays completed')
+    if driver:
+        if driver.resume_due is not None:
+            try:os.kill(args.service_pid,signal.SIGCONT)
+            except OSError:pass
+        summary['driver']=driver.summary()
+        summary['host_actions']=host_actions
+        if driver.ended<driver.sessions:errors.append(f'{driver.ended} of {driver.sessions} driven sessions ended')
     if errors:
         summary['status'] = 'fail'
     (args.output/'summary.json').write_text(json.dumps(summary, indent=2)+'\n')

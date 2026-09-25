@@ -5,6 +5,7 @@
 #include "transport_write.h"
 #include "speech_stream.h"
 #include "speech_receive.h"
+#include "ui_pulse.h"
 #include "audio_devices.h"
 #include "test_storage.h"
 #include "diagnostic_events.h"
@@ -58,6 +59,7 @@ bool steady_fresh=false; // Guarded by live_lock.
 const uint32_t series_colors[4]={0x66bb6a,0x4fc3f7,0xffb74d,0xce93d8};
 portMUX_TYPE live_lock=portMUX_INITIALIZER_UNLOCKED;
 float live_db[spectrum_band_count];
+UiPulse ui_pulse; // display lock: probe timer, session reset and report
 unsigned live_sequence=0,live_drawn=0; // Guarded by live_lock.
 QueueHandle_t media_queue,actions;
 std::atomic<bool> cancelled{false};
@@ -548,10 +550,9 @@ int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions
         if(esp_codec_dev_write(speaker,output,n*8)!=ESP_OK){stopped=true;if(!stop_stream()){p.disconnect();break;}continue;}
         played+=n;
     }
-    if(open) {
-        if(!stopped)vTaskDelay(pdMS_TO_TICKS(100)); // let queued samples drain before muting
-        esp_codec_dev_set_out_mute(speaker,true);esp_codec_dev_close(speaker);
-    }
+    if(open && !stopped)vTaskDelay(pdMS_TO_TICKS(100)); // let queued samples drain before muting
+    // Close even when the open or its volume/mute setup failed: the device may be marked open.
+    if(speaker){if(open)esp_codec_dev_set_out_mute(speaker,true);esp_codec_dev_close(speaker);}
     auto* e=diagnostic_event("investigation_speech");cJSON_AddStringToObject(e,"request_id",request_id);
     cJSON_AddStringToObject(e,"status",stream.status());cJSON_AddNumberToObject(e,"frames",stream.frames());
     cJSON_AddNumberToObject(e,"played_frames",played);cJSON_AddBoolToObject(e,"speaker_open",open);
@@ -732,6 +733,7 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_obj_set_style_bg_color(level_bar,lv_color_hex(0x263238),LV_PART_MAIN);
     lv_obj_set_style_bg_color(level_bar,lv_color_hex(0x66bb6a),LV_PART_INDICATOR);
     lv_timer_create(draw_live,60,nullptr);
+    lv_timer_create([](lv_timer_t*){ui_pulse.tick(esp_timer_get_time());},20,nullptr);
 
     // Setup stays off the main flow: service address, Wi-Fi and keyboard.
     setup_panel=lv_obj_create(screen);lv_obj_set_size(setup_panel,1220,680);lv_obj_center(setup_panel);
@@ -771,6 +773,7 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
              static_cast<unsigned long>(esp_random()),static_cast<unsigned long>(esp_random()),static_cast<unsigned long>(esp_random()));
     // Heap-owned reducer keeps fixed text/identity buffers off the 8 KiB main stack.
     auto p=std::make_unique<InvestigationProtocol>(boot,session);p->ask(now_ms());
+    if(bsp_display_lock(1000)){ui_pulse.reset();bsp_display_unlock();}
     stop_speech.store(false); // a Cancel during the last session's final speech must not silence this one
     Socket socket;
     std::unique_ptr<cJSON,decltype(&cJSON_Delete)> fixture(
@@ -880,10 +883,34 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
     // After running is cleared, so a host waiting on this can start the next replay.
     auto* e=diagnostic_event("investigation_end");cJSON_AddStringToObject(e,"session_id",session);
     cJSON_AddStringToObject(e,"state",p->state_name());cJSON_AddBoolToObject(e,"replay",replay!=nullptr);
+    // G-0001.02: LVGL probe intervals over the session, and memory after it.
+    if(bsp_display_lock(1000)) {
+        cJSON_AddNumberToObject(e,"ui_intervals",ui_pulse.count());
+        cJSON_AddNumberToObject(e,"ui_p50_ms",ui_pulse.percentile_ms(0.50));
+        cJSON_AddNumberToObject(e,"ui_p95_ms",ui_pulse.percentile_ms(0.95));
+        cJSON_AddNumberToObject(e,"ui_max_us",ui_pulse.max_us());
+        cJSON_AddNumberToObject(e,"ui_over_50_ms",ui_pulse.over_ms(50));
+        cJSON_AddNumberToObject(e,"ui_over_200_ms",ui_pulse.over_ms(200));
+        bsp_display_unlock();
+    }
+    cJSON_AddNumberToObject(e,"free_internal",heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    cJSON_AddNumberToObject(e,"free_psram",heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    cJSON_AddNumberToObject(e,"largest_psram_block",heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+    cJSON_AddNumberToObject(e,"min_free_internal",heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
     diagnostic_emit(e);
 }
 
 void investigation_run(const char* boot) {run_investigation(boot);}
+// USB console input for automated sessions: the same LVGL click handler a
+// finger reaches, and only on a visible, enabled button.
+bool investigation_tap(const char* name) {
+    if(!bsp_display_lock(1000))return false;
+    lv_obj_t* b=!strcmp(name,"start")?start_button:!strcmp(name,"action")?action_button:
+                !strcmp(name,"ask")?ask_button:!strcmp(name,"cancel")?cancel_button:nullptr;
+    const bool ok=b && lv_obj_is_visible(b) && !lv_obj_has_state(b,LV_STATE_DISABLED);
+    if(ok)lv_obj_send_event(b,LV_EVENT_CLICKED,nullptr);
+    bsp_display_unlock();return ok;
+}
 bool investigation_request_replay(const char* session) {
     if(!investigation_replay_session(session) || !media_queue || !bsp_display_lock(1000))return false;
     InvestigationEndpoint endpoint;bool ok=!running && endpoint.parse(lv_textarea_get_text(endpoint_field));

@@ -65,6 +65,35 @@ class CaptureSerialTests(unittest.TestCase):
             # Collection stops once the last replay ends; the trailing row is never read.
             self.assertEqual(len(chunks),1)
 
+    def test_driven_session_taps_through_the_console(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);stop=root/'stop';port=MagicMock()
+            rows=[dict(event='boot'),dict(event='check',check='storage_http',result='pass'),
+                  dict(event='console_tap',button='start',accepted=True,tap_us=1),
+                  dict(event='investigation_state',state='ready_a',session_id='s'),
+                  dict(event='investigation_end',state='complete',session_id='s')]
+            chunks=[('TRICORDER '+json.dumps(dict(boot_id='boot',seq=i,device_us=i,**e))+'\n').encode() for i,e in enumerate(rows)]
+            chunks.insert(4,b'')  # a quiet read: the tap delay passes before the session ends
+            clock=[0.0]
+            def read(_):
+                clock[0]+=0.6  # each read advances the driver's clock past the tap delay
+                if not chunks:stop.touch();return b''
+                return chunks.pop(0)
+            port.read.side_effect=read;port.write.side_effect=lambda data:len(data)
+            modules={'serial':SimpleNamespace(Serial=lambda:port),'esptool.reset':SimpleNamespace(HardReset=MagicMock())}
+            argv=['capture','--port','test','--output',str(root/'run'),'--stop-file',str(stop),'--reset',
+                  '--drive-sessions','1','--tap-delay-s','0.5','--spec-id','G-0001.02',
+                  '--spec-revision','2026-09-25','--workload','driven session']
+            with patch.object(sys,'argv',argv),patch.dict(sys.modules,modules), \
+                 patch('tools.session_driver.time.monotonic',lambda:clock[0]):
+                main()
+            writes=[c.args[0] for c in port.write.call_args_list]
+            self.assertEqual(writes,[b'TRICORDER_TAP start\n',b'TRICORDER_TAP action\n'])
+            summary=json.loads((root/'run/summary.json').read_text())
+            self.assertEqual(summary['driver']['end_states'],{'complete':1})
+            manifest=json.loads((root/'run/manifest.json').read_text())
+            self.assertIn('LVGL click handlers',manifest['input_scope'])
+
     def test_reset_truncated_previous_run_line_is_counted_not_failed(self):
         # --reset cuts the old firmware's line mid-write; it precedes our boot.
         for reset in (True, False):

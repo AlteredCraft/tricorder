@@ -60,6 +60,13 @@ void console_task(void*) {
                 bool accepted=investigation_request_replay(line+strlen(replay));
                 auto* e=diagnostic_event("replay_requested");cJSON_AddBoolToObject(e,"accepted",accepted);diagnostic_emit(e);
             }
+            constexpr const char* tap="TRICORDER_TAP ";
+            if(!overflow && !strncmp(line,tap,strlen(tap))) {
+                const int64_t tapped=esp_timer_get_time();
+                const bool accepted=investigation_tap(line+strlen(tap));
+                auto* e=diagnostic_event("console_tap");cJSON_AddStringToObject(e,"button",line+strlen(tap));
+                cJSON_AddBoolToObject(e,"accepted",accepted);cJSON_AddNumberToObject(e,"tap_us",tapped);diagnostic_emit(e);
+            }
             clear(line,sizeof(line));used=0;overflow=false;
         } else if(ch!='\r') {
             if(ch==0 || used==sizeof(line)-1)overflow=true;
