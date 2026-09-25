@@ -77,6 +77,12 @@ class FaultRunTests(unittest.TestCase):
         hung = [e for e in events if e['event'] != 'investigation_end' or e['state'] != 'offline']
         self.assertEqual(assess(hung[:3], host)['status'], 'fail')  # the stalled session never ended
 
+    def test_a_run_where_no_session_connects_fails(self):
+        events = [ev('boot', 0), ev('investigation_state', 1000, state='offline', session_id='s'), end(2000, 'offline')]
+        r = assess(events)
+        self.assertEqual(r['status'], 'fail')
+        self.assertIn('no session connected to the service', r['errors'])
+
     def test_recovery_after_resume_uses_host_clocks_only(self):
         # Resume at host 10.0 s; the next session reaches ready_a at host 12.5 s.
         events = [ev('boot', 0), end(1000, 'incomplete'),

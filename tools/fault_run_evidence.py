@@ -18,6 +18,7 @@ from pathlib import Path
 from tools.session_run_evidence import stats
 
 ALLOWED_AFTER_CANCEL = ('cancel', 'speech_stop')
+NOT_CONNECTED = ('idle', 'connecting', 'offline', 'incomplete')
 
 
 def assess(events, host_actions=None, *, stop_p95_ms=150, recovery_limit_s=5, ui_p95_ms=50, ui_max_ms=200):
@@ -29,6 +30,9 @@ def assess(events, host_actions=None, *, stop_p95_ms=150, recovery_limit_s=5, ui
     last_end = max((i for i, e in enumerate(events) if e.get('event') == 'investigation_end'), default=-1)
     if any(e.get('event') == 'investigation_state' for e in events[last_end + 1:]):
         errors.append('a session never ended')
+    if ends and not any(e.get('event') == 'investigation_state' and e.get('state') not in NOT_CONNECTED
+                        for e in events):
+        errors.append('no session connected to the service')
     for e in ends:
         if e['ui_p95_ms'] > ui_p95_ms or e['ui_max_us'] > ui_max_ms * 1000:
             errors.append(f"UI off target in a {e['state']} session: p95 {e['ui_p95_ms']} ms, "
