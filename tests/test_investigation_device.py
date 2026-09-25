@@ -67,6 +67,7 @@ int main() {
   cJSON_AddStringToObject(result,"transcript",p.transcript());
   cJSON_AddStringToObject(result,"status",p.transcript_status());
   cJSON_AddNumberToObject(result,"questions_left",p.questions_left());
+  cJSON_AddNumberToObject(result,"speaks",p.speech_output());
   if(std::isfinite(p.speech_to_noise_db()))cJSON_AddNumberToObject(result,"snr",p.speech_to_noise_db());
   else cJSON_AddNullToObject(result,"snr");
   if(out)cJSON_AddItemToObject(result,"out",out);
@@ -105,7 +106,7 @@ int main() {
 
     def prefix(self):
         capture,item=self.capture()
-        return [dict(op='ask'),self.receive(self.envelope('ready',provider='scripted-mock-v1',speech_to_text='fake-stt')),
+        return [dict(op='ask'),self.receive(self.envelope('ready',provider='scripted-mock-v1',speech_to_text='fake-stt',speech_output='fake-tts')),
                 dict(op='start'),capture,dict(op='uploaded')],item
 
     def reply(self, items, deadline=15100):
@@ -114,8 +115,27 @@ int main() {
                               captures=[x.to_dict() for x in items],adjustment='Moved to 40 cm')
         return MockProvider().respond(request)
 
-    def ready(self, speech='fake-stt'):
-        return [dict(op='ask'),self.receive(self.envelope('ready',provider='scripted-mock-v1',speech_to_text=speech))]
+    def ready(self, speech='fake-stt', voice='fake-tts'):
+        return [dict(op='ask'),self.receive(self.envelope('ready',provider='scripted-mock-v1',speech_to_text=speech,
+                                                              speech_output=voice))]
+
+    def test_service_ready_is_accepted_and_names_speech_output(self):
+        import asyncio
+        from tools.investigation_service import MockSession
+        from test_spoken_ask_service import FakeTranscriber
+        from test_spoken_guidance import FakeSpeaker
+        async def ready(**engines):
+            sent=[]
+            async def send(message):sent.append(message)
+            with tempfile.TemporaryDirectory() as directory:
+                service=MockSession(Path(directory),send,**engines)
+                await service.receive(dict(version=1,type='hello',boot_id='boot',session_id='session',fixture=fixture().to_dict()))
+                await service.close()
+            return sent[0]
+        for engines,speaks in (({'transcriber':FakeTranscriber(),'speaker':FakeSpeaker()},1),({},0)):
+            wire=asyncio.run(ready(**engines))
+            rows=self.run_commands([dict(op='ask'),self.receive(wire)])
+            self.assertTrue(rows[1]['ok'],wire);self.assertEqual(rows[1]['speaks'],speaks)
 
     def transcript(self, status='heard', text='Is the fan louder?', key='session-q1', snr=12.5, **extra):
         return self.receive(self.envelope('transcript',question_id=key,status=status,text=text,
@@ -177,6 +197,7 @@ int main() {
         rows=self.run_commands(self.ready(None)+[dict(op='start_question')])
         self.assertTrue(rows[1]['ok']);self.assertFalse(rows[2]['ok'])
         self.assertFalse(self.run_commands([dict(op='ask'),self.receive(self.envelope('ready',provider='x'))])[-1]['ok'])
+        self.assertFalse(self.run_commands([dict(op='ask'),self.receive(self.envelope('ready',provider='x',speech_to_text=None))])[-1]['ok'])
         commands=self.ready()
         for n in range(1,6):
             commands+=self.asked(f'session-q{n}')+[self.transcript(key=f'session-q{n}'),dict(op='confirm',accepted=False)]

@@ -3,6 +3,8 @@
 #include "investigation_wire.h"
 #include "investigation_capture.h"
 #include "transport_write.h"
+#include "speech_stream.h"
+#include "audio_devices.h"
 #include "test_storage.h"
 #include "diagnostic_events.h"
 #include "network.h"
@@ -38,6 +40,8 @@ lv_obj_t *launch,*panel,*heading,*label,*start_button,*action_button,*action_lab
 // Spoken ask: Ask/Stop/Retry beside Record A/Use, and a live input level while listening.
 lv_obj_t *ask_button,*ask_label,*level_bar;
 std::atomic<bool> listening{false},stop_question{false};
+// Spoken comparison at the end: Cancel stops the speech, not the finished session.
+std::atomic<bool> final_speech{false},stop_speech{false};
 float live_level=-120;bool level_fresh=false; // Guarded by live_lock.
 lv_obj_t *setup_panel,*endpoint_field,*keyboard;
 // Instrument view: live spectrum while recording, then A and B overlaid.
@@ -173,6 +177,7 @@ const char* heading_text(InvestigationProtocol::State s) {
 }
 void cancel(lv_event_t*) {
     if(!running)return;
+    if(final_speech.load()){stop_speech.store(true);return;}
     cancel_requested_us.store(esp_timer_get_time());
     cancelled.store(true);
     lv_label_set_text(label,"Cancelled locally. Waiting for capture/connection cleanup.");
@@ -335,8 +340,8 @@ public:
     }
     // 0 idle, 1 complete message, -1 protocol/connection error. No network
     // operation runs under the display lock. Ping/pong handled by pinned IDF.
-    int poll() {
-        int ready=esp_transport_poll_read(ws,20);if(ready<=0)return ready;
+    int poll(int timeout_ms=20) {
+        int ready=esp_transport_poll_read(ws,timeout_ms);if(ready<=0)return ready;
         char chunk[1024];int n=esp_transport_read(ws,chunk,sizeof(chunk),1000);
         if(n<0)return -1;
         if(!n)return 0;
@@ -448,6 +453,85 @@ bool upload_question(Socket& s,InvestigationProtocol& p,const InvestigationCaptu
     cJSON_AddStringToObject(o,"sha256",cJSON_GetObjectItemCaseSensitive(q.metadata,"sha256")->valuestring);
     if(!active(p)){cJSON_Delete(o);return false;}
     return s.send(o);
+}
+// Spoken guidance (ADR-0014): ask the Mac to speak an acknowledged reply and
+// play it as it streams (24 kHz mono, upsampled to the codec's 48 kHz stereo).
+// A tap on an action (when allowed), Cancel, or a failed stream stops playback;
+// the stream is still read to its speech_end so the next exchange starts clean,
+// except after a session cancel, when the Mac drops it. Returns the tapped action.
+int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions_allowed) {
+    using S=InvestigationProtocol::State;
+    constexpr size_t capacity=60*24000,block=480,prebuffer=12000;
+    std::unique_ptr<int16_t,decltype(&free)> audio(static_cast<int16_t*>(
+        heap_caps_malloc(capacity*2,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)),free);
+    if(!p.speech_output() || !audio)return 0;
+    auto* request=p.envelope("speak");cJSON_AddStringToObject(request,"request_id",request_id);
+    if(!s.send(request)){p.disconnect();return 0;}
+    SpeechStream stream(p.boot(),p.session(),audio.get(),capacity);stream.begin(request_id);
+    auto speaker=diagnostic_speaker();
+    esp_codec_dev_sample_info_t format{};format.sample_rate=48000;format.channel=2;format.bits_per_sample=16;
+    const bool open=speaker && esp_codec_dev_open(speaker,&format)==ESP_OK &&
+        esp_codec_dev_set_out_vol(speaker,100)==ESP_OK && esp_codec_dev_set_out_mute(speaker,false)==ESP_OK;
+    const int64_t started=esp_timer_get_time();int64_t first_audio=0;
+    const uint64_t deadline=now_ms()+90000;
+    bool playing=false,stopped=!open,stop_sent=false,failed=false;
+    size_t played=0;unsigned underruns=0;int action=0;int16_t previous=0;
+    static int16_t output[block*4]; // media task only: 480 frames -> 960 stereo frames
+    auto stop_stream=[&]{
+        if(stream.ended() || stop_sent)return true;
+        stop_sent=true;auto* o=p.envelope("speech_stop");cJSON_AddStringToObject(o,"request_id",request_id);
+        return s.send(o);
+    };
+    if(stopped && !stop_stream()){p.disconnect();failed=true;}
+    while(!failed) {
+        if(!stopped) {
+            uint8_t command;
+            if(cancelled.load() || stop_speech.load())stopped=true;
+            else if(actions_allowed && xQueueReceive(actions,&command,0)==pdTRUE){action=command;stopped=true;}
+            if(stopped) {
+                if(open)esp_codec_dev_set_out_mute(speaker,true);
+                if(cancelled.load() && p.state()!=S::Complete)break; // the session cancel ends the stream
+                if(!stop_stream()){p.disconnect();break;}
+            }
+        }
+        if(stream.ended() && (stopped || played>=stream.frames()))break;
+        if(now_ms()>=deadline){failed=true;break;}
+        if(!stream.ended()) {
+            const int result=s.poll(playing && !stopped?0:20);
+            if(result<0){p.disconnect();failed=true;break;}
+            if(result==1) {
+                auto* m=InvestigationProtocol::parse(s.buffer);s.consumed();
+                const int v=stream.receive(m);cJSON_Delete(m);
+                if(v<0){p.fail();failed=true;break;}
+                continue;
+            }
+        }
+        if(stopped)continue;
+        const size_t buffered=stream.frames()-played;
+        if(!playing)playing=buffered>=prebuffer || (stream.ended() && buffered);
+        if(!playing)continue;
+        if(!buffered){++underruns;playing=false;continue;}
+        const size_t n=std::min(block,buffered);
+        const int16_t* x=audio.get()+played;
+        for(size_t i=0;i<n;++i) {
+            const int16_t middle=static_cast<int16_t>((int32_t(previous)+x[i])/2);
+            output[i*4]=output[i*4+1]=middle;output[i*4+2]=output[i*4+3]=x[i];previous=x[i];
+        }
+        if(!first_audio)first_audio=esp_timer_get_time();
+        if(esp_codec_dev_write(speaker,output,n*8)!=ESP_OK){stopped=true;if(!stop_stream()){p.disconnect();break;}continue;}
+        played+=n;
+    }
+    if(open) {
+        if(!stopped)vTaskDelay(pdMS_TO_TICKS(100)); // let queued samples drain before muting
+        esp_codec_dev_set_out_mute(speaker,true);esp_codec_dev_close(speaker);
+    }
+    auto* e=diagnostic_event("investigation_speech");cJSON_AddStringToObject(e,"request_id",request_id);
+    cJSON_AddStringToObject(e,"status",stream.status());cJSON_AddNumberToObject(e,"frames",stream.frames());
+    cJSON_AddNumberToObject(e,"played_frames",played);cJSON_AddBoolToObject(e,"speaker_open",open);
+    cJSON_AddBoolToObject(e,"stopped",stopped);cJSON_AddNumberToObject(e,"action",action);
+    cJSON_AddNumberToObject(e,"underruns",underruns);
+    cJSON_AddNumberToObject(e,"first_audio_ms",first_audio?(first_audio-started)/1000:-1);diagnostic_emit(e);
+    return action;
 }
 // Record, upload and transcribe one question. False when the session ended.
 bool ask_question(Socket& s,InvestigationProtocol& p,const char* boot,const char* session) {
@@ -733,7 +817,10 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         if(!wait_reply(socket,*p))break;
         if(index==0) {
             show(*p,p->text(),replay?nullptr:"Confirm position B");
-            if((!replay && !wait_action(socket,*p,"confirm_b")) || !p->adjust(replay?"SD replay of original recorded A/B adjustment; no new movement":
+            // The guidance is spoken while Confirm is live; a tap stops the speech and goes on.
+            const int chosen=replay?0:speak(socket,*p,"r1",true);
+            if(!active(*p))break;
+            if((!replay && !chosen && !wait_action(socket,*p,"confirm_b")) || !p->adjust(replay?"SD replay of original recorded A/B adjustment; no new movement":
                                                                             "Moved to B as the guidance described; device held the same way"))break;
         }
     }
@@ -744,7 +831,7 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         cJSON_AddNumberToObject(e,"requested_device_us",cancel_requested_us.load());
         cJSON_AddNumberToObject(e,"owner_stopped_device_us",esp_timer_get_time());
         diagnostic_emit(e);
-        if(socket.ws)socket.send(p->envelope("cancel"));
+        if(socket.ws && p->state()==InvestigationProtocol::State::Cancelled)socket.send(p->envelope("cancel"));
     }
     if(!p->terminal())p->fail();
     const char* final_text=p->state()==InvestigationProtocol::State::Complete?p->text():
@@ -752,6 +839,11 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         "Incomplete. No valid comparison. Check the retained run evidence, then start a new investigation.";
     const std::string displayed=replay?std::string("SD REPLAY (no new acquisition)\n")+final_text:final_text;
     show(*p,displayed.c_str());
+    if(!replay && p->state()==InvestigationProtocol::State::Complete) {
+        stop_speech.store(false);final_speech.store(true);
+        speak(socket,*p,"r2",false);
+        final_speech.store(false);
+    }
     if(bsp_display_lock(1000)) {
         set_running(false);show_series(0,false);
         bsp_display_unlock();

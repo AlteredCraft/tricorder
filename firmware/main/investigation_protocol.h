@@ -24,6 +24,7 @@ public:
     bool question_recorded(const cJSON* metadata,uint64_t now);
     cJSON* confirm_question(bool accepted);
     bool speech_available() const {return speech_;}
+    bool speech_output() const {return voice_;} // the host can speak guidance
     unsigned questions_left() const {return speech_?max_questions-questions_:0;}
     const char* question_id() const {return question_id_;}
     const char* transcript() const {return transcript_;}
@@ -48,13 +49,15 @@ public:
     const char* text() const {return text_;}
     const char* capture_id(unsigned index) const;
     cJSON* envelope(const char* type) const;
+    const char* boot() const {return boot_;}
+    const char* session() const {return session_;}
     bool same_session(const cJSON* message) const;
     static cJSON* parse(const char* wire); // strict bounded JSON; caller owns
 private:
     State state_=State::Idle;
     char boot_[97]{},session_[97]{},text_[2049]{},adjustment_[513]{};
     char question_id_[97]{},transcript_[513]{},question_[513]{},status_[8]{};
-    bool speech_=false;
+    bool speech_=false,voice_=false;
     unsigned questions_=0;
     double speech_to_noise_db_=NAN;
     unsigned frames_,count_=0;

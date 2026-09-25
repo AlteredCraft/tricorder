@@ -33,6 +33,7 @@ tools/idf.sh -C firmware -p PORT flash         # confirm the board's USB identit
 python3 -m venv .tools/investigation-env
 .tools/investigation-env/bin/python -m pip install -r tools/investigation-requirements.txt -r tools/openai-requirements.txt
 .tools/investigation-env/bin/python -m pip install -r tools/stt-requirements.txt   # local speech-to-text (Apple Silicon)
+.tools/investigation-env/bin/python -m pip install -r tools/tts-requirements.txt   # local spoken guidance (Pocket TTS)
 .tools/investigation-env/bin/python -m unittest discover -s tests -q
 ```
 
@@ -74,7 +75,7 @@ Put `OPENROUTER_API_KEY` in the ignored `.env.local.openrouter` (parsed literall
 
 Only verified measurement summaries, fixture notes and the operator's confirmed question go to the provider. Raw recordings stay local.
 
-The service transcribes spoken questions locally with Parakeet (`--stt parakeet`, the default; loads in about 5 s at start). `--stt none` turns spoken questions off.
+The service transcribes spoken questions locally with Parakeet (`--stt parakeet`, the default; loads in about 5 s at start). `--stt none` turns spoken questions off. Guidance is spoken with Pocket TTS, voice "alba" (`--tts pocket`, the default); `--tts say` uses macOS speech, `--tts none` turns it off.
 
 ## License
 

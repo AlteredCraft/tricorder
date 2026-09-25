@@ -5,6 +5,7 @@ The device owns UI deadlines and local cancel; this service never initiates a
 capture. See planning/guided-ab-protocol.md for the experimental wire contract.
 """
 import argparse
+import base64
 import asyncio
 from contextlib import suppress
 import json
@@ -15,6 +16,7 @@ import wave
 
 from tools.captures import CaptureStore
 from tools.speech_to_text import DEFAULT_ENGINE, ENGINES, load_transcriber
+from tools import text_to_speech
 from tools.investigation import (CaptureEvidence, Fixture, MAX_CAPTURE_BYTES, MAX_QUESTIONS,
                                  MAX_QUESTION_FRAMES, MAX_QUESTION_TEXT, MockProvider,
                                  ProtocolError, QUESTION_FIELDS, QUESTION_RATE_HZ, QuestionAudio,
@@ -25,6 +27,9 @@ MAX_WIRE_BYTES = 32768
 MAX_MESSAGES = 900
 # Spoken ask: start + chunks + end + confirm per question, outside the A/B budget.
 QUESTION_MESSAGES = MAX_QUESTIONS*(-(-MAX_QUESTION_FRAMES*2//4096)+3)
+# Spoken guidance: 24 kHz mono s16 in chunks of at most 4096 bytes, at most 60 s per reply.
+SPEECH_RATE_HZ = text_to_speech.RATE_HZ
+MAX_SPEECH_FRAMES = 60*SPEECH_RATE_HZ
 
 
 def decode_message(wire):
@@ -45,7 +50,7 @@ def decode_message(wire):
 
 
 class MockSession:
-    def __init__(self, root, send, *, provider=None, delay_s=0, replay_only=False, transcriber=None):
+    def __init__(self, root, send, *, provider=None, delay_s=0, replay_only=False, transcriber=None, speaker=None):
         self.root=Path(root)
         self.send=send
         self.provider=provider or MockProvider()
@@ -63,6 +68,12 @@ class MockSession:
         self.question_store=self.heard=self.operator_question=None
         self.question_ids=[]
         self.question_messages=0
+        # Spoken guidance: the checked text of each acknowledged reply, spoken once on request.
+        self.speaker=speaker
+        self.replies={}
+        self.acknowledged=self.speaking=self.speech_task=None
+        self.spoken=set()
+        self.speech_stop=asyncio.Event()
         self.closed=False
         self.expires=0
 
@@ -84,7 +95,8 @@ class MockSession:
             'turn':{'request_id','capture_ids','device_ms','deadline_ms'},
             'ack':{'request_id'}, 'cancel':set(),
             'question_start':{'metadata'}, 'question_chunk':{'question_id','offset','data'},
-            'question_end':{'question_id','sha256'}, 'question_confirm':{'question_id','accepted'}}
+            'question_end':{'question_id','sha256'}, 'question_confirm':{'question_id','accepted'},
+            'speak':{'request_id'}, 'speech_stop':{'request_id'}}
         require(isinstance(kind,str) and kind in fields,'unknown message type')
         allowed={'version','type','boot_id','session_id'}|fields[kind]
         if kind=='hello' and self.replay_only:allowed.add('replay')
@@ -114,20 +126,27 @@ class MockSession:
             self.phase='await_a'
             self.archive.record({'direction':'in','payload':message})
             speech=self.transcriber.name if self.transcriber and not self.replay_only else None
-            await self.emit(self.envelope('ready',provider=self.provider.name,speech_to_text=speech))
+            voice=self.speaker.name if self.speaker and not self.replay_only else None
+            await self.emit(self.envelope('ready',provider=self.provider.name,speech_to_text=speech,speech_output=voice))
             return
         require(self.archive is not None,'hello required')
         require(message['boot_id']==self.archive.boot_id and message['session_id']==self.archive.session_id,
                 'session mismatch')
         # Never log media/base64 or arbitrary extra fields. Raw evidence stays in captures/.
         if kind not in ('capture_chunk','question_chunk'):self.archive.record({'direction':'in','payload':message})
+        # While a reply is being spoken the device may only stop it or cancel.
+        require(self.speaking is None or kind in ('speech_stop','cancel'),'speech in progress')
         if kind=='cancel':
             require(self.phase not in ('complete','cancelled'),'terminal session')
             self.phase='cancelled';self.pending=None
             if self.task:self.task.cancel()
+            if self.speech_task:self.speech_task.cancel()
             self.store.close()
             if self.question_store:self.question_store.close()
             await self.emit(self.envelope('cancelled'))
+            return
+        if kind in ('speak','speech_stop'):
+            await self.speech(kind,message)
             return
         require(self.phase not in ('complete','cancelled','offline','incomplete'),'terminal session')
         if kind.startswith('question_'):
@@ -159,6 +178,7 @@ class MockSession:
             require(time.monotonic()<self.expires,'ack deadline expired')
             require(message['request_id']==self.pending['request_id'],'ack mismatch')
             self.pending=None
+            self.acknowledged=message['request_id']
             self.phase='adjust' if len(self.ids)==1 else 'complete'
             await self.emit(self.envelope('acknowledged',request_id=message['request_id'],state=self.phase))
 
@@ -306,6 +326,7 @@ class MockSession:
                 return
             validate_reply(request,reply)
             self.phase='await_ack'
+            self.replies[request['request_id']]=reply['text']
             await self.emit(reply)
         except asyncio.CancelledError:
             raise
@@ -321,6 +342,67 @@ class MockSession:
         reply=self.provider.respond(request)
         return await reply if inspect.isawaitable(reply) else reply
 
+    async def speech(self, kind, message):
+        key=message['request_id']
+        if kind=='speech_stop':
+            # A stop can cross an end already in flight; only a never-spoken reply is an error.
+            require(key in self.spoken,'no speech to stop')
+            if self.speaking==key:self.speech_stop.set()
+            return
+        require(self.speaker is not None and not self.replay_only,'speech output unavailable')
+        require(self.phase in ('adjust','complete') and key==self.acknowledged and key not in self.spoken,
+                'speak needs the latest acknowledged reply, once')
+        self.spoken.add(key)
+        self.speaking=key
+        self.speech_stop=asyncio.Event()
+        self.speech_task=asyncio.create_task(self.speak(key,self.replies[key]))
+
+    async def speak(self, key, text):
+        """Stream the checked text, verbatim, as it is synthesized. Chunks go straight to the
+        socket: the transcript records the stream, and the samples are saved as a WAV."""
+        started=time.monotonic_ns();first=None
+        status,reason,frames,pending,audio='complete',None,0,bytearray(),bytearray()
+        async def flush(final=False):
+            nonlocal pending,frames
+            while len(pending)>=4096 or (final and pending):
+                data=bytes(pending[:4096]);pending=pending[4096:]
+                await self.send(self.envelope('speech_chunk',request_id=key,offset=frames,
+                                              data=base64.b64encode(data).decode()))
+                frames+=len(data)//2
+        try:
+            await self.emit(self.envelope('speech_start',request_id=key,format='pcm_s16le',
+                                          sample_rate_hz=SPEECH_RATE_HZ,channels=1))
+            async for chunk in self.speaker.stream(text,self.speech_stop):
+                first=first or time.monotonic_ns()
+                room=MAX_SPEECH_FRAMES*2-len(audio)
+                if len(chunk)>room:
+                    chunk=chunk[:room];status,reason='failed','too_long'
+                audio+=chunk;pending+=chunk
+                await flush()
+                if status=='failed':break
+            await flush(final=True)
+            if status=='complete' and self.speech_stop.is_set():status='stopped'
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            status,reason='failed','engine_error'  # engine errors can carry paths; never log them
+            with suppress(Exception):await flush(final=True)
+        finally:
+            if len(audio)//2:
+                (self.archive.root/'speech').mkdir(mode=0o700,exist_ok=True)
+                with wave.open(str(self.archive.root/'speech'/f'{key}.wav'),'wb') as stream:
+                    stream.setnchannels(1);stream.setsampwidth(2);stream.setframerate(SPEECH_RATE_HZ)
+                    stream.writeframes(bytes(audio[:frames*2]))
+            self.speaking=None
+        self.archive.record({'type':'speech_output','request_id':key,'speaker':self.speaker.name,'status':status,
+                             'reason':reason,'frames':frames,'started_host_ns':started,
+                             'first_chunk_host_ns':first,'finished_host_ns':time.monotonic_ns()})
+        await self.emit(self.envelope('speech_end',request_id=key,status=status,frames=frames))
+
+    async def drain_speech(self):
+        if self.speech_task:
+            with suppress(asyncio.CancelledError):await self.speech_task
+
     async def drain(self):
         if self.task:
             with suppress(asyncio.CancelledError):await self.task
@@ -329,7 +411,9 @@ class MockSession:
         if self.closed:return
         self.closed=True
         if self.task:self.task.cancel()
+        if self.speech_task:self.speech_task.cancel()
         await self.drain()
+        await self.drain_speech()
         if self.question_store:self.question_store.close()
         if self.store:
             incomplete=self.store.close()
@@ -341,12 +425,13 @@ class MockSession:
 # Phases where the device's next message waits for the person (record A; read the
 # transcript; read guidance, move, record B; walk back to A). A read that starts while transcribing
 # ends after the person reads it; transcription has its own bound. WebSocket
-# ping/pong (10 s + 10 s) still detects a dead device.
-OPERATOR_PHASES=('await_a','transcribing','await_confirm','adjust','compare_ready')
+# ping/pong (10 s + 10 s) still detects a dead device. After complete the device may
+# still be playing the spoken comparison before it closes.
+OPERATOR_PHASES=('await_a','transcribing','await_confirm','adjust','compare_ready','complete')
 
 
 async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_only=False, provider=None,
-                     idle_s=30, operator_idle_s=600, transcriber=None):
+                     idle_s=30, operator_idle_s=600, transcriber=None, speaker=None):
     from websockets.asyncio.server import serve
     from websockets.exceptions import ConnectionClosed
     output=Path(output)
@@ -360,7 +445,7 @@ async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_o
         async def send(message):
             await asyncio.wait_for(socket.send(json.dumps(message,allow_nan=False)),timeout=2)
         session=MockSession(output,send,delay_s=delay_s,replay_only=replay_only,provider=provider,
-                            transcriber=transcriber)
+                            transcriber=transcriber,speaker=speaker)
         try:
             while True:
                 wire=await asyncio.wait_for(socket.recv(),
@@ -397,12 +482,18 @@ def main():
     parser.add_argument('--env',type=Path,help='Local provider-key file; parsed literally, never sent to device')
     parser.add_argument('--stt',choices=ENGINES,default=DEFAULT_ENGINE,
                         help='Speech-to-text for spoken questions; parakeet is local (tools/stt-requirements.txt)')
+    parser.add_argument('--tts',choices=text_to_speech.ENGINES,default=text_to_speech.DEFAULT_ENGINE,
+                        help='Spoken guidance; pocket is local Pocket TTS "alba" (tools/tts-requirements.txt), say is macOS')
     args=parser.parse_args()
     if not 0<=args.delay_seconds<=30:parser.error('delay must be 0–30 seconds')
     transcriber=None
     if not args.replay_only and args.stt!='none':
         try:transcriber=load_transcriber(args.stt)
         except ImportError:parser.error('Local speech-to-text needs tools/stt-requirements.txt (Apple Silicon); or pass --stt none')
+    speaker=None
+    if not args.replay_only and args.tts!='none':
+        try:speaker=text_to_speech.load_speaker(args.tts)
+        except ImportError:parser.error('Pocket TTS needs tools/tts-requirements.txt; or pass --tts say or --tts none')
     async def run():
         client=None;provider=None
         if args.provider!='mock':
@@ -417,9 +508,12 @@ def main():
             provider=OpenAIProvider(client,model=args.model or ('openai/gpt-5.6-sol' if router else 'gpt-4.1-mini'),route=args.provider)
         try:
             server=await serve_mock(args.host,args.port,args.output,delay_s=args.delay_seconds,
-                                    replay_only=args.replay_only,provider=provider,transcriber=transcriber)
+                                    replay_only=args.replay_only,provider=provider,transcriber=transcriber,
+                                    speaker=speaker)
             speech=transcriber.name if transcriber else 'off'
+            voice=speaker.name if speaker else 'off'
             print(f'{args.provider} service ready at ws://{args.host}:{args.port}; speech-to-text {speech}; '
+                  f'spoken guidance {voice}; '
                   f'private evidence: {args.output}',flush=True)
             async with server:await server.serve_forever()
         finally:

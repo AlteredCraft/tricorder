@@ -1,0 +1,3 @@
+# Optional local spoken guidance (Pocket TTS, voice "alba"). Isolated from the ESP-IDF Python environment.
+-r investigation-requirements.txt
+pocket-tts==3.3.0

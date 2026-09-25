@@ -1,6 +1,6 @@
 # Guided A/B protocol and procedures
 
-Reference for [G-0002.01](plans/G-0002.01-guided-ab-slice.md). Design decisions: [ADR-0010](adrs/ADR-0010-device-owned-ab-lan-experiment.md), [0011](adrs/ADR-0011-bounded-tcp-write-completion.md), [0012](adrs/ADR-0012-live-prose-over-verified-summaries.md), [0013](adrs/ADR-0013-local-first-speech-to-text.md).
+Reference for [G-0002.01](plans/G-0002.01-guided-ab-slice.md). Design decisions: [ADR-0010](adrs/ADR-0010-device-owned-ab-lan-experiment.md), [0011](adrs/ADR-0011-bounded-tcp-write-completion.md), [0012](adrs/ADR-0012-live-prose-over-verified-summaries.md), [0013](adrs/ADR-0013-local-first-speech-to-text.md), [0014](adrs/ADR-0014-spoken-guidance-streamed-from-the-mac.md).
 
 ## States
 
@@ -18,12 +18,13 @@ Spoken ask, optional, only at `ready_a`: `ready_a → asking → transcribing �
 
 Every message carries `version`, `type`, `boot_id`, `session_id` (IDs 1–96 chars `[A-Za-z0-9_-]`). Unknown types/fields, duplicate keys, binary frames and messages over 32 KiB are rejected, and the socket closes.
 
-1. `hello` (+ `fixture`) → `ready{provider, speech_to_text}`. `speech_to_text` is the engine name, or null when spoken questions are off (including SD replay).
+1. `hello` (+ `fixture`) → `ready{provider, speech_to_text, speech_output}`. Each is the engine name, or null when that feature is off (both are off in SD replay).
 1a. Spoken ask, before capture A only, at most 5 per session: `question_start{metadata}`, `question_chunk{question_id, offset, data}` ×N, `question_end{question_id, sha256}` → `transcript{question_id, status: heard|empty|failed, text, speech_to_noise_db}`. After `heard`, the device must send `question_confirm{question_id, accepted}` before anything else except `cancel`; only an accepted transcript becomes the operator question. No per-stage ACKs.
 2. `capture_start` (+ `metadata`) → `capture_ack{stage:start}`; `capture_chunk{capture_id, offset, data(base64 ≤ 4096 B)}` ×N; `capture_end{sha256}` → `capture_ack{stage:complete}`.
 3. `turn{request_id, capture_ids:[A], device_ms, deadline_ms}` → `guidance{measurements, comparison:null, text}` → device `ack` → `acknowledged`.
 4. Operator confirms the adjustment; capture B as in step 2. Back at A, capture A again as in step 2 (optional in the protocol; the live flow always does it).
 5. `turn{capture_ids:[A,B] or [A,B,A2], adjustment}` → `comparison{comparison:{rms_delta_db = L_B − L_A, repeat_delta_db = L_A2 − L_A or null without a repeat}}` → `ack`, where L is each capture's `median_dbfs`: the median power of its 100 ms windows of slot 0 (two middle windows averaged), so brief loud moments don't decide the result. Clipping, zero RMS or a null median in any capture makes the comparison `inconclusive` (both values null). Runs saved before 2026-09-24 compared whole-capture RMS; the evidence checker reads either.
+5a. Spoken guidance, after `acknowledged` for r1 (at adjust) or r2 (at complete), once per reply: `speak{request_id}` → `speech_start{request_id, format: pcm_s16le, sample_rate_hz: 24000, channels: 1}`, `speech_chunk{request_id, offset, data(base64 ≤ 4096 B)}` ×N, `speech_end{request_id, status: complete|stopped|failed, frames}`. The text is the reply's checked text, verbatim. While speaking the host accepts only `speech_stop{request_id}` (→ `speech_end{status: stopped}`; harmless after the end) and `cancel` (the stream is dropped). At most 60 s. Audio is saved as `speech/<request_id>.wav`; the transcript records a `speech_output` summary, never samples.
 6. `cancel` → `cancelled`. The device stops locally without waiting for it.
 
 Question metadata (exactly these fields): `question_id` (never a capture ID), `boot_id`, `session_id`, format `pcm_s16le`, `sample_rate_hz` 16000, `channels` 1, `frames` ≤ 128,000 (8 s), `size_bytes`, `sha256`, `source_rate_hz` 48000, `source_slot` 0, `gain_db` 24, `filter` `hpf80-lpf6500-63tap-decimate3` (the device's `SpeechFilter` on slot 0), `warmup_frames` 12000, acquisition start/end µs, `stopped_by` operator|limit, `input_clipped`, `driver_epoch_integrity`. Question audio is saved under `questions/` (with a 16 kHz WAV), never under `captures/`, and never reaches the RMS comparison or the text model. The text model gets only the confirmed text, as `operator_question` (operator context, not instructions).
@@ -41,7 +42,8 @@ Capture: 48 kHz, 4 slots, s16, requested gain 24 dB, 0.5 s discarded settling pr
 ## Running a trial
 
 ```sh
-# Host service (mock; add --provider openrouter --env .env.local.openrouter for live text)
+# Host service (mock; add --provider openrouter --env .env.local.openrouter for live text;
+# local Parakeet and Pocket TTS "alba" by default: --stt none / --tts say|none to change)
 .tools/investigation-env/bin/python -m tools.investigation_service \
   --host MAC_LAN_IP --port 8765 --output .local/runs/NEW/mock   # local Parakeet speech-to-text by default; --stt none turns it off
 
@@ -54,7 +56,7 @@ Capture: 48 kHz, 4 slots, s16, requested gain 24 dB, 0.5 s discarded settling pr
 .tools/investigation-env/bin/python -m tools.investigation_evidence .local/runs/NEW/mock/<session-dir>
 ```
 
-On the device (guided startup opens this screen): **Start** (context photo, device-only) → optional **Ask** (tap, speak, **Stop**; level meter; up to 8 s) → transcript with the voice-over-background level → **Use** or **Retry** → **Record A** (steadiness label before each tap) (live spectrum) → wait for guidance → move → **Confirm position B** → **Record B** (live over A) → back at A, **Record A again** → comparison with A, B and A2 spectra overlaid. **Setup** holds the service address and Wi-Fi. The on-device spectra are display only: 48 log bands, 50 Hz–20 kHz, averaged 2048-point FFTs of slot 0.
+On the device (guided startup opens this screen): **Start** (context photo, device-only) → optional **Ask** (tap, speak, **Stop**; level meter; up to 8 s) → transcript with the voice-over-background level → **Use** or **Retry** → **Record A** (steadiness label before each tap) (live spectrum) → wait for guidance → move → **Confirm position B** → **Record B** (live over A) → back at A, **Record A again** → comparison with A, B and A2 spectra overlaid. Guidance and the comparison are spoken (full volume); tapping Confirm position B stops the guidance speech, and Cancel stops the final speech without clearing the result. **Setup** holds the service address and Wi-Fi. The on-device spectra are display only: 48 log bands, 50 Hz–20 kHz, averaged 2048-point FFTs of slot 0.
 
 Firmware option `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` (private sdkconfig) skips automatic diagnostics at boot.
 

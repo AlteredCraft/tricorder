@@ -162,10 +162,10 @@ bool InvestigationProtocol::receive(const char* wire,uint64_t now) {
     tick(now);auto* o=parse(wire);if(!o)return false;
     bool ok=false;
     if(same_session(o)) {
-        auto* speech=field(o,"speech_to_text");
-        if(state_==State::Connecting && str(field(o,"type"),"ready") && cJSON_GetArraySize(o)==6 && bounded(field(o,"provider"),96) &&
-           (cJSON_IsNull(speech) || bounded(speech,96))) {
-            speech_=!cJSON_IsNull(speech);state_=State::ReadyA;deadline_=0;ok=true;
+        auto* speech=field(o,"speech_to_text");auto* voice=field(o,"speech_output");
+        if(state_==State::Connecting && str(field(o,"type"),"ready") && cJSON_GetArraySize(o)==7 && bounded(field(o,"provider"),96) &&
+           (cJSON_IsNull(speech) || bounded(speech,96)) && (cJSON_IsNull(voice) || bounded(voice,96))) {
+            speech_=!cJSON_IsNull(speech);voice_=!cJSON_IsNull(voice);state_=State::ReadyA;deadline_=0;ok=true;
         } else if(state_==State::Transcribing && str(field(o,"type"),"transcript") && cJSON_GetArraySize(o)==8 &&
                   str(field(o,"question_id"),question_id_)) {
             // Heard text needs Use or Retry; nothing heard or a failed engine returns to Record A.
