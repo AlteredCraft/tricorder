@@ -49,6 +49,7 @@ Planning view (needs only `uv`; standalone package in [`tools/planview`](tools/p
 
 ```sh
 uvx --from ./tools/planview planview planning     # http://localhost:8420/
+# check for any missalignment in the current planning
 uvx --from ./tools/planview planview --check planning
 ```
 
