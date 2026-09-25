@@ -60,6 +60,9 @@ const uint32_t series_colors[4]={0x66bb6a,0x4fc3f7,0xffb74d,0xce93d8};
 portMUX_TYPE live_lock=portMUX_INITIALIZER_UNLOCKED;
 float live_db[spectrum_band_count];
 UiPulse ui_pulse; // display lock: probe timer, session reset and report
+// Touch-down time of the last button press (G-0001.04 C2 touch-to-submit). Console
+// taps send CLICKED only, so they leave this unchanged.
+std::atomic<int64_t> pressed_us{0};
 unsigned live_sequence=0,live_drawn=0; // Guarded by live_lock.
 QueueHandle_t media_queue,actions;
 std::atomic<bool> cancelled{false};
@@ -222,6 +225,7 @@ void start(lv_event_t*) {
 lv_obj_t* button(lv_obj_t* parent,const char* text,int x,int y,lv_event_cb_t callback,int width=220) {
     auto* b=lv_button_create(parent);lv_obj_set_pos(b,x,y);lv_obj_set_size(b,width,60);
     lv_obj_add_event_cb(b,callback,LV_EVENT_CLICKED,nullptr);
+    lv_obj_add_event_cb(b,[](lv_event_t*){pressed_us.store(esp_timer_get_time());},LV_EVENT_PRESSED,nullptr);
     auto* l=lv_label_create(b);lv_label_set_text(l,text);lv_obj_center(l);return b;
 }
 void show(InvestigationProtocol& p,const char* message,const char* button_text=nullptr,const char* ask_text=nullptr) {
@@ -400,6 +404,7 @@ int wait_action(Socket& s,InvestigationProtocol& p,const char* action) {
             reading=steadiness.read(now_ms());
             static const char* names[]={"unknown","steady","moving"};
             auto* e=diagnostic_event("investigation_steadiness");cJSON_AddStringToObject(e,"action",action);
+            cJSON_AddNumberToObject(e,"pressed_us",pressed_us.load());
             cJSON_AddStringToObject(e,"state",names[reading.state]);cJSON_AddNumberToObject(e,"peak_dps",reading.peak_dps);
             cJSON_AddNumberToObject(e,"accel_span_g",reading.accel_span_g);cJSON_AddNumberToObject(e,"samples",reading.samples);
             diagnostic_emit(e);

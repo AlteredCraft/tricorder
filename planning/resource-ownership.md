@@ -11,8 +11,10 @@ One owner per resource, from the init code. Audited 2026-09-25 at `e87cb9c`. "Me
 | BMI270 IMU | `diagnostic.cpp` + `imu_checked` | media owner | yes |
 | INA226 | `diagnostic.cpp` | media owner | yes |
 | RTC / ID probes | `diagnostic.cpp` (device added, read, removed) | media owner | paired |
+| SDMMC host | SD card (slot 0) via `bsp_sdcard_init`; ESP-Hosted skips re-init ("already initialized") and uses slot 1 for the Wi-Fi link | shared: SD transfers (media owner) and the hosted SDIO tasks (priority 23) | yes, but shared (below) |
 | SD card + FAT | `diagnostic.cpp` `bsp_sdcard_init` | media owner writes; HTTP and USB-console tasks read/replace under `file_mutex` | yes |
 | esp_video registration | `media.cpp` `video_init_once` | media owner | yes |
+| ISP auto-exposure task | vendor `esp_video_init` (`esp_video_isp_pipeline.c`) | its own task, for the whole boot; logs "failed to receive video frame" every 2 s with no stream open | yes |
 | CSI / ISP stream | STREAMON/STREAMOFF per `VideoSession` | media owner (diagnostic run, context photo) | paired |
 | JPEG encoder + worker | `jpeg_pipeline.cpp` | camera baseline only | paired |
 | I2S TX/RX | first codec init (BSP, guarded); RX callback wrap in `audio_ingress.cpp` | media owner | yes |
@@ -27,6 +29,7 @@ One owner per resource, from the init code. Audited 2026-09-25 at `e87cb9c`. "Me
 
 - **LEDC timer 0 had two owners.** `bsp_cam_osc_init` set it to 24 MHz for a camera clock on GPIO36, and the BSP backlight setup then reset it to 5 kHz. Boot logs `ledc_timer0` = 5000 Hz, and the camera has always worked at that, so the call is dropped (`f97f7b4`). Context photos in the driven runs confirm the camera still works.
 - **A failed codec open could leave the device marked open.** `esp_codec_dev_open` sets its opened flag before configuring the device, and a later open of a marked device returns OK without configuring it. Captures and `speak()` now close whenever the device exists (`e930f89`). This is found by reading the code, not reproduced.
+- **The SD card and the Wi-Fi link share one SDMMC host.** Unaligned SD writes went one sector per command (2.3 s per capture) and the LVGL probe stalled as long. 16 KiB aligned transfers fixed that, but were followed by stalled, then dead, Wi-Fi. 4 KiB aligned transfers with a 2 ms yield keep both working (`f3d4073`; see G-0001.02).
 
 ## Not determined
 
