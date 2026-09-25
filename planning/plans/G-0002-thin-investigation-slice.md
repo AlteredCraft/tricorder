@@ -8,7 +8,7 @@
 
 **Measure:** Handheld runs with the mock service and then a live provider complete the loop with correct evidence references and visible failure states, and the operator rates them. A mock-only demo does not count. A negative usefulness result is recorded as a result.
 
-**Relationship to G-0001:** Shares one implementation; does not relax G-0001's checks.
+**Relationship to G-0001:** Shares its code; doesn't relax G-0001's checks.
 
 **Specs:**
 
