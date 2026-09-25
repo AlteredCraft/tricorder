@@ -17,6 +17,13 @@ extern bool fail_scratch;
 inline void* heap_caps_malloc(size_t n,int caps){requested_caps=caps;return fail_scratch?nullptr:malloc(n);}
 inline void* heap_caps_aligned_alloc(size_t a,size_t n,int caps){requested_alignment=a;requested_caps=caps;return fail_scratch?nullptr:aligned_alloc(a,n);}
 ''')
+            (p/'freertos').mkdir()
+            (p/'freertos'/'FreeRTOS.h').write_text('''#pragma once
+#define pdMS_TO_TICKS(ms) (ms)
+extern int delays;
+inline void vTaskDelay(int){++delays;}
+''')
+            (p/'freertos'/'task.h').write_text('#pragma once\n')
             (p/'driver.cpp').write_text(r'''
 #include "storage_files.h"
 #include <cassert>
@@ -24,7 +31,7 @@ inline void* heap_caps_aligned_alloc(size_t a,size_t n,int caps){requested_align
 #include <string>
 #include <vector>
 #include <unistd.h>
-int requested_caps=0;size_t requested_alignment=0;bool fail_scratch=false;
+int requested_caps=0;size_t requested_alignment=0;bool fail_scratch=false;int delays=0;
 int main(int argc,char** argv) {
  assert(argc==2);std::string root=argv[1];
  const unsigned char data[]={1,0,3,4};
@@ -41,7 +48,10 @@ int main(int argc,char** argv) {
  assert(!storage_write_verified((root+"/missing/file").c_str(),data,sizeof(data)));
  std::vector<unsigned char> large(1152000);
  for(size_t i=0;i<large.size();++i)large[i]=(i*37+11)&255;
+ delays=0;
  assert(storage_write_verified((root+"/large.raw").c_str(),large.data(),large.size()));
+ // The SD card shares the SDMMC host with the Wi-Fi link: 4 KiB transfers, a yield after each.
+ assert(delays==static_cast<int>((large.size()+4095)/4096));
  fail_scratch=true;
  assert(!storage_write_verified((root+"/no-memory.raw").c_str(),data,sizeof(data)));
  assert(access((root+"/no-memory.raw").c_str(),F_OK)!=0);

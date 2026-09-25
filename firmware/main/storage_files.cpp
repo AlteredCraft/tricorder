@@ -8,6 +8,8 @@
 #include <unistd.h>
 #ifdef ESP_PLATFORM
 #include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #endif
 
 bool storage_parse_config(const char* json, StorageConfig& out) {
@@ -41,13 +43,15 @@ bool storage_public_name(const char* name) {
     return dot && (!strcmp(dot,".raw") || !strcmp(dot,".json"));
 }
 
-// Writes and reads go through one aligned, DMA-capable 16 KiB stage. From an
-// unaligned PSRAM source the SDMMC driver writes one 512-byte sector per command
-// (about 2.3 s per 1.15 MB capture, during which the LVGL probe stalled for as long;
-// G-0001.02 C2); an aligned stage lets FatFs pass whole sectors in one transfer.
+// Writes and reads go through one aligned, DMA-capable stage. From an unaligned
+// PSRAM source the SDMMC driver writes one 512-byte sector per command (about
+// 2.3 s per 1.15 MB capture, during which the LVGL probe stalled for as long;
+// G-0001.02 C2). The SD card shares the SDMMC host with the ESP-Hosted Wi-Fi link
+// (slot 1): 16 KiB transfers were followed by stalled and then dead Wi-Fi
+// (20260925-ten-minute-1), so transfers are 4 KiB with a short yield between.
 bool storage_write_verified(const char* path,const unsigned char* data,size_t size) {
     if(!data || !size || access(path,F_OK)==0)return false;
-    constexpr size_t chunk=16384;
+    constexpr size_t chunk=4096;
 #ifdef ESP_PLATFORM
     auto* stage=static_cast<unsigned char*>(heap_caps_aligned_alloc(128,chunk,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL));
 #else
@@ -67,6 +71,9 @@ bool storage_write_verified(const char* path,const unsigned char* data,size_t si
             if(n<=0){ok=false;break;}done+=n;
         }
         offset+=done;
+#ifdef ESP_PLATFORM
+        vTaskDelay(pdMS_TO_TICKS(2)); // let the Wi-Fi link use the shared SDMMC host
+#endif
     }
     ok=fsync(fd)==0 && ok;ok=close(fd)==0 && ok;
     if(!ok){free(stage);return false;}
