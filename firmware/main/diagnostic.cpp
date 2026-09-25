@@ -284,7 +284,10 @@ extern "C" void app_main() {
         diagnostic_emit(event);
     }
 
-    ESP_ERROR_CHECK(bsp_cam_osc_init());
+    // No bsp_cam_osc_init(): its 24 MHz GPIO36 clock uses LEDC timer 0, which the
+    // BSP backlight setup reconfigures to 5 kHz at display start (logged below as
+    // ledc_timer0), and the camera has worked at that. Timer 0 has one owner, the
+    // backlight (G-0001.01 C4).
     ESP_ERROR_CHECK(bsp_i2c_init());
     bsp_io_expander_pi4ioe_init(bsp_i2c_get_handle());
     bsp_set_charge_qc_en(true);
@@ -318,8 +321,7 @@ extern "C" void app_main() {
     display_config.flags.buff_spiram = true;
     display_config.flags.sw_rotate = true;
     auto* display = bsp_display_start_with_config(&display_config);
-    // G-0001.01 C4: bsp_cam_osc_init set LEDC timer 0 to 24 MHz for the camera
-    // clock; the BSP backlight setup reuses timer 0. Record what it runs at now.
+    // G-0001.01 C4: LEDC timer 0 belongs to the backlight; record its frequency.
     auto* ledc=diagnostic_event("ledc_timer0");
     cJSON_AddNumberToObject(ledc,"hz",ledc_get_freq(LEDC_LOW_SPEED_MODE,LEDC_TIMER_0));diagnostic_emit(ledc);
     configASSERT(display);

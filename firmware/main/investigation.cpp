@@ -495,7 +495,7 @@ int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions
     const int64_t started=esp_timer_get_time();int64_t first_audio=0;
     const uint64_t deadline=now_ms()+90000;
     bool playing=false,stopped=!open,stop_sent=false,failed=false;
-    size_t played=0;unsigned underruns=0;int action=0;int16_t previous=0;
+    size_t played=0;unsigned underruns=0;int action=0;int16_t previous=0;int64_t stopped_us=0;
     static int16_t output[block*4]; // media task only: 480 frames -> 960 stereo frames
     auto stop_stream=[&]{
         if(stream.ended() || stop_sent)return true;
@@ -510,6 +510,7 @@ int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions
             else if(actions_allowed && xQueueReceive(actions,&command,0)==pdTRUE){action=command;stopped=true;}
             if(stopped) {
                 if(open)esp_codec_dev_set_out_mute(speaker,true);
+                stopped_us=esp_timer_get_time(); // G-0001.04 C3: playback stops here
                 if(cancelled.load() && p.state()!=S::Complete)break; // the session cancel ends the stream
                 if(!stop_stream()){p.disconnect();break;}
             }
@@ -557,7 +558,7 @@ int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions
     cJSON_AddStringToObject(e,"status",stream.status());cJSON_AddNumberToObject(e,"frames",stream.frames());
     cJSON_AddNumberToObject(e,"played_frames",played);cJSON_AddBoolToObject(e,"speaker_open",open);
     cJSON_AddBoolToObject(e,"stopped",stopped);cJSON_AddNumberToObject(e,"action",action);
-    cJSON_AddNumberToObject(e,"underruns",underruns);
+    cJSON_AddNumberToObject(e,"underruns",underruns);cJSON_AddNumberToObject(e,"stopped_us",stopped_us);
     cJSON_AddNumberToObject(e,"first_audio_ms",first_audio?(first_audio-started)/1000:-1);diagnostic_emit(e);
     return action;
 }
@@ -891,6 +892,12 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         cJSON_AddNumberToObject(e,"ui_max_us",ui_pulse.max_us());
         cJSON_AddNumberToObject(e,"ui_over_50_ms",ui_pulse.over_ms(50));
         cJSON_AddNumberToObject(e,"ui_over_200_ms",ui_pulse.over_ms(200));
+        auto* longs=cJSON_AddArrayToObject(e,"ui_long");
+        for(unsigned i=0;i<ui_pulse.long_count();++i) {
+            auto* item=cJSON_CreateArray();const auto l=ui_pulse.long_at(i);
+            cJSON_AddItemToArray(item,cJSON_CreateNumber(l.end_us));cJSON_AddItemToArray(item,cJSON_CreateNumber(l.duration_us));
+            cJSON_AddItemToArray(longs,item);
+        }
         bsp_display_unlock();
     }
     cJSON_AddNumberToObject(e,"free_internal",heap_caps_get_free_size(MALLOC_CAP_INTERNAL));

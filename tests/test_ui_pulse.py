@@ -25,8 +25,14 @@ int main() {
     assert(p.over_ms(50)==1 && p.over_ms(200)==1 && p.over_ms(20)==6);
     now+=5000000;p.tick(now);                             // beyond the last bin
     assert(p.max_us()==5000000 && p.percentile_ms(1.0)==1001 && p.over_ms(1000)==1);
+    // The last intervals over 200 ms, oldest first: {end_us, duration_us}.
+    assert(p.long_count()==2);
+    assert(p.long_at(0).end_us==now-5000000 && p.long_at(0).duration_us==250000);
+    assert(p.long_at(1).end_us==now && p.long_at(1).duration_us==5000000);
+    for(int i=0;i<10;++i){now+=300000+i;p.tick(now);}
+    assert(p.long_count()==8 && p.long_at(7).duration_us==300009 && p.long_at(0).duration_us==300002);
     p.reset();
-    assert(p.count()==0 && p.max_us()==0);
+    assert(p.count()==0 && p.max_us()==0 && p.long_count()==0);
     p.tick(10);p.tick(10);                                // zero interval is still an interval
     assert(p.count()==1 && p.percentile_ms(0.5)==0);
     puts("ok");
