@@ -458,6 +458,8 @@ bool upload(Socket& s,InvestigationProtocol& p,const InvestigationCapture& c,uns
     cJSON_AddItemToObject(o,"metadata",cJSON_Duplicate(c.metadata,true));
     if(!active(p)){cJSON_Delete(o);return false;}
     const int64_t started=esp_timer_get_time();unsigned chunks=0;int64_t max_chunk_us=0;
+    // G-0001.02 Wi-Fi loss: the lowest free internal RAM during this upload.
+    const bool monitoring=heap_caps_monitor_local_minimum_free_size_start()==ESP_OK;
     bool ok=s.send(o) && capture_ack(s,p,id,"start") && send_chunks(s,p,"capture_chunk","capture_id",id,c,&chunks,&max_chunk_us);
     const char* sha=cJSON_GetObjectItemCaseSensitive(c.metadata,"sha256")->valuestring;
     if(ok) {
@@ -468,6 +470,12 @@ bool upload(Socket& s,InvestigationProtocol& p,const InvestigationCapture& c,uns
     auto* e=diagnostic_event("investigation_upload");cJSON_AddStringToObject(e,"capture_id",id);
     cJSON_AddBoolToObject(e,"ok",ok);cJSON_AddNumberToObject(e,"bytes",c.size);cJSON_AddNumberToObject(e,"chunks",chunks);
     cJSON_AddNumberToObject(e,"upload_us",esp_timer_get_time()-started);cJSON_AddNumberToObject(e,"max_chunk_us",max_chunk_us);
+    if(monitoring) {
+        cJSON_AddNumberToObject(e,"min_free_internal",heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+        cJSON_AddNumberToObject(e,"min_free_dma",heap_caps_get_minimum_free_size(MALLOC_CAP_DMA));
+        heap_caps_monitor_local_minimum_free_size_stop();
+    }
+    cJSON_AddNumberToObject(e,"largest_internal_block",heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
     diagnostic_emit(e);
     return ok;
 }
