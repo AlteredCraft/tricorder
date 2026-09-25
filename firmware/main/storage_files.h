@@ -9,3 +9,6 @@ bool storage_public_name(const char* name);
 // Single writer; exclusive .part, fsync, exact readback, then publish by rename.
 // Existing final/partial files are preserved. A partial never counts as complete.
 bool storage_write_verified(const char* path, const unsigned char* data, size_t size);
+// Fault injection only (G-0001.05 C4): called after each chunk written to the
+// .part file, counting from 1. Null in normal operation.
+extern void (*storage_chunk_hook)(size_t chunk);

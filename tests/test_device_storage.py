@@ -51,6 +51,13 @@ int main(int argc,char** argv) {
  delays=0;
  assert(storage_write_verified((root+"/large.raw").c_str(),large.data(),large.size()));
  assert(delays==0);
+ // Fault injection (G-0001.05 C4): the hook sees each written chunk of the .part file;
+ // a hook that stops the device leaves only the .part, never a published file.
+ static std::vector<size_t> seen;
+ storage_chunk_hook=[](size_t chunk){seen.push_back(chunk);};
+ assert(storage_write_verified((root+"/hooked.raw").c_str(),large.data(),large.size()));
+ assert(seen.size()==(large.size()+16383)/16384 && seen.front()==1 && seen.back()==seen.size());
+ storage_chunk_hook=nullptr;
  fail_scratch=true;
  assert(!storage_write_verified((root+"/no-memory.raw").c_str(),data,sizeof(data)));
  assert(access((root+"/no-memory.raw").c_str(),F_OK)!=0);

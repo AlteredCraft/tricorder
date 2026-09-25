@@ -47,6 +47,8 @@ bool storage_public_name(const char* name) {
 // G-0001.02 C2). The SD card shares the SDMMC host with the ESP-Hosted Wi-Fi link
 // (slot 1); live sessions with SD archiving off still lost Wi-Fi, so these
 // transfers are not the cause of those outages (20260925-attrib-no-sd).
+void (*storage_chunk_hook)(size_t chunk)=nullptr;
+
 bool storage_write_verified(const char* path,const unsigned char* data,size_t size) {
     if(!data || !size || access(path,F_OK)==0)return false;
     constexpr size_t chunk=16384;
@@ -69,6 +71,7 @@ bool storage_write_verified(const char* path,const unsigned char* data,size_t si
             if(n<=0){ok=false;break;}done+=n;
         }
         offset+=done;
+        if(ok && storage_chunk_hook)storage_chunk_hook((offset+chunk-1)/chunk);
     }
     ok=fsync(fd)==0 && ok;ok=close(fd)==0 && ok;
     if(!ok){free(stage);return false;}
