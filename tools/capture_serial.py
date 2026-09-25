@@ -17,6 +17,7 @@ def main():
     parser.add_argument('--seconds', type=float, default=30)
     parser.add_argument('--reset', action='store_true')
     parser.add_argument('--replay-session', help='After reset/SD/network readiness, replay this saved ab-<32 lowercase hex> session; no new acquisition')
+    parser.add_argument('--replay-count', type=int, default=1, help='Replay the saved session this many times, each after the previous one ends (G-0001.02 baselines)')
     parser.add_argument('--observation-boot', help='Observe this existing boot without claiming startup or continuity before attachment')
     parser.add_argument('--stop-file', type=Path, help='Finish and summarize when this file appears')
     parser.add_argument('--checks', nargs='*', default=[])
@@ -29,8 +30,10 @@ def main():
     if args.observation_boot and args.reset:
         parser.error('--observation-boot cannot be combined with --reset')
     if args.replay_session and (not re.fullmatch(r'ab-[0-9a-f]{32}',args.replay_session) or
-                               not args.reset or args.spec_id!='G-0002.01'):
-        parser.error('--replay-session requires a valid saved session, --reset and --spec-id G-0002.01')
+                               not args.reset or args.spec_id not in ('G-0002.01','G-0001.02')):
+        parser.error('--replay-session requires a valid saved session, --reset and --spec-id G-0002.01 or G-0001.02')
+    if not 1<=args.replay_count<=50 or (args.replay_count>1 and not args.replay_session):
+        parser.error('--replay-count is 1 to 50 and needs --replay-session')
     if (args.spec_id != 'G-0001.01' or args.spec_revision or args.workload) and not (
             args.spec_revision and args.spec_revision.strip() and args.workload and args.workload.strip()):
         parser.error('explicit spec metadata requires both --spec-revision and --workload')
@@ -46,14 +49,15 @@ def main():
                 'required_checks': args.checks, 'reset_requested': args.reset,
                 'observation_boot': args.observation_boot}
     if args.replay_session:
-        manifest.update(replay=True,source_session_id=args.replay_session,
+        manifest.update(replay=True,source_session_id=args.replay_session,replay_count=args.replay_count,
                         replay_scope='SD transport replay; no new sensor acquisition')
     (args.output/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     events, errors = [], []
     # --reset interrupts the previous firmware mid-line; such lines precede our
     # first boot event and are counted, not treated as this run's evidence.
     seen_boot, pre_reset_discarded = not args.reset, 0
-    replay_boot=None;replay_sd=replay_network=replay_http=replay_sent=False;replay_state=None
+    replay_boot=None;replay_sd=replay_network=replay_http=False;replay_state=None
+    replays_sent=replays_ended=replays_completed=0
     captures = CaptureStore(args.output/'captures')
     port = serial.Serial()
     port.port, port.baudrate, port.timeout = args.port, 115200, .2
@@ -66,7 +70,8 @@ def main():
                 HardReset(port, uses_usb=True)()
             end = time.monotonic() + args.seconds
             pending = b''
-            while time.monotonic() < end and not (args.stop_file and args.stop_file.exists()):
+            while time.monotonic() < end and not (args.stop_file and args.stop_file.exists()) and not (
+                    args.replay_count>1 and replays_ended==args.replay_count):
                 chunk = port.read(8192)
                 if not chunk:
                     continue
@@ -100,12 +105,16 @@ def main():
                                 if event['event']=='storage_ready':replay_sd=event.get('mounted') is True
                                 if event['event']=='wifi_address':replay_network=True
                                 if event['event']=='check' and event.get('check')=='storage_http':replay_http=event.get('result')=='pass'
-                                if replay_sd and replay_network and replay_http and not replay_sent:
-                                    command=('TRICORDER_REPLAY '+args.replay_session+'\n').encode()
-                                    if port.write(command)!=len(command):raise OSError('short replay command write')
-                                    port.flush();replay_sent=True
                                 if event['event']=='investigation_state' and event.get('session_id')==args.replay_session:
                                     replay_state=event.get('state')
+                                if event['event']=='investigation_end' and event.get('session_id')==args.replay_session:
+                                    replays_ended+=1;replays_completed+=event.get('state')=='complete'
+                                # The next replay starts only after the previous one ended complete.
+                                if replay_sd and replay_network and replay_http and replays_sent<args.replay_count and \
+                                        replays_ended==replays_sent==replays_completed:
+                                    command=('TRICORDER_REPLAY '+args.replay_session+'\n').encode()
+                                    if port.write(command)!=len(command):raise OSError('short replay command write')
+                                    port.flush();replays_sent+=1
                         try:
                             captures.consume(event)
                         except ValueError as error:
@@ -121,8 +130,11 @@ def main():
     summary['capture_errors'] = errors
     if pre_reset_discarded:summary['pre_reset_lines_discarded']=pre_reset_discarded
     if args.replay_session:
-        summary.update(replay=True,replay_command_sent=replay_sent,replay_state=replay_state)
-        if not replay_sent or replay_state!='complete':errors.append('SD replay did not reach complete in this collection window')
+        summary.update(replay=True,replay_command_sent=replays_sent>0,replay_state=replay_state,
+                       replays_sent=replays_sent,replays_completed=replays_completed)
+        if not replays_sent or replay_state!='complete':errors.append('SD replay did not reach complete in this collection window')
+        if args.replay_count>1 and replays_completed<args.replay_count:
+            errors.append(f'{replays_completed} of {args.replay_count} SD replays completed')
     if errors:
         summary['status'] = 'fail'
     (args.output/'summary.json').write_text(json.dumps(summary, indent=2)+'\n')

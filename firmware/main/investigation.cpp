@@ -285,6 +285,7 @@ public:
     TcpCompletion completion_state;
     char* buffer=nullptr;
     std::unique_ptr<InvestigationFrames> frames;
+    int64_t last_send_us=0;
     Socket() {
         buffer=static_cast<char*>(heap_caps_malloc(32769,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
         if(buffer)frames.reset(new InvestigationFrames(buffer));
@@ -329,7 +330,7 @@ public:
         completion_state.cancel_notice=kind=="cancel";
         int sent=n<=32768?esp_transport_ws_send_raw(ws,static_cast<ws_transport_opcodes_t>(0x81),data,n,2000):-1;
         completion_state.cancel_notice=false;
-        int error=errno;bool ok=sent==static_cast<int>(n);
+        int error=errno;bool ok=sent==static_cast<int>(n);last_send_us=esp_timer_get_time()-started;
         if(!ok || kind!="capture_chunk") {
             auto* e=diagnostic_event("investigation_transport");
             cJSON_AddStringToObject(e,"message_type",kind.c_str());cJSON_AddNumberToObject(e,"requested_bytes",n);
@@ -417,7 +418,9 @@ bool capture_ack(Socket& s,InvestigationProtocol& p,const char* id,const char* s
     p.fail();return false;
 }
 // One reusable base64 scratch buffer; at most 4096 raw bytes per message.
-bool send_chunks(Socket& s,InvestigationProtocol& p,const char* type,const char* key,const char* id,const InvestigationCapture& c) {
+// Counts the chunks sent and the slowest chunk write (G-0001.02 upload baseline).
+bool send_chunks(Socket& s,InvestigationProtocol& p,const char* type,const char* key,const char* id,const InvestigationCapture& c,
+                 unsigned* chunks=nullptr,int64_t* max_us=nullptr) {
     auto* encoded=static_cast<unsigned char*>(malloc(5465));if(!encoded)return false;
     bool ok=true;
     for(size_t offset=0;ok && offset<c.size;offset+=4096) {
@@ -429,18 +432,29 @@ bool send_chunks(Socket& s,InvestigationProtocol& p,const char* type,const char*
         auto* o=p.envelope(type);cJSON_AddStringToObject(o,key,id);
         cJSON_AddNumberToObject(o,"offset",offset);cJSON_AddStringToObject(o,"data",reinterpret_cast<char*>(encoded));
         ok=s.send(o);
+        if(ok && chunks)++*chunks;
+        if(max_us)*max_us=std::max(*max_us,s.last_send_us);
     }
     free(encoded);return ok;
 }
+// ok means the Mac acknowledged the complete capture with its SHA-256.
 bool upload(Socket& s,InvestigationProtocol& p,const InvestigationCapture& c,unsigned index) {
     const char* id=p.capture_id(index);auto* o=p.envelope("capture_start");
     cJSON_AddItemToObject(o,"metadata",cJSON_Duplicate(c.metadata,true));
     if(!active(p)){cJSON_Delete(o);return false;}
-    if(!s.send(o) || !capture_ack(s,p,id,"start") || !send_chunks(s,p,"capture_chunk","capture_id",id,c))return false;
+    const int64_t started=esp_timer_get_time();unsigned chunks=0;int64_t max_chunk_us=0;
+    bool ok=s.send(o) && capture_ack(s,p,id,"start") && send_chunks(s,p,"capture_chunk","capture_id",id,c,&chunks,&max_chunk_us);
     const char* sha=cJSON_GetObjectItemCaseSensitive(c.metadata,"sha256")->valuestring;
-    o=p.envelope("capture_end");cJSON_AddStringToObject(o,"capture_id",id);cJSON_AddStringToObject(o,"sha256",sha);
-    if(!active(p)){cJSON_Delete(o);return false;}
-    return s.send(o) && capture_ack(s,p,id,"complete",sha);
+    if(ok) {
+        o=p.envelope("capture_end");cJSON_AddStringToObject(o,"capture_id",id);cJSON_AddStringToObject(o,"sha256",sha);
+        if(!active(p)){cJSON_Delete(o);ok=false;}
+        else ok=s.send(o) && capture_ack(s,p,id,"complete",sha);
+    }
+    auto* e=diagnostic_event("investigation_upload");cJSON_AddStringToObject(e,"capture_id",id);
+    cJSON_AddBoolToObject(e,"ok",ok);cJSON_AddNumberToObject(e,"bytes",c.size);cJSON_AddNumberToObject(e,"chunks",chunks);
+    cJSON_AddNumberToObject(e,"upload_us",esp_timer_get_time()-started);cJSON_AddNumberToObject(e,"max_chunk_us",max_chunk_us);
+    diagnostic_emit(e);
+    return ok;
 }
 
 // Spoken question: no per-stage ACKs; the transcript is the completion reply.
@@ -744,6 +758,7 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
              static_cast<unsigned long>(esp_random()),static_cast<unsigned long>(esp_random()),static_cast<unsigned long>(esp_random()));
     // Heap-owned reducer keeps fixed text/identity buffers off the 8 KiB main stack.
     auto p=std::make_unique<InvestigationProtocol>(boot,session);p->ask(now_ms());
+    stop_speech.store(false); // a Cancel during the last session's final speech must not silence this one
     Socket socket;
     std::unique_ptr<cJSON,decltype(&cJSON_Delete)> fixture(
         cJSON_ParseWithLength(reinterpret_cast<const char*>(fixture_start),fixture_end-fixture_start),cJSON_Delete);
@@ -818,7 +833,8 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         if(index==0) {
             show(*p,p->text(),replay?nullptr:"Confirm position B");
             // The guidance is spoken while Confirm is live; a tap stops the speech and goes on.
-            const int chosen=replay?0:speak(socket,*p,"r1",true);
+            // A replay speaks only when the service offers speech (G-0001.02 playback baseline).
+            const int chosen=speak(socket,*p,"r1",!replay);
             if(!active(*p))break;
             if((!replay && !chosen && !wait_action(socket,*p,"confirm_b")) || !p->adjust(replay?"SD replay of original recorded A/B adjustment; no new movement":
                                                                             "Moved to B as the guidance described; device held the same way"))break;
@@ -839,7 +855,7 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         "Incomplete. No valid comparison. Check the retained run evidence, then start a new investigation.";
     const std::string displayed=replay?std::string("SD REPLAY (no new acquisition)\n")+final_text:final_text;
     show(*p,displayed.c_str());
-    if(!replay && p->state()==InvestigationProtocol::State::Complete) {
+    if(p->state()==InvestigationProtocol::State::Complete) {
         stop_speech.store(false);final_speech.store(true);
         speak(socket,*p,"r2",false);
         final_speech.store(false);
@@ -848,6 +864,10 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
         set_running(false);show_series(0,false);
         bsp_display_unlock();
     }
+    // After running is cleared, so a host waiting on this can start the next replay.
+    auto* e=diagnostic_event("investigation_end");cJSON_AddStringToObject(e,"session_id",session);
+    cJSON_AddStringToObject(e,"state",p->state_name());cJSON_AddBoolToObject(e,"replay",replay!=nullptr);
+    diagnostic_emit(e);
 }
 
 void investigation_run(const char* boot) {run_investigation(boot);}

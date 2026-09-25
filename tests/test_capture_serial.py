@@ -39,6 +39,32 @@ class CaptureSerialTests(unittest.TestCase):
             manifest=json.loads((root/'run/manifest.json').read_text());self.assertTrue(manifest['replay'])
             summary=json.loads((root/'run/summary.json').read_text());self.assertEqual(summary['replay_state'],'complete')
 
+    def test_replay_count_resends_after_each_replay_ends(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);stop=root/'stop';port=MagicMock();session='ab-'+'a'*32
+            end=dict(event='investigation_end',session_id=session,state='complete',replay=True)
+            rows=[dict(event='boot'),dict(event='storage_ready',mounted=True),dict(event='wifi_address',ipv4='10.0.0.2'),
+                  dict(event='check',check='storage_http',result='pass'),
+                  dict(event='investigation_state',state='complete',session_id=session),end,
+                  dict(event='investigation_state',state='complete',session_id=session),end,
+                  dict(event='telemetry')]
+            chunks=[('TRICORDER '+json.dumps(dict(boot_id='boot',seq=i,device_us=i,**e))+'\n').encode() for i,e in enumerate(rows)]
+            def read(_):
+                if not chunks:stop.touch();return b''
+                return chunks.pop(0)
+            port.read.side_effect=read;port.write.side_effect=lambda data:len(data)
+            modules={'serial':SimpleNamespace(Serial=lambda:port),'esptool.reset':SimpleNamespace(HardReset=MagicMock())}
+            argv=['capture','--port','test','--output',str(root/'run'),'--stop-file',str(stop),'--reset',
+                  '--replay-session',session,'--replay-count','2','--spec-id','G-0001.02',
+                  '--spec-revision','2026-09-25','--workload','SD replay upload and playback baseline']
+            with patch.object(sys,'argv',argv),patch.dict(sys.modules,modules):main()
+            self.assertEqual(port.write.call_count,2)
+            summary=json.loads((root/'run/summary.json').read_text())
+            self.assertEqual((summary['replays_sent'],summary['replays_completed']),(2,2))
+            self.assertEqual(summary['capture_errors'],[])
+            # Collection stops once the last replay ends; the trailing row is never read.
+            self.assertEqual(len(chunks),1)
+
     def test_reset_truncated_previous_run_line_is_counted_not_failed(self):
         # --reset cuts the old firmware's line mid-write; it precedes our boot.
         for reset in (True, False):

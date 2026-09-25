@@ -129,6 +129,35 @@ class SpokenGuidanceServiceTests(unittest.IsolatedAsyncioTestCase):
         meta, _ = evidence('take-b', 500, acquisition_start_us=30000, acquisition_end_us=50000)
         await self.send('capture_start', metadata=meta)
 
+    async def test_replay_speaks_only_when_the_service_offers_speech(self):
+        # G-0001.02 baselines replay a saved pair repeatedly; each repeat is its own run.
+        hello = dict(version=1, type='hello', boot_id='boot', session_id='session',
+                     fixture=fixture().to_dict(), replay=True)
+        roots = []
+        for speaker in (FakeSpeaker(), None):
+            await self.service.close()
+            self.sent = []
+            async def send(message): self.sent.append(message)
+            self.service = MockSession(self.root / 'replay', send, replay_only=True, speaker=speaker)
+            await self.service.receive(hello)
+            roots.append(self.service.archive.root)
+            self.assertEqual(self.sent[0]['speech_output'], speaker and 'fake-tts')
+            await self.guided()
+            if speaker:
+                await self.send('speak', request_id='r1')
+                await self.service.drain_speech()
+                self.assertEqual((self.speech()[-1]['type'], self.speech()[-1]['status']), ('speech_end', 'complete'))
+            else:
+                with self.assertRaises(ProtocolError):
+                    await self.send('speak', request_id='r1')
+        self.assertEqual([r.name for r in roots], ['boot-session', 'boot-session-2'])
+        # A live session ID is never reused.
+        live = MockSession(self.root / 'live', send)
+        await live.receive({k: v for k, v in hello.items() if k != 'replay'})
+        await live.close()
+        with self.assertRaises(OSError):
+            await MockSession(self.root / 'live', send).receive({k: v for k, v in hello.items() if k != 'replay'})
+
     async def test_speech_is_capped_at_sixty_seconds(self):
         await self.open(FakeSpeaker(seconds=61), 'long')
         await self.guided()

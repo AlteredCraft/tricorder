@@ -114,7 +114,13 @@ class MockSession:
             try:fixture=Fixture(**message['fixture'])
             except (TypeError,KeyError) as error:raise ProtocolError('invalid fixture') from error
             boot,session=identity(message['boot_id']),identity(message['session_id'])
-            self.archive=RunArchive(self.root/f'{boot}-{session}',boot,session,fixture)
+            # A saved session may be replayed many times (G-0001.02 baselines); each
+            # replay is its own run. A live session ID is never reused.
+            name=f'{boot}-{session}'
+            if self.replay_only:
+                name=next(n for n in (name,*(f'{name}-{i}' for i in range(2,1000)))
+                          if not (self.root/n).exists())
+            self.archive=RunArchive(self.root/name,boot,session,fixture)
             if self.replay_only:
                 path=self.archive.root/'manifest.json'
                 manifest=json.loads(path.read_text())
@@ -127,7 +133,7 @@ class MockSession:
             self.phase='await_a'
             self.archive.record({'direction':'in','payload':message})
             speech=self.transcriber.name if self.transcriber and not self.replay_only else None
-            voice=self.speaker.name if self.speaker and not self.replay_only else None
+            voice=self.speaker.name if self.speaker else None
             await self.emit(self.envelope('ready',provider=self.provider.name,speech_to_text=speech,speech_output=voice))
             return
         require(self.archive is not None,'hello required')
@@ -350,7 +356,7 @@ class MockSession:
             require(key in self.spoken,'no speech to stop')
             if self.speaking==key:self.speech_stop.set()
             return
-        require(self.speaker is not None and not self.replay_only,'speech output unavailable')
+        require(self.speaker is not None,'speech output unavailable')
         require(self.phase in ('adjust','complete') and key==self.acknowledged and key not in self.spoken,
                 'speak needs the latest acknowledged reply, once')
         self.spoken.add(key)
@@ -478,6 +484,8 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--delay-seconds',type=float,default=0,help='Controlled mock-response delay, 0–30')
     parser.add_argument('--replay-only',action='store_true',help='Require labeled SD replay; no new physical trial')
+    parser.add_argument('--replay-speech',action='store_true',
+                        help='With --replay-only, also speak replayed guidance (--tts engine; G-0001.02 playback baseline)')
     parser.add_argument('--provider',choices=('mock','openai','openrouter'),default='mock')
     parser.add_argument('--model',help='Exact model ID; default OpenRouter openai/gpt-5.6-sol or direct gpt-4.1-mini')
     parser.add_argument('--env',type=Path,help='Local provider-key file; parsed literally, never sent to device')
@@ -492,7 +500,8 @@ def main():
         try:transcriber=load_transcriber(args.stt)
         except ImportError:parser.error('Local speech-to-text needs tools/stt-requirements.txt (Apple Silicon); or pass --stt none')
     speaker=None
-    if not args.replay_only and args.tts!='none':
+    if args.replay_speech and not args.replay_only:parser.error('--replay-speech needs --replay-only')
+    if (args.replay_speech or not args.replay_only) and args.tts!='none':
         try:speaker=text_to_speech.load_speaker(args.tts)
         except ImportError:parser.error('Pocket TTS needs tools/tts-requirements.txt; or pass --tts say or --tts none')
     async def run():

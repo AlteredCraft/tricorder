@@ -42,3 +42,15 @@ Re-sends a saved A/B pair through the same upload/guidance/compare path, for tra
 ```
 
 Replays are labeled in the UI and manifest and never count as physical trials.
+
+**Upload and playback baseline (G-0001.02 C1).** Replay one saved pair repeatedly, with the guidance spoken (quiet room: it plays at full volume). The collector starts each replay after the previous one ends; the assessor needs 60 s of each stream.
+
+```sh
+.tools/investigation-env/bin/python -m tools.investigation_service --host MAC_LAN_IP --port 8765 \
+  --output .local/runs/NEW/service --replay-only --replay-speech
+/usr/bin/caffeinate -is .tools/python-env/bin/python -m tools.capture_serial --port PORT \
+  --output .local/runs/NEW/serial --seconds 900 --reset --replay-session ab-<32hex> --replay-count 10 \
+  --spec-id G-0001.02 --spec-revision 2026-09-25 --workload 'SD replay upload and playback baseline'
+.tools/investigation-env/bin/python -m tools.transport_baseline_evidence .local/runs/NEW/serial \
+  --service .local/runs/NEW/service
+```
