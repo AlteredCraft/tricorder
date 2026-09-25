@@ -20,6 +20,7 @@ SPEC_REVISION = '2026-09-21'
 MAX_CAPTURE_BYTES = 48000 * 3 * 4 * 2
 MAX_TEXT = 2048
 # Spoken ask (ADR-0013): one question buffer, separate from measurement captures.
+COMPARISON_UNIT = 'median 100 ms level, digital dB ratio; not calibrated SPL'
 QUESTION_RATE_HZ = 16000
 MAX_QUESTION_FRAMES = QUESTION_RATE_HZ * 8
 MAX_QUESTIONS = 5
@@ -129,6 +130,18 @@ def verify_ingress(meta, raw):
     require(offset == meta['frames'], 'incomplete ingress frames')
 
 
+def median_dbfs(sums, length):
+    """Median power of 100 ms windows (per-window sums of squares) in dBFS; None when 0.
+
+    The comparison level: brief loud moments don't swing it. Matches the
+    device's level_median.h (two middle windows averaged in power).
+    """
+    powers = sorted(s / length for s in sums)
+    middle = len(powers) // 2
+    median = powers[middle] if len(powers) % 2 else (powers[middle-1] + powers[middle]) / 2
+    return 10*math.log10(median/32768**2) if median else None
+
+
 class CaptureEvidence:
     """Own checked raw bytes and snapshots; accessors never expose mutable state."""
     def __init__(self, metadata, raw, measurement):
@@ -163,15 +176,21 @@ class CaptureEvidence:
         verify_ingress(meta, raw)
         # Stream four-slot frames: do not expand a full capture to millions of Python objects.
         squared = peak = clipped = 0
-        for frame in struct.iter_unpack('<hhhh', raw):
+        windows = min(64, max(1, frames // 4800))
+        length = frames // windows
+        powers = [0] * windows
+        for index, frame in enumerate(struct.iter_unpack('<hhhh', raw)):
             value = frame[slot]
             squared += value * value
             peak = max(peak, abs(value))
             clipped += value in (-32768, 32767)
+            if index < windows * length:
+                powers[index // length] += value * value
         rms = math.sqrt(squared / frames)
         return cls(meta, raw, dict(frames=frames, rms_counts=rms, peak_counts=peak,
                                   clipped_samples=clipped,
-                                  rms_dbfs=20*math.log10(rms/32768) if rms else None))
+                                  rms_dbfs=20*math.log10(rms/32768) if rms else None,
+                                  median_dbfs=median_dbfs(powers, length)))
 
     @property
     def metadata(self):
@@ -266,17 +285,18 @@ class QuestionAudio:
 
 
 def comparison(captures):
-    """B/A, and A-again/A when the person returned to A after B (null without a repeat)."""
+    """B/A, and A-again/A when the person returned to A after B (null without a repeat),
+    on the median 100 ms level so brief loud moments don't decide the result."""
     if len(captures) == 1:
         return None
     values = [item['measurement'] for item in captures]
-    a = values[0]['rms_counts']
-    valid = all(v['rms_counts'] > 0 and not v['clipped_samples'] for v in values)
-    ratio = lambda v: 20*math.log10(v['rms_counts']/a) if valid else None
+    valid = all(v['rms_counts'] > 0 and not v['clipped_samples'] and v['median_dbfs'] is not None
+                for v in values)
+    ratio = lambda v: v['median_dbfs'] - values[0]['median_dbfs'] if valid else None
     return {'rms_delta_db': ratio(values[1]),
             'repeat_delta_db': ratio(values[2]) if len(values) == 3 else None,
             'status': 'measured' if valid else 'inconclusive',
-            'unit': 'digital RMS dB ratio; not calibrated SPL'}
+            'unit': COMPARISON_UNIT}
 
 
 MEASURED_NUMBER = re.compile(r'([-+\u2212]?\d+(?:\.\d+)?)\s*(dBFS|dB|kHz|Hz|counts?)\b')
@@ -353,7 +373,10 @@ def validate_request(request):
         settings = {key: getattr(fixture, key) for key in SETTINGS if key != 'format'}
         require(item.get('settings') == {'format':'pcm_s16le', **settings}, 'fixture settings mismatch')
         m = item.get('measurement', {})
-        require(set(m) == {'frames','rms_counts','peak_counts','clipped_samples','rms_dbfs'}, 'measurement fields')
+        require(set(m) == {'frames','rms_counts','peak_counts','clipped_samples','rms_dbfs','median_dbfs'},
+                'measurement fields')
+        require(m['median_dbfs'] is None or (type(m['median_dbfs']) in (int, float)
+                and math.isfinite(m['median_dbfs']) and m['median_dbfs'] <= 0), 'invalid median level')
         integer(m['frames'], fixture.frames, fixture.frames)
         integer(m['clipped_samples'], 0, fixture.frames)
         integer(m['peak_counts'], 0, 32768)
@@ -411,7 +434,7 @@ class MockProvider:
             text = 'A/B retained, but clipping or silence prevents a useful RMS ratio. Repeat with a suitable signal.'
         else:
             text = (f"B versus A ({captures[1]['capture_id']} / {captures[0]['capture_id']}): "
-                    f"{result['rms_delta_db']:+.2f} dB digital RMS change. ")
+                    f"{result['rms_delta_db']:+.2f} dB change in median level. ")
             if result['repeat_delta_db'] is None:
                 text += 'This is not calibrated sound pressure. Repeat the same positions to check consistency.'
             else:

@@ -14,6 +14,15 @@ import struct
 QUESTION_TYPES=('question_start','question_end','transcript','question_confirm')
 
 
+def median_level(samples):
+    """Median power of 100 ms windows in dBFS (None when 0), recomputed independently."""
+    windows=min(64,max(1,len(samples)//4800));length=len(samples)//windows
+    powers=sorted(math.fsum(x*x for x in samples[w*length:(w+1)*length])/length for w in range(windows))
+    middle=windows//2
+    median=powers[middle] if windows%2 else (powers[middle-1]+powers[middle])/2
+    return 10*math.log10(median/32768**2) if median else None
+
+
 def spoken_questions(root,rows,traffic):
     """Check the spoken-ask exchange (before Record A only) and return the A/B traffic."""
     def check(ok,reason):
@@ -97,6 +106,8 @@ def assess_run(root):
             values=dict(frames=len(selected),rms_counts=rms,peak_counts=max(abs(x) for x in selected),
                         clipped_samples=sum(x in (-32768,32767) for x in selected),
                         rms_dbfs=20*math.log10(rms/32768) if rms else None)
+            if 'median_dbfs' in traffic[len(traffic)-3]['measurements'][len(captures)]:
+                values['median_dbfs']=median_level(selected)
             captures.append(dict(capture_id=key,sha256=meta['sha256'],end_us=meta['acquisition_end_us'],measurement=values))
             check(messages[1]['capture_id']==messages[2]['capture_id']==messages[3]['capture_id']==key,'upload ACK identity')
             check(messages[1]['stage']=='start' and messages[3]['stage']=='complete','upload ACK stage')
@@ -134,10 +145,14 @@ def assess_run(root):
             if index==0:check(reply['comparison'] is None,'premature comparison')
             else:check(isinstance(turn.get('adjustment'),str) and turn['adjustment'].strip(),'adjustment missing')
         values=[c['measurement'] for c in captures]
-        valid=all(v['rms_counts']>0 and not v['clipped_samples'] for v in values)
-        ratio=lambda v:20*math.log10(v['rms_counts']/values[0]['rms_counts']) if valid else None
-        delta=ratio(values[1]);again=ratio(values[2]) if repeat else None
         comparison=traffic[-3]['comparison']
+        if comparison['unit'].startswith('median'):
+            valid=all(v['rms_counts']>0 and not v['clipped_samples'] and v['median_dbfs'] is not None for v in values)
+            ratio=lambda v:v['median_dbfs']-values[0]['median_dbfs'] if valid else None
+        else:  # runs saved before 2026-09-24 compared whole-capture RMS
+            valid=all(v['rms_counts']>0 and not v['clipped_samples'] for v in values)
+            ratio=lambda v:20*math.log10(v['rms_counts']/values[0]['rms_counts']) if valid else None
+        delta=ratio(values[1]);again=ratio(values[2]) if repeat else None
         same=lambda supplied,computed:supplied is None if computed is None else math.isclose(supplied,computed,rel_tol=1e-10,abs_tol=1e-10)
         check(comparison['status']==('measured' if valid else 'inconclusive'),'comparison status')
         check(same(comparison['rms_delta_db'],delta),'comparison ratio')

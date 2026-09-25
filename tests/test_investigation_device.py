@@ -295,6 +295,8 @@ int main() {
                    {'comparison':{'rms_delta_db':0}}, {'measurements':[]}]
         m=copy.deepcopy(good['measurements']);m[0]['rms_counts']=999
         mutations.append({'measurements':m})
+        m=copy.deepcopy(good['measurements']);m[0]['median_dbfs']+=1
+        mutations.append({'measurements':m})
         for patch in mutations:
             with self.subTest(patch=patch):
                 rows=self.run_commands(prefix+[self.receive({**good,**patch})])

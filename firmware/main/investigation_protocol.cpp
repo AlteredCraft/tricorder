@@ -42,7 +42,9 @@ bool close_number(const cJSON* a,const cJSON* b) {
         std::isfinite(b->valuedouble) && fabs(a->valuedouble-b->valuedouble)<=1e-8*std::fmax(1.,fabs(b->valuedouble));
 }
 bool measurement(const cJSON* m,unsigned frames) {
-    if(!cJSON_IsObject(m) || cJSON_GetArraySize(m)!=5 || !number(field(m,"frames"),frames) ||
+    auto* median=field(m,"median_dbfs");
+    if(!cJSON_IsObject(m) || cJSON_GetArraySize(m)!=6 ||
+       !(cJSON_IsNull(median) || (cJSON_IsNumber(median) && std::isfinite(median->valuedouble) && median->valuedouble<=0)) || !number(field(m,"frames"),frames) ||
        !integer(field(m,"peak_counts"),0,32768) || !integer(field(m,"clipped_samples"),0,frames))return false;
     auto* rms=field(m,"rms_counts");auto* peak=field(m,"peak_counts");auto* db=field(m,"rms_dbfs");
     if(!cJSON_IsNumber(rms) || !std::isfinite(rms->valuedouble) || rms->valuedouble<0 || rms->valuedouble>peak->valuedouble)return false;
@@ -190,24 +192,25 @@ bool InvestigationProtocol::receive(const char* wire,uint64_t now) {
                 cJSON_GetArraySize(ids)==static_cast<int>(count_) && cJSON_GetArraySize(values)==static_cast<int>(count_);
             for(unsigned i=0;ok && i<count_;++i) {
                 auto* m=cJSON_GetArrayItem(values,i);ok=str(cJSON_GetArrayItem(ids,i),capture_id(i)) && measurement(m,frames_);
-                for(const char* key:{"frames","rms_counts","peak_counts","clipped_samples","rms_dbfs"})
+                for(const char* key:{"frames","rms_counts","peak_counts","clipped_samples","rms_dbfs","median_dbfs"})
                     ok=ok && close_number(field(m,key),field(measurements_[i],key));
             }
             auto* compare=field(o,"comparison");
             if(count_==1)ok=ok && cJSON_IsNull(compare);
             else {
-                // B/A, and A-again/A when repeated; null when any capture clipped or was silent.
+                // B/A and A-again/A on the median 100 ms level; null when any
+                // capture clipped, was silent or has no median level.
                 bool valid=true;
                 for(unsigned i=0;i<count_;++i)valid=valid && field(measurements_[i],"rms_counts")->valuedouble>0 &&
-                    number(field(measurements_[i],"clipped_samples"),0);
-                const double a=field(measurements_[0],"rms_counts")->valuedouble;
+                    number(field(measurements_[i],"clipped_samples"),0) && cJSON_IsNumber(field(measurements_[i],"median_dbfs"));
+                auto level=[&](unsigned i){return field(measurements_[i],"median_dbfs")->valuedouble;};
                 auto matches=[&](const cJSON* v,unsigned index)->bool {
                     if(!valid || index>=count_)return cJSON_IsNull(v);
-                    return cJSON_IsNumber(v) && fabs(v->valuedouble-20*log10(field(measurements_[index],"rms_counts")->valuedouble/a))<1e-8;
+                    return cJSON_IsNumber(v) && fabs(v->valuedouble-(level(index)-level(0)))<1e-8;
                 };
                 ok=ok && cJSON_IsObject(compare) && cJSON_GetArraySize(compare)==4 &&
                     str(field(compare,"status"),valid?"measured":"inconclusive") &&
-                    str(field(compare,"unit"),"digital RMS dB ratio; not calibrated SPL") &&
+                    str(field(compare,"unit"),"median 100 ms level, digital dB ratio; not calibrated SPL") &&
                     matches(field(compare,"rms_delta_db"),1) && field(compare,"repeat_delta_db") &&
                     matches(field(compare,"repeat_delta_db"),2);
             }

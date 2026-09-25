@@ -4,6 +4,7 @@
 #include "diagnostic_events.h"
 #include "spectrum_display.h"
 #include "speech_filter.h"
+#include "level_median.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "mbedtls/sha256.h"
@@ -127,6 +128,8 @@ bool investigation_capture(const char* boot,const char* session,const char* id,
     cJSON_AddNumberToObject(v,"frames",frames);cJSON_AddNumberToObject(v,"rms_counts",rms);
     cJSON_AddNumberToObject(v,"peak_counts",peak);cJSON_AddNumberToObject(v,"clipped_samples",clipped);
     if(rms)cJSON_AddNumberToObject(v,"rms_dbfs",20*log10(rms/32768));else cJSON_AddNullToObject(v,"rms_dbfs");
+    const double median=median_window_dbfs(reinterpret_cast<const int16_t*>(out.bytes),frames,4,0);
+    if(std::isfinite(median))cJSON_AddNumberToObject(v,"median_dbfs",median);else cJSON_AddNullToObject(v,"median_dbfs");
     return true;
 }
 bool investigation_record_question(const char* boot,const char* session,const char* id,

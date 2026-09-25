@@ -1,4 +1,5 @@
 #include "investigation_capture.h"
+#include "level_median.h"
 #include "esp_heap_caps.h"
 #include "mbedtls/sha256.h"
 #include <cstdio>
@@ -44,5 +45,7 @@ bool investigation_load_capture(const char* base,const char* id,InvestigationCap
     cJSON_AddNumberToObject(out.measurement,"frames",144000);cJSON_AddNumberToObject(out.measurement,"rms_counts",rms);
     cJSON_AddNumberToObject(out.measurement,"peak_counts",peak);cJSON_AddNumberToObject(out.measurement,"clipped_samples",clipped);
     if(rms)cJSON_AddNumberToObject(out.measurement,"rms_dbfs",20*log10(rms/32768));else cJSON_AddNullToObject(out.measurement,"rms_dbfs");
+    const double median=median_window_dbfs(reinterpret_cast<const int16_t*>(out.bytes),144000,4,0);
+    if(std::isfinite(median))cJSON_AddNumberToObject(out.measurement,"median_dbfs",median);else cJSON_AddNullToObject(out.measurement,"median_dbfs");
     out.size=size;return true;
 }

@@ -47,6 +47,7 @@ class InvestigationCaptureTests(unittest.TestCase):
 #include "diagnostic_events.h"
 #include "spectrum_display.h"
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <string>
@@ -98,6 +99,7 @@ int main(int argc,char** argv){
    assert(cJSON_GetArraySize(cJSON_GetObjectItem(capture.metadata,"ingress_blocks"))==141);
    assert(cJSON_GetObjectItem(capture.measurement,"rms_counts")->valuedouble==1000);
    assert(cJSON_GetObjectItem(capture.measurement,"frames")->valuedouble==144000);
+   assert(fabs(cJSON_GetObjectItem(capture.measurement,"median_dbfs")->valuedouble-20*log10(1000.0/32768))<1e-9);
    // The display tap sees every 4th retained block and changes no evidence.
    { InvestigationCapture viewed;opens=closes=0;
      assert(investigation_capture("boot","session","take",cancel_flag,viewed,tap));
@@ -111,6 +113,7 @@ int main(int argc,char** argv){
    { InvestigationCapture replay;assert(investigation_load_capture(base.c_str(),"take",replay));
      assert(replay.size==capture.size && !memcmp(replay.bytes,capture.bytes,replay.size));
      assert(cJSON_GetObjectItem(replay.measurement,"rms_counts")->valuedouble==1000);
+     assert(fabs(cJSON_GetObjectItem(replay.measurement,"median_dbfs")->valuedouble-20*log10(1000.0/32768))<1e-9);
      assert(!investigation_load_capture(base.c_str(),"take",replay)); }
    { InvestigationCapture wrong;assert(!investigation_load_capture(base.c_str(),"other",wrong)); }
    file=fopen((base+".raw").c_str(),"r+b");fputc(capture.bytes[0]^1,file);fclose(file);
