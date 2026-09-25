@@ -77,6 +77,15 @@ class FaultRunTests(unittest.TestCase):
         hung = [e for e in events if e['event'] != 'investigation_end' or e['state'] != 'offline']
         self.assertEqual(assess(hung[:3], host)['status'], 'fail')  # the stalled session never ended
 
+    def test_a_session_that_rides_out_the_pause_counts_as_recovered(self):
+        events = [ev('boot', 0), ev('investigation_state', 1000, state='ready_a', session_id='s'),
+                  dict(end(2000, 'complete'), host_receipt_ns=20_000_000_000),
+                  dict(ev('investigation_state', 3000, state='ready_a', session_id='t'), host_receipt_ns=45_000_000_000),
+                  dict(end(4000, 'complete'), host_receipt_ns=60_000_000_000)]
+        host = [dict(action='service_pause', host_ns=5_000_000_000), dict(action='service_resume', host_ns=15_000_000_000)]
+        r = assess(events, host)
+        self.assertEqual((r['status'], r['recovery_s'], r['survived_pauses']), ('pass', [], 1), r['errors'])
+
     def test_a_run_where_no_session_connects_fails(self):
         events = [ev('boot', 0), ev('investigation_state', 1000, state='offline', session_id='s'), end(2000, 'offline')]
         r = assess(events)

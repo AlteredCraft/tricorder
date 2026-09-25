@@ -6,8 +6,8 @@
 - SD archives pass (captures retained intact).
 - Cancel (G-0001.04 C3): the tap to the playback stop, p95 <= 150 ms, on the
   device clock; after the tap the session sends nothing but cancel/speech_stop.
-- Recovery: after each service resume, a new session reaches ready_a within
-  5 s. Both times are on the Mac clock (resume time and the event's
+- Recovery: after each service resume, either the paused session completes,
+  or a new session reaches ready_a within 5 s. Both times are on the Mac clock (resume time and the event's
   host_receipt_ns); device and Mac clocks are never subtracted.
 """
 import argparse
@@ -67,12 +67,19 @@ def assess(events, host_actions=None, *, stop_p95_ms=150, recovery_limit_s=5, ui
     if old_actions:
         errors.append(f'{old_actions} messages from a cancelled session after its cancel')
 
-    recovery = []
+    recovery, survived_pauses = [], 0
     for action in host_actions or []:
         if action['action'] != 'service_resume':
             continue
         ready = next((e for e in events if e.get('event') == 'investigation_state' and e.get('state') == 'ready_a'
                       and e['host_receipt_ns'] >= action['host_ns']), None)
+        # A session that rides out the pause and completes needs no fresh session.
+        survived = next((e for e in events if e.get('event') == 'investigation_end'
+                         and e['host_receipt_ns'] >= action['host_ns']), None)
+        if survived is not None and survived['state'] == 'complete' and (
+                ready is None or survived['host_receipt_ns'] <= ready['host_receipt_ns']):
+            survived_pauses += 1
+            continue
         if ready is None:
             errors.append('no new session reached ready_a after a service resume')
             continue
@@ -84,7 +91,7 @@ def assess(events, host_actions=None, *, stop_p95_ms=150, recovery_limit_s=5, ui
                 sessions=dict(ended=len(ends), end_states=dict(Counter(e['state'] for e in ends))),
                 ui=dict(worst_p95_ms=max((e['ui_p95_ms'] for e in ends), default=None),
                         max_ms=max((e['ui_max_us'] for e in ends), default=0) / 1000),
-                storage=storage, cancel=cancel, recovery_s=recovery,
+                storage=storage, cancel=cancel, recovery_s=recovery, survived_pauses=survived_pauses,
                 scope='Console taps through the LVGL click handlers; service stalls/outages by SIGSTOP/SIGCONT '
                       'of the Mac service process.')
 
