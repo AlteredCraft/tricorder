@@ -272,3 +272,12 @@ bool network_connect_saved(const char* ssid,const char* password) {
     for(size_t i=0;i<sizeof(credentials);++i)p[i]=0;
     return ok;
 }
+
+bool network_set_power_save(bool on) {
+    const esp_err_t result=esp_wifi_set_ps(on?WIFI_PS_MIN_MODEM:WIFI_PS_NONE);
+    wifi_ps_type_t mode=WIFI_PS_MIN_MODEM;const esp_err_t read=esp_wifi_get_ps(&mode);
+    auto* e=diagnostic_event("wifi_power_save");cJSON_AddBoolToObject(e,"requested_on",on);
+    cJSON_AddStringToObject(e,"result",esp_err_to_name(result));
+    cJSON_AddNumberToObject(e,"mode",read==ESP_OK?static_cast<int>(mode):-1);diagnostic_emit(e);
+    return result==ESP_OK;
+}
