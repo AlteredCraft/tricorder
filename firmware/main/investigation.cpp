@@ -331,7 +331,10 @@ public:
         // A clean connection may notify a local cancel. Never append another
         // frame after any failed/partial write, including cancellation mid-frame.
         completion_state.cancel_notice=kind=="cancel";
-        int sent=n<=32768?esp_transport_ws_send_raw(ws,static_cast<ws_transport_opcodes_t>(0x81),data,n,2000):-1;
+        // Wi-Fi stalls of 3-4 s (TCP retransmission backoff) failed 2 of 24 uploads with a
+        // 2 s budget (20260925-ten-minute-1). Cancel still interrupts the write (ADR-0011).
+        constexpr int send_budget_ms=10000;
+        int sent=n<=32768?esp_transport_ws_send_raw(ws,static_cast<ws_transport_opcodes_t>(0x81),data,n,send_budget_ms):-1;
         completion_state.cancel_notice=false;
         int error=errno;bool ok=sent==static_cast<int>(n);last_send_us=esp_timer_get_time()-started;
         if(!ok || kind!="capture_chunk") {
