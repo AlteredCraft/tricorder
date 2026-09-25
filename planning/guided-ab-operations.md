@@ -43,7 +43,7 @@ Re-sends a saved A/B pair through the same upload/guidance/compare path, for tra
 
 Replays are labeled in the UI and manifest and never count as physical trials.
 
-**Upload and playback baseline (G-0001.02 C1).** Replay one saved pair repeatedly, with the guidance spoken (quiet room: it plays at full volume). The collector starts each replay after the previous one ends; the assessor needs 60 s of each stream.
+**Upload and playback baseline (G-0001.02 C1).** Replay one saved pair repeatedly, with the guidance spoken. Replay speech plays muted: the codec still takes every sample at the normal rate, so no sound is needed. The collector starts each replay after the previous one ends; the assessor needs 60 s of each stream.
 
 ```sh
 .tools/investigation-env/bin/python -m tools.investigation_service --host MAC_LAN_IP --port 8765 \

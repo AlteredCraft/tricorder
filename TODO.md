@@ -2,7 +2,6 @@
 
 Things that need the user's hands or equipment. Wait for a prepared procedure before starting any of them.
 
-- **Playback baseline:** about 6 minutes of replayed guidance at full volume, run from the Mac; say when you are somewhere that is fine (G-0001.02).
 - **Cold starts:** ten real power-off/on cycles (G-0001.01).
 - **Speaker level:** spoken guidance at full volume was fine indoors (2026-09-24); recheck in a noisy place.
 - **SD power loss:** interrupted-write recovery test (G-0001.05).

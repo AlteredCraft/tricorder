@@ -4,6 +4,7 @@
 #include "investigation_capture.h"
 #include "transport_write.h"
 #include "speech_stream.h"
+#include "speech_receive.h"
 #include "audio_devices.h"
 #include "test_storage.h"
 #include "diagnostic_events.h"
@@ -339,15 +340,17 @@ public:
         }
         cJSON_free(data);return ok;
     }
-    // 0 idle, 1 complete message, -1 protocol/connection error. No network
-    // operation runs under the display lock. Ping/pong handled by pinned IDF.
+    // 0 nothing waiting, 1 complete message, 2 part of a message read,
+    // -1 protocol/connection error. No network operation runs under the
+    // display lock. Ping/pong handled by pinned IDF.
     int poll(int timeout_ms=20) {
         int ready=esp_transport_poll_read(ws,timeout_ms);if(ready<=0)return ready;
         char chunk[1024];int n=esp_transport_read(ws,chunk,sizeof(chunk),1000);
         if(n<0)return -1;
         if(!n)return 0;
-        return frames->append(esp_transport_ws_get_read_opcode(ws),esp_transport_ws_get_read_payload_len(ws),
-                              esp_transport_ws_get_fin_flag(ws),chunk,n);
+        const int result=frames->append(esp_transport_ws_get_read_opcode(ws),esp_transport_ws_get_read_payload_len(ws),
+                                        esp_transport_ws_get_fin_flag(ws),chunk,n);
+        return result==0?2:result;
     }
     void consumed(){frames->reset();}
 };
@@ -473,7 +476,8 @@ bool upload_question(Socket& s,InvestigationProtocol& p,const InvestigationCaptu
 // A tap on an action (when allowed), Cancel, or a failed stream stops playback;
 // the stream is still read to its speech_end so the next exchange starts clean,
 // except after a session cancel, when the Mac drops it. Returns the tapped action.
-int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions_allowed) {
+// A replay plays muted (G-0001.02 baseline): same codec writes at the same rate.
+int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions_allowed,bool audible=true) {
     using S=InvestigationProtocol::State;
     constexpr size_t capacity=60*24000,block=480,prebuffer=12000;
     std::unique_ptr<int16_t,decltype(&free)> audio(static_cast<int16_t*>(
@@ -485,7 +489,7 @@ int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions
     auto speaker=diagnostic_speaker();
     esp_codec_dev_sample_info_t format{};format.sample_rate=48000;format.channel=2;format.bits_per_sample=16;
     const bool open=speaker && esp_codec_dev_open(speaker,&format)==ESP_OK &&
-        esp_codec_dev_set_out_vol(speaker,100)==ESP_OK && esp_codec_dev_set_out_mute(speaker,false)==ESP_OK;
+        esp_codec_dev_set_out_vol(speaker,100)==ESP_OK && esp_codec_dev_set_out_mute(speaker,!audible)==ESP_OK;
     const int64_t started=esp_timer_get_time();int64_t first_audio=0;
     const uint64_t deadline=now_ms()+90000;
     bool playing=false,stopped=!open,stop_sent=false,failed=false;
@@ -511,13 +515,15 @@ int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions
         if(stream.ended() && (stopped || played>=stream.frames()))break;
         if(now_ms()>=deadline){failed=true;break;}
         if(!stream.ended()) {
-            const int result=s.poll(playing && !stopped?0:20);
+            // Up to one whole message per block (speech_receive.h); only the first read may wait.
+            int timeout=playing && !stopped?0:20;
+            const int result=speech_receive([&]{const int r=s.poll(timeout);timeout=0;return r;},8);
             if(result<0){p.disconnect();failed=true;break;}
             if(result==1) {
                 auto* m=InvestigationProtocol::parse(s.buffer);s.consumed();
                 const int v=stream.receive(m);cJSON_Delete(m);
                 if(v<0){p.fail();failed=true;break;}
-                continue;
+                if(!playing)continue;
             }
         }
         if(stopped)continue;
@@ -834,7 +840,7 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
             show(*p,p->text(),replay?nullptr:"Confirm position B");
             // The guidance is spoken while Confirm is live; a tap stops the speech and goes on.
             // A replay speaks only when the service offers speech (G-0001.02 playback baseline).
-            const int chosen=speak(socket,*p,"r1",!replay);
+            const int chosen=speak(socket,*p,"r1",!replay,!replay);
             if(!active(*p))break;
             if((!replay && !chosen && !wait_action(socket,*p,"confirm_b")) || !p->adjust(replay?"SD replay of original recorded A/B adjustment; no new movement":
                                                                             "Moved to B as the guidance described; device held the same way"))break;
@@ -857,7 +863,7 @@ static void run_investigation(const char* boot,const char* replay=nullptr) {
     show(*p,displayed.c_str());
     if(p->state()==InvestigationProtocol::State::Complete) {
         stop_speech.store(false);final_speech.store(true);
-        speak(socket,*p,"r2",false);
+        speak(socket,*p,"r2",false,!replay);
         final_speech.store(false);
     }
     if(bsp_display_lock(1000)) {
