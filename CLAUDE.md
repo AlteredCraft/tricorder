@@ -9,6 +9,7 @@
 ## Evidence
 
 - Runs live in private `.local/runs/YYYYMMDD-topic/` (`manifest.json`, `events.jsonl`, `captures/`, `summary.json`). Cite them by directory name, plus the commit SHA.
+- `tools/capture_serial.py` writes boot-scoped, sequence-numbered device events and hash-checked raw media; `summary.json` marks each named check pass/fail/inconclusive. Use device monotonic time for durations; don't subtract host and device clocks.
 - **Commit before flashing a trial build.** The SHA identifies the build.
 
 ## Physical trials

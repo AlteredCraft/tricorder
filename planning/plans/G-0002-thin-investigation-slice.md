@@ -2,18 +2,18 @@
 
 **Milestone:** [M-0001](../milestones.md#m-0001-validate-the-handheld-investigation)
 
-**Outcome:** A person holding the Tricorder completes an ask → measure → feedback → adjust → compare loop, gets guidance grounded in their actual A/B captures, and judges whether it is useful enough to harden.
+**Status:** Met
 
-**Driver:** User request (2026-09-21) to validate usefulness before more diagnostic work.
+**Outcome:** A person holding the Tricorder completes an ask → measure → feedback → adjust → compare loop, gets guidance grounded in their actual A/B captures, and judges whether it is useful enough to harden.
 
 **Measure:** Handheld runs with the mock service and then a live provider complete the loop with correct evidence references and visible failure states, and the operator rates them. A mock-only demo does not count. A negative usefulness result is recorded as a result.
 
-**Relationship to G-0001:** Sibling goal. It shares one implementation and does not replace or relax G-0001's checks.
+**Relationship to G-0001:** Shares one implementation; does not relax G-0001's checks.
 
 **Specs:**
 
-| Spec | Status | State |
-| --- | --- | --- |
-| [.01 Guided A/B vertical slice](G-0002.01-guided-ab-slice.md) | Partial | Mock loop, failure handling, SD archive/replay, live text model, the instrument view (live spectrum, A/B overlay), a context photo, a steadiness indicator and a spoken question (local speech-to-text, confirmed on screen) and operator-owned A/B with a repeat of A work. Three rated live loops: responsiveness 4, usefulness 3 (inconclusive against repeat variation); the comparison now uses a median level, and the user judged the loop good enough to move on without re-rating. Spoken guidance (Pocket TTS "alba") works on the device. |
+| Spec | Status |
+| --- | --- |
+| [.01 Guided A/B vertical slice](G-0002.01-guided-ab-slice.md) | Partial |
 
-**Status:** Met (2026-09-24). The user completed live loops with spoken question and guidance and judged the loop useful enough to harden. Usefulness was rated 3 of 5 before the median-level change, which later gave a conclusive live result.
+**Result:** 2026-09-24 — Live loops with spoken question and guidance: responsiveness 4, usefulness 3 (before the median-level change). The user judged the loop useful enough to harden. Evidence: `20260924-live-loops`, `20260924-spoken-guidance/trial` · `c039103`.
