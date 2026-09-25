@@ -70,8 +70,7 @@ void console_task(void*) {
                 const bool parsed=sscanf(line+strlen(set),"%31s %d",name,&value)==2 && (value==0 || value==1);
                 auto* e=diagnostic_event("console_set");cJSON_AddStringToObject(e,"name",name);
                 cJSON_AddNumberToObject(e,"value",value);
-                const bool accepted=parsed && (!strcmp(name,"wifi_ps")?network_set_power_save(value==1):investigation_set(name,value==1));
-                cJSON_AddBoolToObject(e,"accepted",accepted);diagnostic_emit(e);
+                cJSON_AddBoolToObject(e,"accepted",parsed && investigation_set(name,value==1));diagnostic_emit(e);
             }
             constexpr const char* tap="TRICORDER_TAP ";
             if(!overflow && !strncmp(line,tap,strlen(tap))) {

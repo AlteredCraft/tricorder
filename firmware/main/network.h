@@ -10,5 +10,3 @@ void network_ui_open();
 bool network_prepare(unsigned timeout_ms);
 
 bool network_connect_saved(const char* ssid, const char* password);
-// Diagnostic: Wi-Fi modem power save on (IDF default, min modem) or off. False on error.
-bool network_set_power_save(bool on);
