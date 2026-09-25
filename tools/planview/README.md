@@ -16,7 +16,7 @@ uvx planview path/to/planning
 uvx --from git+https://github.com/<owner>/<repo>#subdirectory=tools/planview planview planning
 ```
 
-Options: `--port` (default 8420, 0 = any free port), `--host` (default 127.0.0.1), `--open`, `--repo-url` (for commit and issue links; defaults to the `origin` remote), `--base` (where relative links resolve; defaults to the enclosing git repo).
+Options: `--port` (default 8420, 0 = any free port), `--host` (default 127.0.0.1), `--allow-host NAME` (answer that Host name too; needed to reach it by a LAN name or IP when binding beyond loopback), `--open`, `--repo-url` (for commit and issue links; defaults to the `origin` remote), `--base` (where relative links resolve; defaults to the enclosing git repo).
 
 For scripts and agents:
 
@@ -39,7 +39,7 @@ The parser goes by the framework's conventions, not by paths:
 - Any `*.md` whose H1 is `# G-NNNN. Title` is a goal (`**Field:**` lines plus a spec table). `# G-NNNN.nn. Title` is a spec (plain `Key: value` header lines, `## Checks` with `N. [verdict] …`, `## Observed` with `- YYYY-MM-DD — …` entries, and a numbered `## Open` list). `# ADR-NNNN. Title` is an ADR, with a `Status: … · Decided: …` line.
 - Files named `*template*` are templates. Everything else is a reference doc.
 
-Relationships come from links: a parent's table rows are its children, a spec's `ADRs:` and `Successor:` header links, and backlinks from every other doc. Hidden directories (`.git`, `.local`, …) are never read or served.
+Relationships come from links: a parent's table rows are its children, a spec's `ADRs:` and `Successor:` header links, and backlinks from every other doc. Hidden directories (`.git`, `.local`, …) are never read or served. Requests for any Host name other than loopback, the bind address or an `--allow-host` name are refused, which blocks DNS rebinding. Linked non-markdown files are served as plain text, except raster images, with `nosniff` and a sandboxing CSP. Links render only for `http`, `https` and `mailto`.
 
 ## Develop
 

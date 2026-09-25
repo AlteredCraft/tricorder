@@ -16,6 +16,11 @@ class ServerTest(unittest.TestCase):
         (base / ".local").mkdir()
         (base / ".local" / "secret.md").write_text("# secret\n")
         (base / "planning" / "data.json").write_text('{"a": 1}')
+        (base / "planning" / "pic.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
+        (base / "planning" / "pic.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (base / "planning" / "links.md").write_text(
+            "# Links\n\n[js](javascript:alert(1)) [data](data:text/html,x) [web](https://example.com)"
+            " [mail](mailto:a@b.c) [root](/README.md)\n")
         cls.server = make_server(base / "planning", "127.0.0.1", 0, repo="https://github.com/o/r")
         cls.url = f"http://127.0.0.1:{cls.server.server_address[1]}"
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
@@ -29,6 +34,14 @@ class ServerTest(unittest.TestCase):
     def get(self, path):
         with urllib.request.urlopen(self.url + path) as res:
             return res.status, res.read().decode()
+
+    def head(self, path, host=None):
+        req = urllib.request.Request(self.url + path, headers={"Host": host} if host is not None else {})
+        try:
+            with urllib.request.urlopen(req) as res:
+                return res.status, res.headers
+        except urllib.error.HTTPError as err:
+            return err.code, err.headers
 
     def status(self, path):
         try:
@@ -63,6 +76,28 @@ class ServerTest(unittest.TestCase):
         _, body = self.get("/api/plan.json")
         data = json.loads(body)
         self.assertEqual(data["milestones"][0]["id"], "M-0001")
+
+    def test_link_schemes(self):
+        _, body = self.get("/doc/planning/links.md")
+        self.assertNotIn('href="javascript:', body)
+        self.assertNotIn('href="data:', body)
+        self.assertIn('href="https://example.com"', body)
+        self.assertIn('href="mailto:a@b.c"', body)
+        self.assertIn('href="/doc/README.md"', body)
+
+    def test_raw_never_serves_active_content(self):
+        status, headers = self.head("/raw/planning/pic.svg")
+        self.assertEqual((status, headers["Content-Type"]), (200, "text/plain; charset=utf-8"))
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("sandbox", headers["Content-Security-Policy"])
+        self.assertEqual(self.head("/raw/planning/pic.png")[1]["Content-Type"], "image/png")
+
+    def test_rejects_foreign_host_header(self):
+        port = self.server.server_address[1]
+        for host in ("evil.example", f"evil.example:{port}", f"user@localhost:{port}", ""):
+            self.assertEqual(self.head("/api/plan.json", host)[0], 403, host)
+        for host in (f"localhost:{port}", f"127.0.0.1:{port}", "localhost"):
+            self.assertEqual(self.head("/api/plan.json", host)[0], 200, host)
 
     def test_refuses_hidden_and_escaping_paths(self):
         for path in ("/doc/.local/secret.md", "/raw/.git/config", "/doc/../../etc/passwd",

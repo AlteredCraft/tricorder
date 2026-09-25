@@ -36,13 +36,17 @@ def _hold(links: Links, fragment: str) -> str:
     return f"\x00{len(links.stash) - 1}\x00"
 
 
+PLACEHOLDER_RE = re.compile(r"\x00(\d+)\x00")
+
+
 def _restore(text: str, links: Links) -> str:
-    while "\x00" in text:
-        text = re.sub(r"\x00(\d+)\x00", lambda m: links.stash[int(m.group(1))], text)
+    while PLACEHOLDER_RE.search(text):
+        text = PLACEHOLDER_RE.sub(lambda m: links.stash[int(m.group(1))], text)
     return text
 
 
 def inline(text: str, links: Links) -> str:
+    text = text.replace("\x00", "")  # NUL marks placeholders; never let input forge one
     def code(m: re.Match) -> str:
         body = m.group(1)
         url = links.commit(body) if SHA_RE.match(body) and re.search("[a-f]", body) else None

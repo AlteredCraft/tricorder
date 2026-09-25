@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 import subprocess
 import threading
 from http import HTTPStatus
@@ -16,6 +17,11 @@ from . import views
 from .model import Plan, find_base, load
 
 MAX_RAW_BYTES = 2_000_000
+# Raw files are served as plain text unless they're a raster image: SVG, HTML and
+# the like never run as active content on this origin.
+RAW_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+RAW_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox; default-src 'none'"}
+LOOPBACK_NAMES = {"localhost", "127.0.0.1", "::1"}
 
 
 def repo_url(root: Path) -> str | None:
@@ -65,22 +71,45 @@ class State:
 
 class Handler(BaseHTTPRequestHandler):
     state: State  # set by make_server
+    allowed_hosts: frozenset[str] = frozenset(LOOPBACK_NAMES)
     quiet = True
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: D401
         if not self.quiet:
             super().log_message(fmt, *args)
 
-    def send(self, body: str | bytes, ctype: str = "text/html; charset=utf-8", status: int = 200) -> None:
+    def send(self, body: str | bytes, ctype: str = "text/html; charset=utf-8", status: int = 200,
+             headers: dict[str, str] | None = None) -> None:
         data = body.encode("utf-8") if isinstance(body, str) else body
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        for key, value in (headers or {}).items():
+            if key != "X-Content-Type-Options":
+                self.send_header(key, value)
         self.end_headers()
         self.wfile.write(data)
 
+    def host_allowed(self) -> bool:
+        """Only answer requests addressed to a name we serve (blocks DNS rebinding)."""
+        host = (self.headers.get("Host") or "").strip().lower()
+        if not host or "@" in host:
+            return False
+        if host.startswith("["):
+            name, sep, rest = host[1:].partition("]")
+            if not sep or (rest and not re.fullmatch(r":\d+", rest)):
+                return False
+        else:
+            name, _, port = host.partition(":")
+            if port and not port.isdigit():
+                return False
+        return name in self.allowed_hosts
+
     def do_GET(self) -> None:  # noqa: N802
+        if not self.host_allowed():
+            return self.send("forbidden host", "text/plain; charset=utf-8", HTTPStatus.FORBIDDEN)
         url = urlsplit(self.path)
         path, query = unquote(url.path), parse_qs(url.query)
         try:
@@ -127,10 +156,10 @@ class Handler(BaseHTTPRequestHandler):
         target = self.state.base / clean if clean else None
         if not target or not target.is_file() or target.stat().st_size > MAX_RAW_BYTES:
             return self.send("not found", "text/plain", HTTPStatus.NOT_FOUND)
-        ctype = mimetypes.guess_type(target.name)[0] or "text/plain"
-        if ctype.startswith("text/") or ctype in ("application/json",):
+        ctype = mimetypes.guess_type(target.name)[0]
+        if ctype not in RAW_IMAGE_TYPES:
             ctype = "text/plain; charset=utf-8"
-        self.send(target.read_bytes(), ctype)
+        self.send(target.read_bytes(), ctype, headers=RAW_HEADERS)
 
     def static(self, name: str) -> None:
         if name not in ("app.css", "app.js"):
@@ -141,7 +170,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def make_server(root: Path, host: str, port: int, base: Path | None = None, repo: str | None = None,
-                verbose: bool = False) -> ThreadingHTTPServer:
+                verbose: bool = False, allow_hosts: list[str] | None = None) -> ThreadingHTTPServer:
+    """`allow_hosts`: extra Host names to answer (needed when binding beyond loopback)."""
     state = State(root, base, repo)
-    handler = type("PlanHandler", (Handler,), {"state": state, "quiet": not verbose})
+    names = set(LOOPBACK_NAMES) | {h.strip("[]").lower() for h in allow_hosts or []}
+    if host not in ("", "0.0.0.0", "::"):
+        names.add(host.strip("[]").lower())
+    attrs = {"state": state, "quiet": not verbose, "allowed_hosts": frozenset(names)}
+    handler = type("PlanHandler", (Handler,), attrs)
     return ThreadingHTTPServer((host, port), handler)

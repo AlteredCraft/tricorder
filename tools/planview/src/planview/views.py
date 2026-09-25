@@ -12,6 +12,7 @@ from .model import WORD_LIMITS, Doc, Entry, Milestone, Plan, resolve
 from .render import Links, inline, render
 
 esc = html.escape
+SAFE_SCHEME_RE = re.compile(r"^(https?|mailto):", re.I)
 NEEDS = ' <span class="badge b-needs">needs you</span>'
 
 
@@ -43,7 +44,7 @@ class Site:
             link = resolve(target, doc_path, self.plan.base)
             if link.path is None:
                 if re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I):
-                    return target
+                    return target if SAFE_SCHEME_RE.match(target) else None
                 return f"#{link.anchor}" if target.startswith("#") else None
             if not (self.plan.base / link.path).exists():
                 return None

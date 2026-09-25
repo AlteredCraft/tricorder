@@ -50,6 +50,10 @@ class RenderTest(unittest.TestCase):
         self.assertIn('<p class="fields">Status: Proposed<br>Goal: G-0001</p>', out)
         self.assertIn("<p>plain wrapped: text</p>", out)
 
+    def test_stray_nul_bytes_cannot_hang(self):
+        self.assertIn("ab", render("a\x00b"))
+        self.assertIn("x999y", render("x\x00999\x00y"))
+
     def test_comment(self):
         self.assertIn('class="comment"', render("<!-- note -->"))
 

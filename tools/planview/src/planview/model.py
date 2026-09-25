@@ -249,8 +249,11 @@ def resolve(href: str, doc_path: str, base: Path) -> Link:
     target, _, anchor = href.partition("#")
     if not target or re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I):
         return Link(text="", href=href, path=None, anchor=anchor)
-    joined = os.path.normpath(os.path.join(os.path.dirname(doc_path), target))
-    if joined.startswith(".."):
+    if target.startswith("/"):  # repository-root-relative, as GitHub renders it
+        joined = os.path.normpath(target.lstrip("/"))
+    else:
+        joined = os.path.normpath(os.path.join(os.path.dirname(doc_path), target))
+    if joined.startswith("..") or os.path.isabs(joined):
         return Link(text="", href=href, path=None, anchor=anchor)
     return Link(text="", href=href, path=Path(joined).as_posix(), anchor=anchor)
 

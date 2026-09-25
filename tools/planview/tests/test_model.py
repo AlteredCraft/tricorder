@@ -21,6 +21,14 @@ class StatusTest(unittest.TestCase):
         self.assertEqual(slug("Open"), "open")
 
 
+class ResolveTest(unittest.TestCase):
+    def test_root_relative_links_resolve_against_base(self):
+        from planview.model import resolve
+        self.assertEqual(resolve("/README.md#x", "planning/plans/a.md", Path("/repo")).path, "README.md")
+        self.assertEqual(resolve("/../etc/passwd", "planning/a.md", Path("/repo")).path, None)
+        self.assertEqual(resolve("../../../etc/passwd", "planning/a.md", Path("/repo")).path, None)
+
+
 class EntryTest(unittest.TestCase):
     def test_tags_commits_adrs(self):
         e = parse_entry("- 2026-09-21 — [C2 pass] [C3 pass] Loops. Evidence: `20260921-dev` · `7bd5211`, `fbf930d`. → ADR-0010")

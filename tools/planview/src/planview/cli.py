@@ -24,6 +24,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--port", type=int, default=8420, help="port (default 8420; 0 picks a free one)")
     ap.add_argument("--base", type=Path, help="directory links resolve against (default: enclosing git repo)")
     ap.add_argument("--repo-url", help="https URL for commit/issue links (default: git remote origin)")
+    ap.add_argument("--allow-host", action="append", default=[], metavar="NAME",
+                    help="also answer requests for this Host name (repeatable; loopback names always work)")
     ap.add_argument("--open", action="store_true", help="open a browser tab")
     ap.add_argument("--check", action="store_true", help="print rule issues and exit 1 if any error or warning")
     ap.add_argument("--json", action="store_true", help="print the parsed plan as JSON and exit")
@@ -50,10 +52,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if bad else 0
 
     base = args.base or find_base(root)
-    server = make_server(root, args.host, args.port, args.base, args.repo_url or repo_url(base), args.verbose)
+    server = make_server(root, args.host, args.port, args.base, args.repo_url or repo_url(base), args.verbose,
+                         args.allow_host)
     host, port = server.server_address[:2]
     url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0') else host}:{port}/"
     print(f"planview: serving {root} at {url} (Ctrl-C to stop)", file=sys.stderr)
+    if host in ("0.0.0.0", "::") and not args.allow_host:
+        print("planview: note: only loopback Host names are answered; add --allow-host NAME for LAN access",
+              file=sys.stderr)
     if args.open:
         webbrowser.open(url)
     try:
