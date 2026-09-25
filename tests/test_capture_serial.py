@@ -94,6 +94,24 @@ class CaptureSerialTests(unittest.TestCase):
             manifest=json.loads((root/'run/manifest.json').read_text())
             self.assertIn('LVGL click handlers',manifest['input_scope'])
 
+    def test_console_command_is_sent_once_after_readiness(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);stop=root/'stop';port=MagicMock()
+            rows=[dict(event='boot'),dict(event='wifi_address',ipv4='10.0.0.2'),
+                  dict(event='check',check='storage_http',result='pass'),dict(event='check',check='storage_http',result='pass')]
+            chunks=[('TRICORDER '+json.dumps(dict(boot_id='boot',seq=i,device_us=i,**e))+'\n').encode() for i,e in enumerate(rows)]
+            def read(_):
+                if not chunks:stop.touch();return b''
+                if len(chunks)>=2:port.write.assert_not_called()
+                return chunks.pop(0)
+            port.read.side_effect=read;port.write.side_effect=lambda data:len(data)
+            modules={'serial':SimpleNamespace(Serial=lambda:port),'esptool.reset':SimpleNamespace(HardReset=MagicMock())}
+            argv=['capture','--port','test','--output',str(root/'run'),'--stop-file',str(stop),'--reset',
+                  '--console-command','TRICORDER_POWER_STEPS','--spec-id','G-0001.05','--spec-revision','2026-09-25',
+                  '--workload','power steps']
+            with patch.object(sys,'argv',argv),patch.dict(sys.modules,modules):main()
+            port.write.assert_called_once_with(b'TRICORDER_POWER_STEPS\n')
+
     def test_reset_truncated_previous_run_line_is_counted_not_failed(self):
         # --reset cuts the old firmware's line mid-write; it precedes our boot.
         for reset in (True, False):

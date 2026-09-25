@@ -29,6 +29,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "driver/ledc.h"
+#include <algorithm>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
@@ -255,6 +256,36 @@ static void media_idle() {
     diagnostic_emit(diagnostic_event("audio_test_ready"));
 }
 
+// G-0001.05 C1: step controlled loads and average the INA226 at each step.
+// Backlight 50% is the running default; charging is re-enabled at the end.
+static void run_power_steps() {
+    if (!power_ready) {diagnostic_check("power_steps","fail","INA226 not initialized.");return;}
+    struct Step {const char* name;int brightness;bool charge;};
+    static const Step steps[]={{"backlight_50",50,true},{"backlight_100",100,true},{"backlight_0",0,true},
+                               {"backlight_50_again",50,true},{"charge_off",50,false},{"charge_on",50,true}};
+    for (const auto& step:steps) {
+        bsp_display_brightness_set(step.brightness);bsp_set_charge_en(step.charge);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        double volts=0,amps=0,low=1e9,high=-1e9;constexpr int samples=30;
+        for (int i=0;i<samples;++i) {
+            const double v=power_monitor.readBusVoltage(),a=power_monitor.readShuntCurrent();
+            volts+=v;amps+=a;low=std::min(low,a);high=std::max(high,a);
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        auto* e=diagnostic_event("power_step");cJSON_AddStringToObject(e,"step",step.name);
+        cJSON_AddNumberToObject(e,"brightness_pct",step.brightness);cJSON_AddBoolToObject(e,"charge_enabled",step.charge);
+        cJSON_AddNumberToObject(e,"samples",samples);cJSON_AddNumberToObject(e,"bus_v_mean",volts/samples);
+        cJSON_AddNumberToObject(e,"shunt_a_mean",amps/samples);cJSON_AddNumberToObject(e,"shunt_a_min",low);
+        cJSON_AddNumberToObject(e,"shunt_a_max",high);diagnostic_emit(e);
+    }
+    bsp_display_brightness_set(50);bsp_set_charge_en(true);
+}
+
+bool diagnostic_request_power_steps() {
+    uint8_t command=6;
+    return media_commands && xQueueSend(media_commands,&command,0)==pdTRUE;
+}
+
 extern "C" void app_main() {
     event_mutex = xSemaphoreCreateMutex();
     configASSERT(event_mutex);
@@ -432,6 +463,7 @@ extern "C" void app_main() {
             } else if (command==4) investigation_run(boot_id);
             else if (command==5) investigation_run_replay();
             else if (command==3) run_audio_baseline(boot_id);
+            else if (command==6) run_power_steps();
             else capture_audio(boot_id, true);
             media_idle();
         }

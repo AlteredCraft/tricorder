@@ -21,6 +21,7 @@ def main():
     parser.add_argument('--reset', action='store_true')
     parser.add_argument('--replay-session', help='After reset/SD/network readiness, replay this saved ab-<32 lowercase hex> session; no new acquisition')
     parser.add_argument('--replay-count', type=int, default=1, help='Replay the saved session this many times, each after the previous one ends (G-0001.02 baselines)')
+    parser.add_argument('--console-command', help='Send this console line once, after SD/network readiness (e.g. TRICORDER_POWER_STEPS)')
     parser.add_argument('--drive-sessions', type=int, help='Run this many guided sessions by console taps (tools/session_driver.py)')
     parser.add_argument('--drive-replay', help='Driven sessions are SD replays of this saved session')
     parser.add_argument('--tap-delay-s', type=float, default=1.0)
@@ -92,7 +93,8 @@ def main():
     port = serial.Serial()
     port.port, port.baudrate, port.timeout = args.port, 115200, .2
     port.dtr, port.rts = False, False
-    if args.replay_session or driver:port.write_timeout=2
+    if args.replay_session or driver or args.console_command:port.write_timeout=2
+    console_sent=False
     driven_boot=None;host_actions=[]
     def perform(action):
         kind,argument=action
@@ -139,6 +141,11 @@ def main():
                         events.append(event)
                         out.write(json.dumps(event)+'\n')
                         out.flush()
+                        if args.console_command and not console_sent and event['event']=='check' \
+                                and event.get('check')=='storage_http':
+                            command=(args.console_command+'\n').encode()
+                            if port.write(command)!=len(command):raise OSError('short console command write')
+                            port.flush();console_sent=True
                         if driver:
                             # Only the boot this run reset into drives sessions.
                             if event['event']=='boot' and driven_boot is None:driven_boot=event['boot_id']

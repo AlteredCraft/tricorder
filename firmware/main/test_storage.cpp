@@ -60,6 +60,10 @@ void console_task(void*) {
                 bool accepted=investigation_request_replay(line+strlen(replay));
                 auto* e=diagnostic_event("replay_requested");cJSON_AddBoolToObject(e,"accepted",accepted);diagnostic_emit(e);
             }
+            if(!overflow && !strcmp(line,"TRICORDER_POWER_STEPS")) {
+                auto* e=diagnostic_event("power_steps_requested");
+                cJSON_AddBoolToObject(e,"accepted",diagnostic_request_power_steps());diagnostic_emit(e);
+            }
             constexpr const char* tap="TRICORDER_TAP ";
             if(!overflow && !strncmp(line,tap,strlen(tap))) {
                 const int64_t tapped=esp_timer_get_time();
