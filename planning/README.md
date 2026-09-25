@@ -1,65 +1,76 @@
 # Planning guidelines
 
-Planning docs exist so the next person (or agent) can pick up the work quickly. The milestone file and the active spec together show where things stand and what's next. Write the fewest words that let them act. State results plainly. Mention open work only as a next action.
+Planning docs let the next person or agent pick up the work and show, at any level, what is done. Write the fewest words that let a reader act.
+
+Project-specific conventions (evidence locations, build/trial rules, operator tasks) live in [../AGENTS.md](../AGENTS.md), not here.
 
 ## Principles
 
-- **One home per fact.** Link to it from elsewhere instead of repeating it.
-- **Git and `.local/runs/` are the archive.** Docs hold current state plus one-line results. Don't carry history forward in prose; `git log` has it.
-- **Keep within the size budgets below.** When a doc goes over, prune or summarize before adding more.
-- **Failures get one line:** what failed, why, what fixed it, evidence path. The run directory preserves the details.
-- **Missing data is inconclusive, not a pass.** Say so once, in the relevant check.
+- **One home per fact.** Each fact has one authoritative file (table below). Elsewhere, link to it.
+- **Specs test hypotheses. Git holds the work.** Planning docs record what was expected, what was observed, and the commit or PR behind it.
+- **Logs are append-only.** Never rewrite a dated Observed entry. Mark stale entries `~~like this~~ (superseded YYYY-MM-DD)` and add a new one.
+- **Stay within the word limits.** Check with `wc -w` at session end. Over a limit means the doc is doing too much: split it, don't trim evidence.
+- **Missing data is inconclusive, not a pass.**
 
-## Hierarchy
+## Hierarchy and homes
 
-**Milestone → Goal → Spec.** Each goal has one parent milestone and each spec one parent goal. ADRs are linked decision records, not a level in the hierarchy.
+**Milestone → Goal → Spec.** A child names its one parent in its header, and the parent lists its children by link. ADRs are decision records, not a level.
 
-| Doc | Location | Contents | Budget |
+| Doc | Location | Authoritative for | Words |
 | --- | --- | --- | --- |
-| Milestone | [milestones.md](milestones.md) | Scope, deliverable, done-when, goal table with one-line status | ≤ 40 lines each |
-| Goal | `plans/G-NNNN-title.md` ([template](goal-template.md)) | Outcome, measure, spec table, status | ≤ 30 lines |
-| Spec | `plans/G-NNNN.nn-title.md` ([template](spec-template.md)) | Hypothesis, refuted-if, checks, observed | Proposal ≤ 40 lines; Observed ≤ 2 lines per entry |
-| ADR | `adrs/ADR-NNNN-title.md` ([template](adrs/ADR-template.md)) | A durable choice already made, with evidence | ≤ 30 lines |
-| Operator TODO | [../TODO.md](../TODO.md) | Only things needing the user's hands or equipment | Short list |
+| Milestone | [milestones.md](milestones.md) ([template](milestone-template.md)) | Scope, done-when, active-spec pointer | ≤ 250 each |
+| Goal | `plans/G-NNNN-title.md` ([template](goal-template.md)) | Outcome, measure, goal result | ≤ 150 |
+| Spec | `plans/G-NNNN.nn-title.md` ([template](spec-template.md)) | Hypothesis, checks and verdicts, observations, next work | ≤ 300 above Observed; ≤ 50 per entry |
+| ADR | `adrs/ADR-NNNN-title.md` ([template](adrs/ADR-template.md)) | A durable decision already made | ≤ 300 |
+| Reference | `planning/<topic>.md` | Protocols, commands, limits used by several specs | ≤ 1,000 |
+| Open decision | GitHub issue | A choice not yet made | n/a |
 
-Reference material that several specs use (e.g. [guided-ab-protocol.md](guided-ab-protocol.md)) may live in `planning/`. Keep it operational: the protocol, commands and limits.
+Parent tables hold **link + status only**. The child's header is authoritative; the parent's column mirrors it in the same change.
 
-Status values: goals and milestones use Not started, In progress, Met or Partly met. Specs use Proposed, In progress, Confirmed, Refuted, Partial or Not built. A spec's result doesn't automatically set its goal's status; assess the goal's outcome directly.
+## Status and completion
+
+**Spec**, set from evidence:
+
+- `Proposed`: no work started. `In progress`: work started.
+- `Confirmed`: every check is `[pass]`.
+- `Refuted`: a Refuted-if condition was observed. Cite the entry.
+- `Partial`: closed with checks still open, after the user approves. The open checks move to a linked successor spec.
+
+Confirmed, Refuted and Partial are closed. A closed spec only gains strike-throughs and a successor link.
+
+**Goal:** `Not started`, `In progress`, `Met` or `Dropped` (with reason). Met when all its specs are closed and the Measure is satisfied, recorded as a dated one-line **Result** citing evidence. Spec results don't set it automatically.
+
+**Milestone:** `Not started`, `In progress` or `Done`. Done when every goal is Met. Never closed partly done: move unmet work to another milestone, record the move, then close.
 
 ## Specs
 
-- **Checks** are concrete and numeric where possible: evidence source plus pass condition.
-- **Observed** is a bullet list: `- YYYY-MM-DD — result (key numbers). Evidence: run-dir. → ADR-NNNN`. End with an `- Open:` bullet: the ordered next work, each item sized to finish in one session.
-- Record measured results, bugs found and fixed, and decisions. Don't record: "checks written before implementation", plans, restated open gates, "no ADR needed", process/PID status, pauses.
-- **Changing checks:** edit them and add a dated one-line `Revision:` to the header (what changed, why). Earlier results stand under the criteria they were measured against.
+- **Checks** are numbered, concrete and numeric where possible: evidence source → pass condition. Each check starts with a verdict: `[open]`, `[pass]` or `[fail]`. The Observed entry tagged `C<n>` is its evidence.
+- **Build** (optional) is a few one-line steps, and each step serves a check. If new work isn't validated by any check, add a check (Revision) or open a new spec.
+- **Observed** is the append-only log: `- YYYY-MM-DD — [C2 pass] result (key numbers). Evidence: <ref> · <commit or PR>. → ADR-NNNN`. Every entry cites a commit SHA or PR. Record results, bugs fixed and decisions; not plans or process chatter.
+- **Open** is the ordered next work. Each item fits in one session. It's current state, edited freely. Items waiting on a decision link the GitHub issue.
+- **Changing checks:** add a dated `Revision:` line in the header. You can add or tighten a check freely. Loosening or removing one needs the user, noted `(user-approved)`. Earlier results stand under their original criteria. A changed check reverts to `[open]` unless existing evidence meets it.
+- **More than about 12 Observed entries** usually means two hypotheses. Close the spec (Partial) and open a successor.
+- **Shared work:** avoid it. If unavoidable, each spec's entry cites the same commit or PR; don't copy results.
 
 ## ADRs
 
-Record one when a choice becomes a constraint future work must honor: component boundary, resource ownership, concurrency model, transport contract, evidence format or trust boundary. Not for bug fixes, settings or UI tweaks. An ADR is born Active and states the decision, the alternatives in one line each, and its consequences.
+Record one when a choice becomes a constraint future work must honor: component boundary, resource ownership, concurrency model, transport contract, evidence format or trust boundary. Not for bug fixes, settings or UI tweaks. Born Active: decision, one-line alternatives, consequences. Undecided choices are GitHub issues.
 
-**Revoking:** set `Status: Revoked by ADR-NNNN (YYYY-MM-DD): reason` (or `Revoked (date): reason; open in spec X`), keep the file, and update inbound links.
+**Revoking:** set `Status: Revoked by ADR-NNNN (YYYY-MM-DD): reason`, keep the file, and update inbound links.
 
 ## Evidence
 
-- Runs live in the private `.local/runs/YYYYMMDD-topic/` directories (`manifest.json`, `events.jsonl`, `captures/`, `summary.json`). Cite them by directory name.
-- **Commit before flashing a build for a trial.** The git SHA identifies the build, so there's no need for source/hash manifests or artifact snapshots.
-- Don't keep red/green test logs. The test suite and git history cover it.
-- Keep credentials and private captures out of Git.
+Evidence is anything a reader can re-inspect (test, CI run, run directory, benchmark), cited by path or ID. The commit SHA identifies the code, so no source manifests or red/green logs. Keep credentials and private data out of Git.
 
-## Operator time
+## Human time
 
-The user's physical time is the scarcest resource.
-
-- Test transport, service and state-machine changes with host tests, SD replay, loopback and fault injection first. Ask for a physical trial only for what automation can't test: acoustics, touch/feel, usefulness, power, cold starts.
-- Before asking, state in one sentence what the trial tests and which outcome would change the plan.
-- Don't repeat a physical fixture unless the code or conditions it tests have changed.
+The user's time is scarcest. Prefer automated evidence; ask for a manual trial only for what automation can't test, saying what it tests and which outcome would change the plan. Don't repeat a trial unless its code or conditions changed.
 
 ## Sessions
 
-The active spec's `Open` bullet is an ordered list of next work, each item sized to finish in one session.
+1. **Start:** read [milestones.md](milestones.md) and the active spec, then take its first Open item. If `HANDOFF.md` exists, finish that item first.
+2. **Work:** write tests first for code changes. Commit or open a PR. Append the Observed entry with its ref, update check verdicts, and write any ADR in the same change.
+3. **End:** update the Open list and any status that changed (child first, then the parent's mirror). Check the word limits.
+4. **Stopping early:** write a temporary `HANDOFF.md` at the repo root (where you are, what's half-done, how to resume). The next session deletes it.
 
-1. **Start:** read [milestones.md](milestones.md) and the active spec. Take the first Open item.
-2. **Work:** write tests first for code changes. When a result lands, add its Observed bullet. When a durable choice is made, write the ADR in the same change.
-3. **End:** update the spec's Open list, plus goal/milestone status lines if they changed. Check the size budgets.
-4. **Stopping early:** if a session must stop before its item is done, write a short temporary `HANDOFF.md` at the repo root (where you are, what's half-done, how to resume). The next session finishes the item and deletes it. There's no standing handoff file.
-5. Ask the user when a trade-off changes product intent or scope.
+**Needs the user:** loosening or removing a check, closing a spec as Partial, marking a goal Met or Dropped, closing a milestone, moving work between milestones, or any change to product intent or scope. Everything else, proceed.

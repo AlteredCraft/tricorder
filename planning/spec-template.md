@@ -1,9 +1,10 @@
 # G-NNNN.nn. Title
 
-Status: Proposed | In progress | Confirmed | Refuted | Partial | Not built
+Status: Proposed | In progress | Confirmed | Refuted | Partial
 Goal: [G-NNNN](G-NNNN-title.md): which outcome this serves
 ADRs: links, or None
-<!-- Revision: YYYY-MM-DD: what changed in the checks and why (one line each). -->
+<!-- Successor: [G-NNNN.nn](...) (only when closed Partial) -->
+<!-- Revision: YYYY-MM-DD: what changed in the checks and why. Loosened/removed: (user-approved). -->
 
 ## Hypothesis
 
@@ -13,16 +14,18 @@ One or two sentences, checkable from what the system records.
 
 ## Build
 
-(optional) Numbered steps, one line each.
+(optional) Numbered steps, one line each, each serving a check.
 
 ## Checks
 
-1. Evidence source → pass condition (numeric where possible).
+1. [open] Evidence source → pass condition (numeric where possible).
 
 Out of scope: one line.
 
 ## Observed
 
-- YYYY-MM-DD — result (key numbers). Evidence: `run-dir`. → ADR-NNNN
-- Open, in order (one session each):
-  1. Next item.
+- YYYY-MM-DD — [C1 pass] result (key numbers). Evidence: `ref` · `abc1234` / #PR. → ADR-NNNN
+
+## Open
+
+1. Next item (one session). Decision pending: #issue.
