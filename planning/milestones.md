@@ -16,14 +16,15 @@
 
 | Goal | Status | Summary |
 | --- | --- | --- |
-| [G-0002 One usable end-to-end investigation](plans/G-0002-thin-investigation-slice.md) | In progress | **Priority.** Guided A/B works end to end with the mock service and a live text model, and the screen shows a live spectrum, an A/B overlay, a context photo, a steadiness indicator and a spoken question transcribed on the Mac. Live ratings: responsiveness 4, usefulness 3; the user judged the loop good enough to move on. Guidance is now spoken on the device. Next: whether the photo goes to the model. |
-| [G-0001 A trustworthy live investigation](plans/G-0001-trustworthy-live-investigation.md) | In progress | Isolated hardware baselines pass. Combined workload, agent statistics and power/recovery are open. Hardening follows G-0002. |
+| [G-0002 One usable end-to-end investigation](plans/G-0002-thin-investigation-slice.md) | Met | Guided A/B works end to end with a live text model: spoken question, live spectrum, A/B/A-again overlay on a median level, context photo, steadiness indicator and spoken guidance. Live ratings: responsiveness 4, usefulness 3; the user judged it useful enough to harden. |
+| [G-0001 A trustworthy live investigation](plans/G-0001-trustworthy-live-investigation.md) | In progress | **Priority now.** Isolated hardware baselines pass. Combined workload, agent statistics and power/recovery are open. |
 
 Sequencing: G-0002 (usefulness) first, then harden the same code under G-0001. G-0002 does not lower G-0001's checks.
 
-**Next:** the ordered Open list in [G-0002.01](plans/G-0002.01-guided-ab-slice.md#observed).
+**Next:** harden the G-0002 loop under G-0001, starting with the combined workload ([G-0001.02](plans/G-0001.02-concurrent-workload.md)); the specs' Open lists hold the rest.
 
 ## Later
 
 - Hosted agent service (device auth, TLS, credential provisioning, internet latency).
+- Send the context photo and steadiness reading to the model (device-only now; not needed for the dB comparison). The user asked "What is this a picture of?" in a live loop.
 - Candidate later milestones: local ESP-DL inference, full-duplex speech/AEC, wake words, higher-resolution video, USB/RS-485 peripherals, external environmental sensors.
