@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 from tools.investigation import (CaptureEvidence, Fixture, Investigation, MockProvider,
-                                 ProtocolError, RunArchive, validate_reply)
+                                 ProtocolError, RunArchive, device_text, validate_reply)
 
 
 def evidence(identity='take-a', amplitude=1000, **changes):
@@ -173,6 +173,28 @@ class StateTests(unittest.TestCase):
             if mutation=='comparison':bad['comparison']={'rms_delta_db':-6}
             with self.subTest(mutation=mutation),self.assertRaises(ProtocolError):
                 validate_reply(request,bad)
+        # The device font has ASCII glyphs only; anything else draws as a box.
+        bad = copy.deepcopy(reply); bad['text'] = 'Changed by \u00b10.2 dB.'
+        with self.assertRaises(ProtocolError):
+            validate_reply(request, bad)
+
+    def test_device_text_maps_model_punctuation_to_ascii(self):
+        cases = {
+            'the repeat changed by \u00b10.2 dB': 'the repeat changed by +/-0.2 dB',
+            'repeat the full A\u2192B\u2192A check': 'repeat the full A to B to A check',
+            'B/A was \u22126.0 dB': 'B/A was -6.0 dB',
+            'A \u2013 B \u2014 then A': 'A - B - then A',
+            'larger\u2014so repeat': 'larger - so repeat',
+            '\u201cWhat\u2019s louder?\u201d': '"What\'s louder?"',
+            'wait\u2026': 'wait...',
+            'about\u00a012 inches': 'about 12 inches',
+            'caf\u00e9 \u2248 \u2264 \u2265': 'cafe ~ <= >=',
+            'plain \U0001f600 text': 'plain text',
+        }
+        for raw, shown in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(device_text(raw), shown)
+                self.assertTrue(shown.isascii())
 
     def test_input_and_fixture_bounds(self):
         with self.assertRaises(ProtocolError):

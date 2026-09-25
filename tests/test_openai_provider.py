@@ -75,7 +75,7 @@ class OpenAIProviderTests(unittest.IsolatedAsyncioTestCase):
         # Pair: A 1000 counts (-30.31 dBFS), B 500 counts; B/A = -6.0206 dB; gain 24 dB; 48000 Hz.
         request=self.request(True)
         ids=['take-0','take-1']
-        backed=('B is 6.02 dB quieter than A.','B is about 6 dB lower.','B/A was −6.0 dB.',
+        backed=('B is 6.02 dB quieter than A.','B is about 6 dB lower.','B/A was -6.0 dB.',
                 'A read -30.3 dBFS.','Gain stayed at 24 dB.','Recorded at 48 kHz.',
                 'Move 16 inches closer and repeat.','A had 1000 counts RMS.')
         for text in backed:
@@ -133,6 +133,17 @@ class OpenAIProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('counts, peaks',self.calls[-1]['instructions'])
         with self.assertRaises(ProtocolError):
             await self.provider(dict(text='Returning to A changed it by 2.5 dB.',capture_ids=ids)).respond(request)
+
+    async def test_prose_reaches_the_device_as_ascii_its_font_can_draw(self):
+        request=self.request(True)
+        meta,raw=evidence('take-2',900,acquisition_start_us=70000,acquisition_end_us=90000)
+        request['captures'].append(CaptureEvidence.from_pcm(meta,raw).to_dict())
+        ids=['take-0','take-1','take-2']
+        text='B/A was \u22126.0 dB; the repeat changed by \u00b10.9 dB. Repeat the full A\u2192B\u2192A check.'
+        reply=await self.provider(dict(text=text,capture_ids=ids)).respond(request)
+        self.assertEqual(reply['text'],
+                         'B/A was -6.0 dB; the repeat changed by +/-0.9 dB. Repeat the full A to B to A check.')
+        self.assertIn('plain ASCII',self.calls[-1]['instructions'])
 
     async def test_spoken_question_is_operator_context_not_instructions(self):
         request=self.request()

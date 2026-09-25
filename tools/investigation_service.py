@@ -20,7 +20,8 @@ from tools import text_to_speech
 from tools.investigation import (CaptureEvidence, Fixture, MAX_CAPTURE_BYTES, MAX_QUESTIONS,
                                  MAX_QUESTION_FRAMES, MAX_QUESTION_TEXT, MockProvider,
                                  ProtocolError, QUESTION_FIELDS, QUESTION_RATE_HZ, QuestionAudio,
-                                 RunArchive, bounded_text, identity, integer, require, validate_reply)
+                                 RunArchive, bounded_text, device_text, identity, integer, require,
+                                 validate_reply)
 
 MAX_WIRE_BYTES = 32768
 # A, B and a repeat of A: start + 282 chunks + end each, plus hello, turns, acks, cancel.
@@ -284,7 +285,7 @@ class MockSession:
         try:
             async with asyncio.timeout(self.transcribe_timeout_s):
                 heard=await self.transcriber.transcribe(item.raw)
-            heard=' '.join(heard.split()) if isinstance(heard,str) else None
+            heard=' '.join(device_text(heard).split()) if isinstance(heard,str) else None
             if heard is None:reason='not_text'
             elif not heard:status='empty'
             elif len(heard.encode())>MAX_QUESTION_TEXT:reason='too_long'

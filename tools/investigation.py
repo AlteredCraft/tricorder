@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import struct
 import time
+import unicodedata
 
 VERSION = 1
 SPEC_REVISION = '2026-09-21'
@@ -53,6 +54,22 @@ def bounded_text(value, limit):
     require(isinstance(value, str) and 0 < len(value.strip()) <= limit
             and len(value.encode('utf-8')) <= limit, 'text outside bounds')
     return value
+
+
+# The device draws text with LVGL's built-in Montserrat, which has ASCII glyphs only.
+_DEVICE_PUNCTUATION = str.maketrans({
+    '\u00b1': '+/-', '\u2192': ' to ', '\u27f6': ' to ', '\u21d2': ' to ',
+    '\u2212': '-', '\u2010': '-', '\u2011': '-', '\u2013': '-', '\u2014': ' - ',
+    '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2026': '...',
+    '\u00d7': 'x', '\u2248': '~', '\u2264': '<=', '\u2265': '>=', '\u00b0': ' degrees'})
+
+
+def device_text(value):
+    """Text the device font can draw: common model punctuation becomes ASCII,
+    accents are dropped and any other character is removed."""
+    text = unicodedata.normalize('NFKD', value.translate(_DEVICE_PUNCTUATION))
+    text = text.encode('ascii', 'ignore').decode()
+    return re.sub(r' {2,}', ' ', text).strip()
 
 
 def integer(value, minimum, maximum):
@@ -413,6 +430,7 @@ Free text still needs transcript/operator review for semantic hallucinations.
             'unbacked measurement')
     require(encoded(reply['comparison']) == encoded(comparison(request['captures'])), 'unbacked comparison')
     bounded_text(reply['text'], MAX_TEXT)
+    require(reply['text'].isascii(), 'text outside device glyphs')
     json.dumps(reply, allow_nan=False)
 
 

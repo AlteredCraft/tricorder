@@ -125,6 +125,13 @@ class SpokenAskServiceTests(unittest.IsolatedAsyncioTestCase):
         transcript = (run / 'transcript.jsonl').read_text()
         self.assertNotIn(base64.b64encode(question()[1][:4096]).decode(), transcript)
 
+    async def test_transcript_is_shown_as_ascii(self):
+        self.transcriber.texts = ['What\u2019s louder \u2014 the fan?']
+        reply = await self.ask()
+        self.assertEqual(reply['text'], "What's louder - the fan?")
+        await self.send('question_confirm', question_id='session-q1', accepted=True)
+        self.assertEqual(self.service.operator_question, "What's louder - the fan?")
+
     async def test_retry_discards_the_first_transcript(self):
         self.transcriber.texts = ['Is the van louder?', 'Is the fan louder?']
         await self.ask()
