@@ -16,4 +16,4 @@
 | [.02 Concurrent workload](G-0001.02-concurrent-workload.md) | In progress |
 | [.03 Audio integrity](G-0001.03-audio-integrity.md) | In progress |
 | [.04 Agent interaction](G-0001.04-agent-interaction.md) | In progress |
-| [.05 Power and recovery](G-0001.05-power-recovery.md) | Proposed |
+| [.05 Power and recovery](G-0001.05-power-recovery.md) | In progress |
