@@ -999,7 +999,8 @@ void investigation_stop_speech() {stop_speech.store(true);}
 // session's hello, spoken-question upload (the voice note, accepted as heard) and
 // speech stream; analysis_explain replaces the captures.
 bool investigation_explain_sound(const char* boot,const char* session,const InvestigationCapture* note,
-                                 cJSON* analysis,SoundExplainProgress progress,SoundExplainResult& out) {
+                                 cJSON* analysis,const SoundExplainHooks& hooks,SoundExplainResult& out) {
+    auto progress=hooks.progress;
     std::unique_ptr<cJSON,decltype(&cJSON_Delete)> summary(analysis,cJSON_Delete);
     InvestigationEndpoint endpoint;
     auto p=std::make_unique<InvestigationProtocol>(boot,session);p->ask(now_ms());
@@ -1018,6 +1019,7 @@ bool investigation_explain_sound(const char* boot,const char* session,const Inve
         auto ms=[&](int64_t at){return at?(at-started)/1000.0:-1.0;};
         cJSON_AddNumberToObject(e,"connected_ms",ms(connected));cJSON_AddNumberToObject(e,"transcribed_ms",ms(transcribed));
         cJSON_AddNumberToObject(e,"replied_ms",ms(replied));cJSON_AddBoolToObject(e,"spoke",out.spoke);
+        cJSON_AddBoolToObject(e,"dialog",hooks.show_transcript!=nullptr);cJSON_AddNumberToObject(e,"choice",out.choice);
         cJSON_AddNumberToObject(e,"text_bytes",out.text.size());diagnostic_emit(e);
         return !error;
     };
@@ -1035,7 +1037,21 @@ bool investigation_explain_sound(const char* boot,const char* session,const Inve
         if(!p->start_question() || !p->question_recorded(note->metadata,now_ms()) || !upload_question(socket,*p,*note) ||
            !wait_reply(socket,*p))return finish("The voice note could not be transcribed.");
         transcript_status=p->transcript_status();transcribed=esp_timer_get_time();
-        if(p->state()==InvestigationProtocol::State::Confirming) {
+        const bool heard=p->state()==InvestigationProtocol::State::Confirming;
+        if(hooks.show_transcript) {
+            // Waiting for the person: keep reading so the IDF answers the Mac's pings.
+            hooks.show_transcript(transcript_status,heard?p->transcript():"");
+            const uint64_t until=now_ms()+300000;int choice;
+            while((choice=hooks.poll_choice())<0) {
+                if(now_ms()>=until){choice=0;break;}
+                const int result=socket.poll(20);
+                if(result<0)return finish("The connection dropped.");
+                if(result==1){socket.consumed();return finish("The Mac sent an unexpected reply.");}
+            }
+            out.choice=choice;
+            if(choice!=1)return finish(nullptr);
+        }
+        if(heard) {
             out.transcript=p->transcript();
             if(!socket.send(p->confirm_question(true)))return finish("The connection dropped.");
         }

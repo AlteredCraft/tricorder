@@ -17,10 +17,14 @@
 
 ## Next
 
-T5 (hotspot, a few minutes, headphones): on Analysis, record a voice note (what you heard, what you want to know), then Explain sends the summary and note to the Mac. The note is transcribed and the agent's reading is shown and spoken. Short loud sounds are listed as "sharp sounds". Telemetry: `sound_explain` (stages, timings), the service run. Tests assumption 4.
+T6 (home, on the home network, a few minutes, headphones): Voice note now opens a dialog with the Mac's transcript (Explain, Record again, Cancel; user's request after T5). Run a session, record a note, check the transcript, Explain. Before: provision the device for the home network and start the service. Telemetry: `sound_note`, `sound_explain` (choice, timings), the service run. Tests assumption 4.
 
 ## Trials
 
 ### T4 2026-09-26: on-device analysis
 
 `7eee98e` · run `20260926-sound-analysis-t4`. **Tried:** listen, Analysis, Listen again (sessions of 12, 5 and 41 s). **Telemetry:** analysis 2–4 ms; recording added 0.6 ms per view, 0 driver loss. A +28 dB moment at 0:08 lasted under 0.3 s, so it wasn't listed; one 0.34 s event near 6.1 kHz was. "Strongest near 53 Hz" comes from bands narrower than one FFT bin. **User:** "looks good"; wants a voice note on Analysis to steer the agent. **Decision:** continue.
+
+### T5 2026-09-26: voice note and Explain (offline)
+
+`36b88c0` · no run (logger off; the hotspot had dropped). **Tried:** Voice note and sharp sounds in the café; Explain could not reach the Mac. Live model checked offline on a T4 summary with a note: answered the note first, 3–5 s, no unbacked numbers (`20260926-explain-smoke`). **User:** "looks like it all worked, aside from explain"; wants to see the transcript before it is used. **Decision:** adapt: transcript dialog; Explain at home.
