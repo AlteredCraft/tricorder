@@ -30,8 +30,10 @@ constexpr TileText tile_text[]={
 "1. Stay quiet for a moment to see the background.\n"
 "2. Make a sound: tap the table, clink a cup, whistle. Low sounds rise on the left, high sounds on the right.\n"
 "3. Tap Reset peak before each new sound to compare them.\n\n"
+"Analysis\n"
+"Tap Analysis to stop listening and see what happened: the background level, how loud it got, each loud event (10 dB or more above the background) with the band that rose most, any steady tone, and the level over time. It covers up to 10 minutes of listening.\n\n"
 "Notes\n"
-"• Display only: nothing is saved or sent.\n"
+"• Nothing is saved to the SD card or sent to the Mac.\n"
 "• The level is not a calibrated sound level. Use it to compare sounds, not as an absolute measurement.\n"
 "• The speaker is off while this screen listens."},
 {"Camera","Instrument coming",nullptr},
