@@ -17,6 +17,31 @@ class OpenAIProvider:
         self.route = route
         self.name = f'{route}-responses-v1'
 
+    async def explain(self, evidence):
+        """F-0002: plain prose over a checked sound-analysis summary and voice note."""
+        from tools.sound_explain import INSTRUCTIONS
+        schema = {'type': 'object', 'additionalProperties': False,
+                  'properties': {'text': {'type': 'string'}}, 'required': ['text']}
+        try:
+            routing = {'extra_body': {'provider': {'require_parameters': True}},
+                       'reasoning': {'effort': 'none'}} if self.route == 'openrouter' else {}
+            response = await self.client.responses.create(
+                model=self.model, store=False, max_output_tokens=700, instructions=INSTRUCTIONS,
+                input=[{'role': 'user', 'content': json.dumps(evidence, allow_nan=False)}],
+                text={'format': {'type': 'json_schema', 'name': 'sound_analysis_reading',
+                                 'strict': True, 'schema': schema}}, **routing)
+            require(response.status == 'completed', 'OpenAI response incomplete')
+            wire = response.output_text
+            require(isinstance(wire, str) and len(wire.encode()) <= 8192, 'OpenAI response outside bounds')
+            output = json.loads(wire)
+            require(isinstance(output, dict) and set(output) == {'text'} and isinstance(output['text'], str),
+                    'OpenAI response fields')
+            return output['text']
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            raise ProtocolError('OpenAI request failed') from None  # SDK errors can carry credentials
+
     async def respond(self, request):
         validate_request(request)
         ids = [item['capture_id'] for item in request['captures']]

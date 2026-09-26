@@ -992,3 +992,78 @@ void investigation_set_endpoint(const char* endpoint) {
         bsp_display_unlock();
     }
 }
+
+void investigation_stop_speech() {stop_speech.store(true);}
+
+// F-0002 T5, media owner: the Mac's reading of a sound analysis. Reuses the A/B
+// session's hello, spoken-question upload (the voice note, accepted as heard) and
+// speech stream; analysis_explain replaces the captures.
+bool investigation_explain_sound(const char* boot,const char* session,const InvestigationCapture* note,
+                                 cJSON* analysis,SoundExplainProgress progress,SoundExplainResult& out) {
+    std::unique_ptr<cJSON,decltype(&cJSON_Delete)> summary(analysis,cJSON_Delete);
+    InvestigationEndpoint endpoint;
+    auto p=std::make_unique<InvestigationProtocol>(boot,session);p->ask(now_ms());
+    cancelled.store(false);stop_speech.store(false);
+    Socket socket;
+    std::unique_ptr<cJSON,decltype(&cJSON_Delete)> fixture(
+        cJSON_ParseWithLength(reinterpret_cast<const char*>(fixture_start),fixture_end-fixture_start),cJSON_Delete);
+    const int64_t started=esp_timer_get_time();int64_t connected=0,transcribed=0,replied=0;
+    const char* transcript_status="none";
+    auto finish=[&](const char* error) {
+        if(error)out.error=error;
+        auto* e=diagnostic_event("sound_explain");cJSON_AddStringToObject(e,"session_id",session);
+        cJSON_AddBoolToObject(e,"ok",!error);if(error)cJSON_AddStringToObject(e,"error",error);
+        cJSON_AddBoolToObject(e,"note",note!=nullptr);cJSON_AddStringToObject(e,"transcript_status",transcript_status);
+        cJSON_AddStringToObject(e,"protocol_state",p->state_name());
+        auto ms=[&](int64_t at){return at?(at-started)/1000.0:-1.0;};
+        cJSON_AddNumberToObject(e,"connected_ms",ms(connected));cJSON_AddNumberToObject(e,"transcribed_ms",ms(transcribed));
+        cJSON_AddNumberToObject(e,"replied_ms",ms(replied));cJSON_AddBoolToObject(e,"spoke",out.spoke);
+        cJSON_AddNumberToObject(e,"text_bytes",out.text.size());diagnostic_emit(e);
+        return !error;
+    };
+    progress("Connecting to the Mac...",nullptr,nullptr);
+    // The Setup field holds the address (loaded from SD at boot); A/B copies it at Start.
+    if(bsp_display_lock(1000)){strcpy(endpoint_text,lv_textarea_get_text(endpoint_field));bsp_display_unlock();}
+    if(!fixture || !endpoint.parse(endpoint_text) || !socket.connect(endpoint))
+        return finish("Could not reach the Mac service. Check Wi-Fi and the service address in Setup.");
+    auto* hello=p->envelope("hello");cJSON_AddItemToObject(hello,"fixture",cJSON_Duplicate(fixture.get(),true));
+    if(!socket.send(hello) || !wait_reply(socket,*p) || p->state()!=InvestigationProtocol::State::ReadyA)
+        return finish("The Mac service did not answer.");
+    connected=esp_timer_get_time();
+    if(note && p->speech_available()) {
+        progress("Transcribing your voice note...",nullptr,nullptr);
+        if(!p->start_question() || !p->question_recorded(note->metadata,now_ms()) || !upload_question(socket,*p,*note) ||
+           !wait_reply(socket,*p))return finish("The voice note could not be transcribed.");
+        transcript_status=p->transcript_status();transcribed=esp_timer_get_time();
+        if(p->state()==InvestigationProtocol::State::Confirming) {
+            out.transcript=p->transcript();
+            if(!socket.send(p->confirm_question(true)))return finish("The connection dropped.");
+        }
+    }
+    progress("Asking the agent...",out.transcript.c_str(),nullptr);
+    char request_id[64];snprintf(request_id,sizeof(request_id),"%s-explain",session);
+    auto* ask=p->envelope("analysis_explain");cJSON_AddStringToObject(ask,"request_id",request_id);
+    cJSON_AddItemToObject(ask,"analysis",summary.release());
+    if(!socket.send(ask))return finish("The connection dropped.");
+    const uint64_t deadline=now_ms()+45000;
+    while(out.text.empty()) {
+        if(now_ms()>=deadline)return finish("The agent took too long to answer.");
+        const int result=socket.poll();
+        if(result<0)return finish("The connection dropped.");
+        if(result!=1)continue;
+        std::unique_ptr<cJSON,decltype(&cJSON_Delete)> m(InvestigationProtocol::parse(socket.buffer),cJSON_Delete);socket.consumed();
+        auto* type=cJSON_GetObjectItemCaseSensitive(m.get(),"type");
+        auto* id=cJSON_GetObjectItemCaseSensitive(m.get(),"request_id");
+        auto* text=cJSON_GetObjectItemCaseSensitive(m.get(),"text");
+        if(!m || !p->same_session(m.get()) || !cJSON_IsString(type))return finish("The Mac sent an unexpected reply.");
+        if(!strcmp(type->valuestring,"incomplete"))return finish("The agent could not explain this session.");
+        if(strcmp(type->valuestring,"analysis_reply") || !cJSON_IsString(id) || strcmp(id->valuestring,request_id) ||
+           !cJSON_IsString(text) || !text->valuestring[0] || strlen(text->valuestring)>2048)
+            return finish("The Mac sent an unexpected reply.");
+        out.text=text->valuestring;
+    }
+    replied=esp_timer_get_time();
+    progress(nullptr,out.transcript.c_str(),out.text.c_str());
+    if(p->speech_output()){speak(socket,*p,request_id,false);out.spoke=true;}
+    return finish(nullptr);
+}

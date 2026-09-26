@@ -6,6 +6,10 @@
 #include "audio_ingress.h"
 #include "diagnostic_events.h"
 #include "home.h"
+#include "investigation.h"
+#include "investigation_capture.h"
+#include "bsp/m5stack_tab5.h"
+#include "esp_random.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include <algorithm>
@@ -34,6 +38,12 @@ std::atomic<int> analysis_state{Idle};
 sound::Analysis result;constexpr size_t strip_points=240;float strip[strip_points];size_t strip_count=0;
 bool analysis_shown=false; // LVGL task
 lv_obj_t *analysis_panel,*analysis_heading,*summary_label,*events_label,*strip_chart,*strip_end,*listen_button;
+lv_obj_t *status_label,*note_button,*note_label,*explain_button,*explain_label,*home_button;
+std::string events_text; // LVGL task: the event list, shown under the agent's reading
+// Media owner only: per-second loudest level (sent to the Mac) and the voice note.
+constexpr size_t max_seconds=900;float per_second[max_seconds];size_t second_count=0;
+std::unique_ptr<InvestigationCapture> note;
+std::atomic<bool> note_stop{false},note_recording{false},explaining{false},never_cancel{false};
 lv_chart_series_t *strip_series,*threshold_series;
 
 void set_chart(lv_chart_series_t* series,const float* db) {
@@ -85,6 +95,14 @@ void show_analysis() {
         sound::hz_text(a.tones[i].hz,hz,sizeof(hz));
         snprintf(line,sizeof(line),"%s %s (%+.0f dB)\n",i?"             ":"Steady tones:",hz,a.tones[i].above_db);summary+=line;
     }
+    if(a.sharp_count) {
+        unsigned loudest=0;
+        for(unsigned i=1;i<std::min<unsigned>(a.sharp_count,sound::max_sharp);++i)
+            if(a.sharp[i].peak_over_db>a.sharp[loudest].peak_over_db)loudest=i;
+        sound::clock_text(a.sharp[loudest].at_s,when,sizeof(when));
+        snprintf(line,sizeof(line),"Sharp sounds (under 0.3 s): %u, loudest %+.0f dB at %s\n",a.sharp_count,a.sharp[loudest].peak_over_db,when);
+        summary+=line;
+    } else summary+="Sharp sounds (under 0.3 s): none\n";
     summary+="\n+dB is above the background. Levels are relative, not calibrated.";
     lv_label_set_text(summary_label,summary.c_str());
     if(!a.event_count)events="No loud events: nothing rose 10 dB above the background for 0.3 s.";
@@ -96,8 +114,10 @@ void show_analysis() {
         }
         if(a.event_count>sound::max_events){snprintf(line,sizeof(line),"and %u more",a.event_count-unsigned(sound::max_events));events+=line;}
     }
-    lv_label_set_text(events_label,events.c_str());
+    events_text=events;lv_label_set_text(events_label,events.c_str());
     lv_label_set_text(analysis_heading,"Sound analysis");
+    lv_label_set_text(status_label,"Add a voice note to steer the agent, then tap Explain.");
+    lv_obj_remove_state(note_button,LV_STATE_DISABLED);lv_obj_remove_state(explain_button,LV_STATE_DISABLED);
     // Level over time with the event threshold; y spans background-10 to loudest+3 dB.
     lv_chart_set_point_count(strip_chart,strip_count);
     lv_chart_set_range(strip_chart,LV_CHART_AXIS_PRIMARY_Y,static_cast<int32_t>(std::floor(a.background_db-10)),
@@ -120,11 +140,38 @@ void analysis_clicked(lv_event_t*) {
     lv_label_set_text(analysis_heading,"Analyzing...");lv_label_set_text(summary_label,"");lv_label_set_text(events_label,"");
     lv_obj_add_flag(strip_chart,LV_OBJ_FLAG_HIDDEN);lv_label_set_text(strip_end,"");
     lv_obj_add_state(listen_button,LV_STATE_DISABLED); // until the listening loop has ended
+    lv_obj_add_state(note_button,LV_STATE_DISABLED);lv_obj_add_state(explain_button,LV_STATE_DISABLED);
+    lv_label_set_text(status_label,"");lv_label_set_text(note_label,"Voice note");lv_label_set_text(explain_label,"Explain");
     lv_obj_remove_flag(analysis_panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(analysis_panel);
     log_control("analysis");
 }
-void listen_again(lv_event_t*) {lv_obj_add_flag(analysis_panel,LV_OBJ_FLAG_HIDDEN);log_control("listen_again");sound_ui_open();}
+void listen_again(lv_event_t*) {
+    investigation_stop_speech();lv_obj_add_flag(analysis_panel,LV_OBJ_FLAG_HIDDEN);log_control("listen_again");sound_ui_open();
+}
+void send_media(uint8_t command) {
+    if(xQueueSend(media,&command,0)!=pdTRUE) {
+        auto* e=diagnostic_event("sound_session");cJSON_AddStringToObject(e,"result","queue_full");
+        cJSON_AddNumberToObject(e,"command",command);diagnostic_emit(e);
+    }
+}
+// Voice note: tap to record (up to 8 s), tap again to stop.
+void note_clicked(lv_event_t*) {
+    if(note_recording.load()){note_stop.store(true);log_control("note_stop");return;}
+    note_stop.store(false);note_recording.store(true);
+    lv_label_set_text(note_label,"Stop");lv_obj_add_state(explain_button,LV_STATE_DISABLED);
+    lv_obj_add_state(listen_button,LV_STATE_DISABLED);
+    lv_label_set_text(status_label,"Recording your voice note: tap Stop (up to 8 s).");
+    log_control("note_start");send_media(sound_note_command);
+}
+// Explain: while the agent answers or speaks, the button stops the voice.
+void explain_clicked(lv_event_t*) {
+    if(explaining.load()){investigation_stop_speech();log_control("explain_stop_voice");return;}
+    explaining.store(true);lv_label_set_text(explain_label,"Stop voice");
+    for(auto* b:{note_button,listen_button})lv_obj_add_state(b,LV_STATE_DISABLED);
+    log_control("explain");send_media(sound_explain_command);
+}
 void analysis_home(lv_event_t*) {
+    investigation_stop_speech();
     lv_obj_add_flag(analysis_panel,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);
     log_control("analysis_home");home_returned("analysis");
 }
@@ -188,6 +235,11 @@ void sound_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_obj_set_style_bg_color(analysis_panel,lv_color_hex(0x101418),0);lv_obj_set_style_bg_opa(analysis_panel,LV_OPA_COVER,0);
     lv_obj_remove_flag(analysis_panel,LV_OBJ_FLAG_SCROLLABLE);
     analysis_heading=text(analysis_panel,"Sound analysis",24,20,&lv_font_montserrat_40,0xffffff);
+    note_label=button(analysis_panel,"Voice note",494,note_clicked);note_button=lv_obj_get_parent(note_label);
+    explain_label=button(analysis_panel,"Explain",690,explain_clicked);explain_button=lv_obj_get_parent(explain_label);
+    lv_obj_add_state(note_button,LV_STATE_DISABLED);lv_obj_add_state(explain_button,LV_STATE_DISABLED);
+    status_label=text(analysis_panel,"",24,70,&lv_font_montserrat_20,0x4fc3f7);
+    lv_obj_set_width(status_label,460);lv_label_set_long_mode(status_label,LV_LABEL_LONG_DOT);
     listen_button=lv_obj_get_parent(button(analysis_panel,"Listen again",886,listen_again));
     button(analysis_panel,"Home",1082,analysis_home);
     auto* column=lv_obj_create(analysis_panel);lv_obj_set_pos(column,24,100);lv_obj_set_size(column,470,600);
@@ -265,11 +317,15 @@ void analyze_session(const sound::Frame* frames,size_t n,float period_s,bool tru
             auto* o=cJSON_CreateObject();cJSON_AddNumberToObject(o,"hz",a.tones[i].hz);
             cJSON_AddNumberToObject(o,"above_db",a.tones[i].above_db);cJSON_AddItemToArray(tones,o);
         }
-        const size_t seconds=std::max<size_t>(1,static_cast<size_t>(std::lround(a.duration_s)));
-        std::unique_ptr<float[]> per_second(new float[seconds]);
-        sound::bucket_max(scratch.get(),n,per_second.get(),std::min(seconds,n));
+        auto* sharp=cJSON_AddArrayToObject(e,"sharp");cJSON_AddNumberToObject(e,"sharp_count",a.sharp_count);
+        for(unsigned i=0;i<std::min<unsigned>(a.sharp_count,sound::max_sharp);++i) {
+            auto* o=cJSON_CreateObject();cJSON_AddNumberToObject(o,"at_s",a.sharp[i].at_s);
+            cJSON_AddNumberToObject(o,"peak_over_db",a.sharp[i].peak_over_db);cJSON_AddItemToArray(sharp,o);
+        }
+        second_count=std::min({max_seconds,n,std::max<size_t>(1,static_cast<size_t>(std::lround(a.duration_s)))});
+        sound::bucket_max(scratch.get(),n,per_second,second_count);
         auto* levels=cJSON_AddArrayToObject(e,"level_max_1s");
-        for(size_t i=0;i<std::min(seconds,n);++i)cJSON_AddItemToArray(levels,cJSON_CreateNumber(std::round(per_second[i]*10)/10));
+        for(size_t i=0;i<second_count;++i)cJSON_AddItemToArray(levels,cJSON_CreateNumber(std::round(per_second[i]*10)/10));
     }
     cJSON_AddNumberToObject(e,"compute_us",esp_timer_get_time()-started);diagnostic_emit(e);
     analysis_state.store(ok?Ready:TooShort);
@@ -277,6 +333,7 @@ void analyze_session(const sound::Frame* frames,size_t n,float period_s,bool tru
 }
 
 void sound_run() {
+    note.reset(); // a note belongs to the analysis it was recorded for
     constexpr size_t window_frames=spectrum_max_frames,block_frames=1024,warmup_frames=24000;
     struct Work {
         SpectrumWorkspace workspace;float amplitudes[window_frames/2+1];
@@ -346,4 +403,98 @@ void sound_run() {
     cJSON_AddNumberToObject(e,"recorded_frames",recorded);cJSON_AddBoolToObject(e,"record_allocated",record!=nullptr);
     diagnostic_emit(e);
     if(analysis_requested.exchange(false))analyze_session(record.get(),recorded,frame_period_s,truncated);
+}
+
+namespace {
+cJSON* rounded(double value) {return cJSON_CreateNumber(std::round(value*10)/10);}
+// The summary the Mac checks (tools/sound_explain.py FIELDS); levels in device dBFS.
+cJSON* analysis_summary() {
+    const auto& a=result;auto* o=cJSON_CreateObject();
+    const std::pair<const char*,float> top[]={{"duration_s",a.duration_s},{"background_db",a.background_db},
+        {"loud_db",a.loud_db},{"average_db",a.average_db},{"max_db",a.max_db},{"max_at_s",a.max_at_s},
+        {"threshold_db",a.threshold_db},{"strongest_background_hz",a.strongest_background_hz}};
+    for(const auto& [key,value]:top)cJSON_AddItemToObject(o,key,rounded(value));
+    cJSON_AddNumberToObject(o,"event_count",a.event_count);cJSON_AddNumberToObject(o,"sharp_count",a.sharp_count);
+    auto* events=cJSON_AddArrayToObject(o,"events");
+    for(unsigned i=0;i<std::min<unsigned>(a.event_count,sound::max_events);++i) {
+        const auto& v=a.events[i];auto* e=cJSON_CreateObject();
+        cJSON_AddItemToObject(e,"start_s",rounded(v.start_s));cJSON_AddItemToObject(e,"duration_s",rounded(v.duration_s));
+        cJSON_AddItemToObject(e,"peak_over_db",rounded(v.peak_over_db));cJSON_AddItemToObject(e,"band_hz",rounded(v.band_hz));
+        cJSON_AddItemToObject(e,"band_rise_db",rounded(v.band_rise_db));cJSON_AddItemToArray(events,e);
+    }
+    auto* tones=cJSON_AddArrayToObject(o,"tones");
+    for(unsigned i=0;i<a.tone_count;++i) {
+        auto* t=cJSON_CreateObject();cJSON_AddItemToObject(t,"tone_hz",rounded(a.tones[i].hz));
+        cJSON_AddItemToObject(t,"above_db",rounded(a.tones[i].above_db));cJSON_AddItemToArray(tones,t);
+    }
+    auto* sharp=cJSON_AddArrayToObject(o,"sharp");
+    for(unsigned i=0;i<std::min<unsigned>(a.sharp_count,sound::max_sharp);++i) {
+        auto* t=cJSON_CreateObject();cJSON_AddItemToObject(t,"at_s",rounded(a.sharp[i].at_s));
+        cJSON_AddItemToObject(t,"peak_over_db",rounded(a.sharp[i].peak_over_db));cJSON_AddItemToArray(sharp,t);
+    }
+    auto* levels=cJSON_AddArrayToObject(o,"level_max_1s");
+    for(size_t i=0;i<second_count;++i)cJSON_AddItemToArray(levels,rounded(per_second[i]));
+    return o;
+}
+void new_session(char* out,size_t size) {
+    snprintf(out,size,"sa-%08lx%08lx%08lx%08lx",static_cast<unsigned long>(esp_random()),static_cast<unsigned long>(esp_random()),
+             static_cast<unsigned long>(esp_random()),static_cast<unsigned long>(esp_random()));
+}
+void set_ids(cJSON* metadata,const char* session) {
+    char id[64];snprintf(id,sizeof(id),"%s-q1",session);
+    cJSON_ReplaceItemInObjectCaseSensitive(metadata,"session_id",cJSON_CreateString(session));
+    cJSON_ReplaceItemInObjectCaseSensitive(metadata,"question_id",cJSON_CreateString(id));
+}
+// Media task -> screen; takes the display lock for each update.
+void explain_progress(const char* stage,const char* transcript,const char* text) {
+    if(!bsp_display_lock(1000))return;
+    if(stage)lv_label_set_text(status_label,stage);
+    if(text) {
+        std::string shown;
+        if(transcript && transcript[0])shown+="You said: \""+std::string(transcript)+"\"\n\n";
+        shown+="Agent: "+std::string(text)+"\n\n"+events_text;
+        lv_label_set_text(events_label,shown.c_str());lv_obj_scroll_to_y(lv_obj_get_parent(events_label),0,LV_ANIM_OFF);
+        lv_label_set_text(status_label,"The agent's reading is below. Stop voice ends the speech.");
+    }
+    bsp_display_unlock();
+}
+}
+
+void sound_record_note(const char* boot) {
+    char session[40];new_session(session,sizeof(session));
+    char id[64];snprintf(id,sizeof(id),"%s-q1",session);
+    auto recorded=std::make_unique<InvestigationCapture>();
+    const bool ok=investigation_record_question(boot,session,id,never_cancel,note_stop,*recorded,nullptr);
+    note_recording.store(false);
+    double seconds=0;
+    if(ok){seconds=cJSON_GetObjectItemCaseSensitive(recorded->metadata,"frames")->valuedouble/16000;note=std::move(recorded);}
+    auto* e=diagnostic_event("sound_note");cJSON_AddBoolToObject(e,"ok",ok);cJSON_AddNumberToObject(e,"seconds",seconds);
+    if(ok)for(const char* key:{"stopped_by","input_clipped"})
+        cJSON_AddItemToObject(e,key,cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(note->metadata,key),true));
+    diagnostic_emit(e);
+    if(bsp_display_lock(1000)) {
+        char text[96];
+        if(ok)snprintf(text,sizeof(text),"Voice note ready (%.1f s). Tap Explain, or record it again.",seconds);
+        else snprintf(text,sizeof(text),"%s",note?"Recording failed; the earlier note is kept.":"Recording failed. Try again.");
+        lv_label_set_text(status_label,text);lv_label_set_text(note_label,"Voice note");
+        lv_obj_remove_state(explain_button,LV_STATE_DISABLED);lv_obj_remove_state(listen_button,LV_STATE_DISABLED);
+        bsp_display_unlock();
+    }
+}
+
+void sound_explain(const char* boot) {
+    // A fresh session each time, so Explain can be retried; the note takes its IDs.
+    char session[40];new_session(session,sizeof(session));
+    if(note)set_ids(note->metadata,session);
+    SoundExplainResult out;
+    const bool ok=analysis_state.load()==Ready &&
+        investigation_explain_sound(boot,session,note.get(),analysis_summary(),explain_progress,out);
+    explaining.store(false);
+    if(bsp_display_lock(1000)) {
+        if(!ok)lv_label_set_text(status_label,out.error.empty()?"Nothing to explain yet.":out.error.c_str());
+        else lv_label_set_text(status_label,"Tap Explain to ask again, or record a new voice note first.");
+        lv_label_set_text(explain_label,"Explain");
+        for(auto* b:{note_button,listen_button})lv_obj_remove_state(b,LV_STATE_DISABLED);
+        bsp_display_unlock();
+    }
 }

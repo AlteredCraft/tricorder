@@ -9,15 +9,17 @@
 namespace sound {
 constexpr size_t analysis_bands=48; // spectrum_band_count
 constexpr float event_rise_db=10,event_min_s=0.3f,event_gap_s=0.3f,tone_rise_db=6,silent_band_db=-100;
-constexpr size_t max_events=12,max_tones=4;
+constexpr size_t max_events=12,max_tones=4,max_sharp=12;
 struct Frame {float level_db;float band_db[analysis_bands];};
 struct Event {float start_s,duration_s,peak_over_db,band_hz,band_rise_db;};
 struct Tone {float hz,above_db;};
+struct Sharp {float at_s,peak_over_db;}; // over the threshold for less than event_min_s
 struct Analysis {
     unsigned frames;float duration_s;
     float background_db,loud_db,average_db,max_db,max_at_s,threshold_db;
     unsigned event_count;Event events[max_events]; // first max_events in time; event_count counts all
     unsigned tone_count;Tone tones[max_tones];       // strongest first
+    unsigned sharp_count;Sharp sharp[max_sharp];     // first max_sharp in time; sharp_count counts all
     float strongest_background_hz;
 };
 inline float power(float db){return std::pow(10.0f,db/10.0f);}
@@ -57,12 +59,15 @@ inline bool analyze(const Frame* frames,size_t n,float period_s,const float* ban
         size_t last=i,j=i+1;
         for(;j<n && j<=last+gap;++j)if(frames[j].level_db>=a.threshold_db)last=j;
         const size_t first=i,count=last-first+1;i=last+1;
-        if(count<shortest)continue;
+        float peak=frames[first].level_db;
+        for(size_t k=first;k<=last;++k)peak=std::max(peak,frames[k].level_db);
+        if(count<shortest) {
+            if(a.sharp_count<max_sharp)a.sharp[a.sharp_count]={first*period_s,peak-a.background_db};
+            ++a.sharp_count;continue;
+        }
         if(a.event_count<max_events) {
             Event& e=a.events[a.event_count];
             e.start_s=first*period_s;e.duration_s=count*period_s;
-            float peak=frames[first].level_db;
-            for(size_t k=first;k<=last;++k)peak=std::max(peak,frames[k].level_db);
             e.peak_over_db=peak-a.background_db;e.band_rise_db=-1000;
             for(size_t b=0;b<analysis_bands;++b) {
                 double p=0;for(size_t k=first;k<=last;++k)p+=power(frames[k].band_db[b]);

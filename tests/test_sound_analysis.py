@@ -47,6 +47,8 @@ int main() {
     assert(near(a.events[0].band_hz,3100) && near(a.events[0].band_rise_db,25,0.2f));
     assert(near(a.events[1].start_s,40) && near(a.events[1].duration_s,0.6f) && near(a.events[1].peak_over_db,15));
     assert(near(a.events[1].band_hz,600));
+    // The 0.2 s blip at 50 s is a sharp sound, not an event.
+    assert(a.sharp_count==1 && near(a.sharp[0].at_s,50) && near(a.sharp[0].peak_over_db,30));
     assert(a.tone_count==1 && near(a.tones[0].hz,2100) && near(a.tones[0].above_db,12));
     assert(near(a.strongest_background_hz,2100));
 

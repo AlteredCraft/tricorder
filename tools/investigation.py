@@ -437,6 +437,11 @@ Free text still needs transcript/operator review for semantic hallucinations.
 class MockProvider:
     name = 'scripted-mock-v1'
 
+    def explain(self, evidence):
+        """Deterministic reading of a sound analysis (F-0002); see tools.sound_explain."""
+        from tools.sound_explain import mock_text
+        return mock_text(evidence)
+
     def respond(self, request):
         validate_request(request)
         captures = request['captures']

@@ -32,8 +32,11 @@ constexpr TileText tile_text[]={
 "3. Tap Reset peak before each new sound to compare them.\n\n"
 "Analysis\n"
 "Tap Analysis to stop listening and see what happened: the background level, how loud it got, each loud event (10 dB or more above the background) with the band that rose most, any steady tone, and the level over time. It covers up to 10 minutes of listening.\n\n"
+"Ask the agent\n"
+"1. On the analysis, tap Voice note and say what you heard or want to know, for example \"the grinder ran near the end, which event was it?\" Tap Stop.\n"
+"2. Tap Explain. The Mac transcribes your note and the agent reads the analysis with it. Its reading appears above the events and is spoken; Stop voice ends the speech.\n\n"
 "Notes\n"
-"• Nothing is saved to the SD card or sent to the Mac.\n"
+"• The listening audio is never saved or sent. Explain sends the analysis numbers and your voice note to the Mac.\n"
 "• The level is not a calibrated sound level. Use it to compare sounds, not as an absolute measurement.\n"
 "• The speaker is off while this screen listens."},
 {"Camera","Instrument coming",nullptr},

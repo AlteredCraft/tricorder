@@ -17,6 +17,7 @@ import wave
 from tools.captures import CaptureStore
 from tools.speech_to_text import DEFAULT_ENGINE, ENGINES, load_transcriber
 from tools import text_to_speech
+from tools.sound_explain import checked_text, explain_evidence, validate_analysis
 from tools.investigation import (CaptureEvidence, Fixture, MAX_CAPTURE_BYTES, MAX_QUESTIONS,
                                  MAX_QUESTION_FRAMES, MAX_QUESTION_TEXT, MockProvider,
                                  ProtocolError, QUESTION_FIELDS, QUESTION_RATE_HZ, QuestionAudio,
@@ -26,6 +27,7 @@ from tools.investigation import (CaptureEvidence, Fixture, MAX_CAPTURE_BYTES, MA
 MAX_WIRE_BYTES = 32768
 # A, B and a repeat of A: start + 282 chunks + end each, plus hello, turns, acks, cancel.
 MAX_MESSAGES = 900
+EXPLAIN_TIMEOUT_S = 30
 # Spoken ask: start + chunks + end + confirm per question, outside the A/B budget.
 QUESTION_MESSAGES = MAX_QUESTIONS*(-(-MAX_QUESTION_FRAMES*2//4096)+3)
 # Spoken guidance: 24 kHz mono s16 in chunks of at most 4096 bytes, at most 60 s per reply.
@@ -97,7 +99,8 @@ class MockSession:
             'ack':{'request_id'}, 'cancel':set(),
             'question_start':{'metadata'}, 'question_chunk':{'question_id','offset','data'},
             'question_end':{'question_id','sha256'}, 'question_confirm':{'question_id','accepted'},
-            'speak':{'request_id'}, 'speech_stop':{'request_id'}}
+            'speak':{'request_id'}, 'speech_stop':{'request_id'},
+            'analysis_explain':{'request_id','analysis'}}
         require(isinstance(kind,str) and kind in fields,'unknown message type')
         allowed={'version','type','boot_id','session_id'}|fields[kind]
         if kind=='hello' and self.replay_only:allowed.add('replay')
@@ -180,6 +183,17 @@ class MockSession:
             self.expires=time.monotonic()+(deadline-now)/1000
             self.phase='pending'
             self.task=asyncio.create_task(self.respond(request))
+        elif kind=='analysis_explain':
+            # F-0002: a sound session analysed on the device, explained once, before any capture.
+            require(self.phase=='await_a' and not self.ids and self.pending is None and not self.requests,
+                    'explain only once, before any capture')
+            request_id=identity(message['request_id'])
+            analysis=validate_analysis(message['analysis'])
+            self.archive.record({'type':'sound_analysis','request_id':request_id,'analysis':analysis})
+            self.requests.add(request_id)
+            self.pending={'request_id':request_id}
+            self.phase='pending'
+            self.task=asyncio.create_task(self.explain(request_id,analysis))
         elif kind=='ack':
             require(self.phase=='await_ack' and self.pending is not None,'no response awaiting acknowledgement')
             require(time.monotonic()<self.expires,'ack deadline expired')
@@ -343,6 +357,31 @@ class MockSession:
         except Exception:
             self.phase='incomplete';self.pending=None
             # Exceptions from future providers can include URLs/keys; record only a fixed reason.
+            await self.emit(self.envelope('incomplete',reason='provider_or_evidence_failure'))
+
+    async def explain(self, key, analysis):
+        evidence=explain_evidence(analysis,self.operator_question)
+        try:
+            async with asyncio.timeout(EXPLAIN_TIMEOUT_S):
+                started=time.monotonic_ns()
+                text=self.provider.explain(evidence)
+                text=await text if inspect.isawaitable(text) else text
+                text=checked_text(text,evidence)
+                self.archive.record({'type':'provider_timing','request_id':key,'provider':self.provider.name,
+                    'model':getattr(self.provider,'model',None),'started_host_ns':started,
+                    'finished_host_ns':time.monotonic_ns()})
+            if self.phase!='pending':return
+            self.pending=None
+            self.phase='complete'
+            self.acknowledged=key
+            self.replies[key]=text
+            self.archive.record({'type':'analysis_reply','request_id':key,'text':text})
+            await self.emit(self.envelope('analysis_reply',request_id=key,text=text))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.phase='incomplete';self.pending=None
+            # Provider exceptions can carry URLs or keys; record only a fixed reason.
             await self.emit(self.envelope('incomplete',reason='provider_or_evidence_failure'))
 
     async def provider_reply(self, request):
