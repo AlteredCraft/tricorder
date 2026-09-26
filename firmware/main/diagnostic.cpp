@@ -430,6 +430,7 @@ extern "C" void app_main() {
         auto* mode=diagnostic_event("investigation_startup");
         cJSON_AddStringToObject(mode,"workload","manual A/B raw audio; automatic diagnostic stages skipped");
         diagnostic_emit(mode);
+        route_speaker(); // logs the boot route; speak() re-checks
     } else {
         capture_camera(boot_id);
         // Three isolated live raw/speech comparisons, without operator input.

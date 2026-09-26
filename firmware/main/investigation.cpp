@@ -507,13 +507,14 @@ int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions
     if(!s.send(request)){p.disconnect();return 0;}
     SpeechStream stream(p.boot(),p.session(),audio.get(),capacity);stream.begin(request_id);
     auto speaker=diagnostic_speaker();
+    bool headphones=route_speaker();
     esp_codec_dev_sample_info_t format{};format.sample_rate=48000;format.channel=2;format.bits_per_sample=16;
     const bool open=speaker && esp_codec_dev_open(speaker,&format)==ESP_OK &&
         esp_codec_dev_set_out_vol(speaker,100)==ESP_OK && esp_codec_dev_set_out_mute(speaker,!audible)==ESP_OK;
     const int64_t started=esp_timer_get_time();int64_t first_audio=0;
     const uint64_t deadline=now_ms()+90000;
     bool playing=false,stopped=!open,stop_sent=false,failed=false;
-    size_t played=0;unsigned underruns=0;int action=0;int16_t previous=0;int64_t stopped_us=0;
+    size_t played=0;unsigned underruns=0,blocks=0;int action=0;int16_t previous=0;int64_t stopped_us=0;
     static int16_t output[block*4]; // media task only: 480 frames -> 960 stereo frames
     auto stop_stream=[&]{
         if(stream.ended() || stop_sent)return true;
@@ -568,13 +569,14 @@ int speak(Socket& s,InvestigationProtocol& p,const char* request_id,bool actions
         if(!first_audio)first_audio=esp_timer_get_time();
         if(esp_codec_dev_write(speaker,output,n*8)!=ESP_OK){stopped=true;if(!stop_stream()){p.disconnect();break;}continue;}
         played+=n;
+        if(++blocks%12==0)headphones=route_speaker(); // ~240 ms: plugging in mid-reply silences the speaker
     }
     if(open && !stopped)vTaskDelay(pdMS_TO_TICKS(100)); // let queued samples drain before muting
     // Close even when the open or its volume/mute setup failed: the device may be marked open.
     if(speaker){if(open)esp_codec_dev_set_out_mute(speaker,true);esp_codec_dev_close(speaker);}
     auto* e=diagnostic_event("investigation_speech");cJSON_AddStringToObject(e,"request_id",request_id);
     cJSON_AddStringToObject(e,"status",stream.status());cJSON_AddNumberToObject(e,"frames",stream.frames());
-    cJSON_AddNumberToObject(e,"played_frames",played);cJSON_AddBoolToObject(e,"speaker_open",open);
+    cJSON_AddNumberToObject(e,"played_frames",played);cJSON_AddBoolToObject(e,"speaker_open",open);cJSON_AddBoolToObject(e,"headphones",headphones);
     cJSON_AddBoolToObject(e,"stopped",stopped);cJSON_AddNumberToObject(e,"action",action);
     cJSON_AddNumberToObject(e,"underruns",underruns);cJSON_AddNumberToObject(e,"stopped_us",stopped_us);
     cJSON_AddNumberToObject(e,"first_audio_ms",first_audio?(first_audio-started)/1000:-1);diagnostic_emit(e);
