@@ -32,6 +32,7 @@ A trial is one build on the device, used by the user or driven by a script, with
 
 ## Principles
 
+- **Device first, then the Mac.** Every feature first works on the device alone. Talking to the Mac service (the agent, speech) extends it in a later trial.
 - **Real use comes first.** Harden only what a trial shows is broken, or what a feature needs. Deferred work waits in the milestone's Later list.
 - **Telemetry or it didn't happen.** Missing telemetry makes a trial inconclusive: fix the telemetry, don't guess.
 - **Device numbers are baselines,** not invented targets.

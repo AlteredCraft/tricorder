@@ -6,11 +6,12 @@
 
 **Theme:** The person picks up the Tricorder, sees what it can do, and opens any capability from a start screen with live readings (the vision's Explore mode and capability view). Deferred: new investigations and hosted service.
 
-**Active feature:** [F-0001](features/F-0001-start-screen.md#next)
+**Active feature:** [F-0002](features/F-0002-sound-analysis.md#next)
 
 | Feature | Status |
 | --- | --- |
-| [F-0001 Start screen](features/F-0001-start-screen.md) | In progress |
+| [F-0001 Start screen](features/F-0001-start-screen.md) | Done |
+| [F-0002 Sound session analysis](features/F-0002-sound-analysis.md) | In progress |
 
 ## M-0001: Validate the handheld investigation
 

@@ -2,7 +2,7 @@
 
 **Milestone:** [M-0002](../milestones.md#m-0002-explore-the-device)
 
-**Status:** In progress
+**Status:** Done (2026-09-26, user-approved)
 
 **Outcome:** The device boots to a start screen with one tile per capability. Each tile shows whether the capability is ready, with a live reading where one exists, and opens that capability's screen. Every screen leads back home.
 
@@ -13,11 +13,11 @@
 1. [yes] (T1) A tile grid on the 1280×720 landscape screen is readable and easy to hit while holding the device.
 2. [yes] (T1) Tiles can show live readings (motion, power, network) without slowing touch response.
 3. [yes] (T1) Home and Back are obvious from every screen.
-4. [?] Which capabilities deserve a tile, and in what order, is clear once the user sees the screen.
+4. [yes] (T2) Which capability comes first is clear once the user sees the screen: Sound, then its analysis ([F-0002](F-0002-sound-analysis.md)).
 
 ## Next
 
-T3 (café, silent, about 5 minutes on USB): an info button on each working tile opens a scrolling description and walkthrough (user's request); Freeze is removed from Sound. Telemetry: `home_info` (tile, time open, how far scrolled), `ui_nav`. Tests whether the walkthroughs explain each capability.
+None. Sound analysis continues in [F-0002](F-0002-sound-analysis.md).
 
 ## Trials
 
