@@ -17,10 +17,14 @@
 
 ## Next
 
-T2 (café, silent, about 5 minutes on USB): the Sound tile opens a live spectrum with peak hold, level, Freeze and Reset peak (user's pick). Watch it follow café sounds (grinder, cups, voices), freeze one, reset, go Home. Telemetry: `sound_session` (views, compute µs, driver overflows/short reads), `sound_control`, `ui_nav`. Tests assumption 4 and whether a live spectrum is worth having.
+T3 (café, silent, about 5 minutes on USB): an info button on each working tile opens a scrolling description and walkthrough (user's request); Freeze is removed from Sound. Telemetry: `home_info` (tile, time open, how far scrolled), `ui_nav`. Tests whether the walkthroughs explain each capability.
 
 ## Trials
 
 ### T1 2026-09-26: tiles and navigation
 
 `c96557c` · run `20260926-start-screen-t1`. **Tried:** boot to home; each path out and back; tilt; headphones. **Telemetry:** 6 `ui_nav`, touch-down to drawn 166–278 ms (73–130 ms redraw after release); 0 misses; headphone route switched both ways. USB dropped at about 3 min. **User:** "tiles read fine and were easy to hit." **Learned:** the grid works in the hand. **Decision:** continue.
+
+### T2 2026-09-26: Sound instrument
+
+`33b1bf9` · run `20260926-sound-t2`. **Tried:** live spectrum, peak hold, level, Freeze in a café. **Telemetry:** 2 sessions (130 s, 97 s): 23 views/s, compute 9.2 ms mean (14.7 max), 0 driver overflows or short reads; about 12 redraws/s; open/close 173–188 ms. **User:** "works as advertised"; Freeze "not that interesting"; wants an info button per tile with a walkthrough. **Decision:** adapt: drop Freeze, add info.

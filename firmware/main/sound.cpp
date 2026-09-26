@@ -17,13 +17,13 @@
 namespace {
 QueueHandle_t media;
 std::atomic<bool> stop{true};
-lv_obj_t *panel,*chart,*level_label,*level_bar,*freeze_label;
+lv_obj_t *panel,*chart,*level_label,*level_bar;
 lv_chart_series_t *live_series,*peak_series;
 // Media owner -> LVGL timer: the latest view, copied under the lock.
 portMUX_TYPE view_lock=portMUX_INITIALIZER_UNLOCKED;
 float view_db[spectrum_band_count];float view_level=sound::level_floor_db;unsigned view_sequence=0; // view_lock
 // LVGL task only.
-float peak[spectrum_band_count];unsigned drawn_sequence=0,draws=0;bool frozen=false;
+float peak[spectrum_band_count];unsigned drawn_sequence=0,draws=0;
 
 void set_chart(lv_chart_series_t* series,const float* db) {
     for(size_t i=0;i<spectrum_band_count;++i)lv_chart_set_value_by_id(chart,series,i,spectrum_chart_value(db[i]));
@@ -33,7 +33,7 @@ void clear_peak() {
     for(size_t i=0;i<spectrum_band_count;++i)lv_chart_set_value_by_id(chart,peak_series,i,LV_CHART_POINT_NONE);
 }
 void draw(lv_timer_t*) {
-    if(lv_obj_has_flag(panel,LV_OBJ_FLAG_HIDDEN) || frozen)return;
+    if(lv_obj_has_flag(panel,LV_OBJ_FLAG_HIDDEN))return;
     float db[spectrum_band_count],level;unsigned sequence;
     portENTER_CRITICAL(&view_lock);
     sequence=view_sequence;level=view_level;if(sequence!=drawn_sequence)memcpy(db,view_db,sizeof(db));
@@ -47,9 +47,8 @@ void draw(lv_timer_t*) {
 }
 void log_control(const char* control) {
     auto* e=diagnostic_event("sound_control");cJSON_AddStringToObject(e,"control",control);
-    cJSON_AddBoolToObject(e,"frozen",frozen);cJSON_AddNumberToObject(e,"draws",draws);diagnostic_emit(e);
+    cJSON_AddNumberToObject(e,"draws",draws);diagnostic_emit(e);
 }
-void freeze(lv_event_t*) {frozen=!frozen;lv_label_set_text(freeze_label,frozen?"Resume":"Freeze");log_control("freeze");}
 void reset(lv_event_t*) {clear_peak();lv_chart_refresh(chart);log_control("reset_peak");}
 void back(lv_event_t*) {
     stop.store(true);lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);log_control("back");home_returned("sound");
@@ -77,7 +76,6 @@ void sound_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_bar_set_range(level_bar,-100,0);lv_bar_set_value(level_bar,-100,LV_ANIM_OFF);
     lv_obj_set_style_bg_color(level_bar,lv_color_hex(0x263238),LV_PART_MAIN);
     lv_obj_set_style_bg_color(level_bar,lv_color_hex(0x66bb6a),LV_PART_INDICATOR);
-    freeze_label=button(panel,"Freeze",690,freeze);
     button(panel,"Reset peak",886,reset);
     button(panel,"Home",1082,back);
 
@@ -111,7 +109,7 @@ void sound_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
 }
 
 void sound_ui_open() {
-    frozen=false;lv_label_set_text(freeze_label,"Freeze");draws=0;
+    draws=0;
     clear_peak();lv_label_set_text(level_label,"-- dB");lv_bar_set_value(level_bar,-100,LV_ANIM_OFF);
     for(size_t i=0;i<spectrum_band_count;++i)lv_chart_set_value_by_id(chart,live_series,i,LV_CHART_POINT_NONE);
     lv_obj_remove_flag(panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(panel);
