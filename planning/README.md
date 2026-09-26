@@ -1,76 +1,49 @@
 # Planning guidelines
 
-Planning docs let the next person or agent pick up the work and show, at any level, what is done. Write the fewest words that let a reader act.
+We build features that the person holding the Tricorder can use, and let device trials decide what's true. Write the fewest words that let the next person or agent act.
 
-Project-specific conventions (evidence locations, build/trial rules, operator tasks) live in [../AGENTS.md](../AGENTS.md), not here.
+Project conventions (runs, builds, device notes) live in [../CLAUDE.md](../CLAUDE.md).
+
+## Shape
+
+**Milestone → Feature → Trials.** ADRs record decisions and are not a level.
+
+| Doc | Location | Holds | Words |
+| --- | --- | --- | --- |
+| Milestone | [milestones.md](milestones.md) ([template](milestone-template.md)) | Theme, features (link + status), Later list | ≤ 150 each |
+| Feature | `features/F-NNNN-title.md` ([template](feature-template.md)) | Outcome, assumptions, trial log, next trial | ≤ 250 above the log; ≤ 80 per trial |
+| ADR | `adrs/ADR-NNNN-title.md` ([template](adrs/ADR-template.md)) | A durable decision already made | ≤ 300 |
+| Reference | `planning/<topic>.md` | Protocols and commands used by several features | ≤ 1,000 |
+
+M-0001's goals and specs under `plans/` are closed history. Don't extend them.
+
+**Size:** a feature fits in 1–3 days of real time. If it looks bigger, split it before starting. If it runs past 3 days, stop and split what's left.
+
+## The trial loop
+
+A trial is one build on the device, used by the user or driven by a script, with telemetry. Each session usually runs one loop.
+
+1. **Plan** (the feature's Next): what we'll try, which assumption it tests, which telemetry answers it, and what the user does (minutes, place, whether it needs quiet, sound or battery).
+2. **Build:** tests first for code. Add the events the trial needs in the same build (device monotonic time). Commit before flashing.
+3. **Run:** record to `.local/runs/YYYYMMDD-topic/`.
+4. **Analyze:** read the telemetry first. Confirm the trial completed in the logs, then ask the user what they saw and felt.
+5. **Record:** one trial entry: what was tried, what the telemetry showed, what the user said, what we learned, and the decision (continue, adapt or stop).
+6. **Adapt:** update Assumptions and Next. Change course when observations say so.
 
 ## Principles
 
-- **One home per fact.** Each fact has one authoritative file (table below). Elsewhere, link to it.
-- **Specs test hypotheses. Git holds the work.** Planning docs record what was expected, what was observed, and the commit or PR behind it.
-- **Logs are append-only.** Never rewrite a dated Observed entry. Mark stale entries `~~like this~~ (superseded YYYY-MM-DD)` and add a new one.
-- **Stay within the word limits.** Check with `wc -w` at session end. Over a limit means the doc is doing too much: split it, don't trim evidence.
-- **Missing data is inconclusive, not a pass.**
-
-## Hierarchy and homes
-
-**Milestone → Goal → Spec.** A child names its one parent in its header, and the parent lists its children by link. ADRs are decision records, not a level.
-
-| Doc | Location | Authoritative for | Words |
-| --- | --- | --- | --- |
-| Milestone | [milestones.md](milestones.md) ([template](milestone-template.md)) | Scope, done-when, active-spec pointer | ≤ 250 each |
-| Goal | `plans/G-NNNN-title.md` ([template](goal-template.md)) | Outcome, measure, goal result | ≤ 150 |
-| Spec | `plans/G-NNNN.nn-title.md` ([template](spec-template.md)) | Hypothesis, checks and verdicts, observations, next work | ≤ 300 above Observed; ≤ 50 per entry |
-| ADR | `adrs/ADR-NNNN-title.md` ([template](adrs/ADR-template.md)) | A durable decision already made | ≤ 300 |
-| Reference | `planning/<topic>.md` | Protocols, commands, limits used by several specs | ≤ 1,000 |
-| Open decision | GitHub issue | A choice not yet made | n/a |
-
-Parent tables hold **link + status only**. The child's header is authoritative; the parent's column mirrors it in the same change.
-
-## Status and completion
-
-**Spec**, set from evidence:
-
-- `Proposed`: no work started. `In progress`: work started.
-- `Confirmed`: every check is `[pass]`.
-- `Refuted`: a Refuted-if condition was observed. Cite the entry.
-- `Partial`: closed with checks still open, after the user approves. The open checks move to a linked successor spec.
-
-Confirmed, Refuted and Partial are closed. A closed spec only gains strike-throughs and a successor link.
-
-**Goal:** `Not started`, `In progress`, `Met` or `Dropped` (with reason). Met when all its specs are closed and the Measure is satisfied, recorded as a dated one-line **Result** citing evidence. Spec results don't set it automatically.
-
-**Milestone:** `Not started`, `In progress` or `Done`. Done when every goal is Met. Never closed partly done: move unmet work to another milestone, record the move, then close.
-
-## Specs
-
-- **Checks** are numbered, concrete and numeric where possible: evidence source → pass condition. Device performance is recorded as a baseline (a measured number) until a real need sets a target; don't invent one. Each check starts with a verdict: `[open]`, `[pass]` or `[fail]`. The Observed entry tagged `C<n>` is its evidence.
-- **Build** (optional) is a few one-line steps, and each step serves a check. If new work isn't validated by any check, add a check (Revision) or open a new spec.
-- **Observed** is the append-only log: `- YYYY-MM-DD — [C2 pass] result (key numbers). Evidence: <ref> · <commit or PR>. → ADR-NNNN`. Every entry cites a commit SHA or PR. Record results, bugs fixed and decisions; not plans or process chatter.
-- **Open** is the ordered next work. Each item fits in one session. It's current state, edited freely. Items waiting on a decision link the GitHub issue.
-- **Changing checks:** add a dated `Revision:` line in the header. You can add or tighten a check freely. Loosening or removing one needs the user, noted `(user-approved)`. Earlier results stand under their original criteria. A changed check reverts to `[open]` unless existing evidence meets it.
-- **More than about 12 Observed entries** usually means two hypotheses. Close the spec (Partial) and open a successor.
-- **Shared work:** avoid it. If unavoidable, each spec's entry cites the same commit or PR; don't copy results.
-
-## ADRs
-
-Record one when a choice becomes a constraint future work must honor: component boundary, resource ownership, concurrency model, transport contract, evidence format or trust boundary. Not for bug fixes, settings or UI tweaks. Born Active: decision, one-line alternatives, consequences. Undecided choices are GitHub issues.
-
-**Revoking:** set `Status: Revoked by ADR-NNNN (YYYY-MM-DD): reason`, keep the file, and update inbound links.
+- **Real use comes first.** Harden only what a trial shows is broken, or what a feature needs. Deferred work waits in the milestone's Later list.
+- **Telemetry or it didn't happen.** Missing telemetry makes a trial inconclusive: fix the telemetry, don't guess.
+- **Device numbers are baselines,** not invented targets.
+- **The user's time is scarce.** State each trial's purpose and duration. Don't repeat a trial unless its code or conditions changed. Prefer script-driven trials for anything that doesn't need hands, ears or judgment.
+- **Trial logs are append-only.** Correct with a new entry.
 
 ## Evidence
 
-Evidence is anything a reader can re-inspect (test, CI run, run directory, benchmark), cited by path or ID. The commit SHA identifies the code, so no source manifests or red/green logs. Keep credentials and private data out of Git.
+Runs are cited by directory name plus the commit SHA. Keep credentials and private data out of Git.
 
-## Human time
+## Needs the user
 
-The user's time is scarcest. Prefer automated evidence; ask for a manual trial only for what automation can't test, saying what it tests and which outcome would change the plan. Don't repeat a trial unless its code or conditions changed.
+Choosing or changing a feature's outcome, marking a feature Done or Dropped, and adding or closing a milestone. Everything else, proceed.
 
-## Sessions
-
-1. **Start:** read [milestones.md](milestones.md) and the active spec, then take its first Open item. If `HANDOFF.md` exists, finish that item first.
-2. **Work:** write tests first for code changes. Commit or open a PR. Append the Observed entry with its ref, update check verdicts, and write any ADR in the same change.
-3. **End:** update the Open list and any status that changed (child first, then the parent's mirror). Check the word limits.
-4. **Stopping early:** write a temporary `HANDOFF.md` at the repo root (where you are, what's half-done, how to resume). The next session deletes it.
-
-**Needs the user:** loosening or removing a check, closing a spec as Partial, marking a goal Met or Dropped, closing a milestone, moving work between milestones, or any change to product intent or scope. Everything else, proceed.
+**Stopping mid-trial:** write a temporary `HANDOFF.md` at the repo root. The next session finishes that trial and deletes it.
