@@ -10,13 +10,17 @@
 
 ## Assumptions
 
-1. [?] A tile grid on the 1280×720 landscape screen is readable and easy to hit while holding the device.
-2. [?] Tiles can show live readings (motion, power, network) without slowing touch response.
-3. [?] Home and Back are obvious from every screen.
+1. [yes] (T1) A tile grid on the 1280×720 landscape screen is readable and easy to hit while holding the device.
+2. [yes] (T1) Tiles can show live readings (motion, power, network) without slowing touch response.
+3. [yes] (T1) Home and Back are obvious from every screen.
 4. [?] Which capabilities deserve a tile, and in what order, is clear once the user sees the screen.
 
 ## Next
 
-T1 (café, quiet, about 5 minutes on USB): boot to home; open Investigate, Setup and Diagnostics and come back; watch the Motion and Power tiles while tilting the device. Telemetry: `ui_nav` (from, to, touch-down → shown µs) and `home_miss` (taps that hit no tile, x/y). Tests assumptions 1–3.
+T2: the first instrument screen behind a tile (Sound, Camera, Motion or Power), picked by the user. Tests assumption 4.
 
 ## Trials
+
+### T1 2026-09-26: tiles and navigation
+
+`c96557c` · run `20260926-start-screen-t1`. **Tried:** boot to home; each path out and back; tilt; headphones. **Telemetry:** 6 `ui_nav`, touch-down to drawn 166–278 ms (73–130 ms redraw after release); 0 misses; headphone route switched both ways. USB dropped at about 3 min. **User:** "tiles read fine and were easy to hit." **Learned:** the grid works in the hand. **Decision:** continue.
