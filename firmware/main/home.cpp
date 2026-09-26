@@ -2,6 +2,7 @@
 #include "home_model.h"
 #include "investigation.h"
 #include "network.h"
+#include "sound.h"
 #include "diagnostic_events.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -11,11 +12,11 @@
 #include <initializer_list>
 
 namespace {
-enum Opens {None,Investigate,Setup,Diagnostics};
+enum Opens {None,Investigate,Sound,Setup,Diagnostics};
 struct Tile {const char* name;const char* note;Opens opens;};
 constexpr Tile tiles[home::tile_count]={
     {"Investigate","Guided sound A/B",Investigate},
-    {"Sound","Instrument coming",None},
+    {"Sound","Live spectrum",Sound},
     {"Camera","Instrument coming",None},
     {"Motion","Screen coming",None},
     {"Power","Screen coming",None},
@@ -59,6 +60,7 @@ void tile_clicked(lv_event_t* ev) {
         cJSON_AddBoolToObject(e,"opens",false);diagnostic_emit(e);return;
     }
     if(tile.opens==Investigate){investigation_ui_open();note_nav("home","investigate");}
+    else if(tile.opens==Sound){sound_ui_open();note_nav("home","sound");}
     else if(tile.opens==Setup){investigation_setup_open();note_nav("home","setup");}
     else {show_home(false);note_nav("home","diagnostics");}
 }
@@ -112,7 +114,7 @@ void home_ui_init(lv_obj_t* screen) {
         lv_obj_align(readings[i],LV_ALIGN_BOTTOM_LEFT,0,0);
     }
     for(unsigned i:{motion_tile,power_tile,audio_tile})lv_label_set_text(readings[i],"No data");
-    lv_label_set_text(readings[0],"Open");
+    lv_label_set_text(readings[0],"Open");lv_label_set_text(readings[1],"Open");
     // Diagnostics is the screen underneath; this button returns home from it.
     auto* back=lv_button_create(screen);lv_obj_set_pos(back,1020,20);lv_obj_set_size(back,230,58);
     lv_obj_add_event_cb(back,home_clicked,LV_EVENT_CLICKED,nullptr);

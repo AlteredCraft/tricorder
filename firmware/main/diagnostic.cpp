@@ -11,6 +11,7 @@
 #include "investigation.h"
 #include "audio_devices.h"
 #include "home.h"
+#include "sound.h"
 #include "home_model.h"
 #include "restart_sequence.h"
 #include "dsp_diagnostic.h"
@@ -406,6 +407,7 @@ extern "C" void app_main() {
     lv_obj_center(baseline_label);
     network_ui_init(screen, boot_id);
     investigation_ui_init(screen, media_commands);
+    sound_ui_init(screen, media_commands);
     home_ui_init(screen);
     bsp_display_brightness_set(50);
     bsp_display_unlock();
@@ -468,6 +470,7 @@ extern "C" void app_main() {
             else if (command==5) investigation_run_replay();
             else if (command==3) run_audio_baseline(boot_id);
             else if (command==6) run_power_steps();
+            else if (command==sound_media_command) sound_run();
             else capture_audio(boot_id, true);
             media_idle();
         }

@@ -17,7 +17,7 @@
 
 ## Next
 
-T2: the first instrument screen behind a tile (Sound, Camera, Motion or Power), picked by the user. Tests assumption 4.
+T2 (café, silent, about 5 minutes on USB): the Sound tile opens a live spectrum with peak hold, level, Freeze and Reset peak (user's pick). Watch it follow café sounds (grinder, cups, voices), freeze one, reset, go Home. Telemetry: `sound_session` (views, compute µs, driver overflows/short reads), `sound_control`, `ui_nav`. Tests assumption 4 and whether a live spectrum is worth having.
 
 ## Trials
 
