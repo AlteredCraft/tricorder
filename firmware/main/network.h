@@ -1,5 +1,6 @@
 #pragma once
 #include "lvgl.h"
+#include <cstdint>
 
 // Called with the LVGL lock held; network work runs outside the UI task.
 void network_ui_init(lv_obj_t* screen, const char* boot_id);
@@ -10,3 +11,5 @@ void network_ui_open();
 bool network_prepare(unsigned timeout_ms);
 
 bool network_connect_saved(const char* ssid, const char* password);
+// Station address as esp_netif stores it, 0 while disconnected. Any task.
+uint32_t network_ipv4();

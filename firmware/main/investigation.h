@@ -6,6 +6,7 @@
 void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands);
 void investigation_ui_enable(bool enabled);
 void investigation_ui_open();
+void investigation_setup_open(); // no-op while a session runs
 // Called by the existing media owner for command 4. Returns after a terminal
 // state. UI cancel takes effect locally without waiting for this task/network.
 void investigation_run(const char* boot);

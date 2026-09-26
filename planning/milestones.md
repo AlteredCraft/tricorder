@@ -1,5 +1,17 @@
 # Tricorder milestones
 
+## M-0002: Explore the device
+
+**Status:** In progress
+
+**Theme:** The person picks up the Tricorder, sees what it can do, and opens any capability from a start screen with live readings (the vision's Explore mode and capability view). Deferred: new investigations and hosted service.
+
+**Active feature:** [F-0001](features/F-0001-start-screen.md#next)
+
+| Feature | Status |
+| --- | --- |
+| [F-0001 Start screen](features/F-0001-start-screen.md) | In progress |
+
 ## M-0001: Validate the handheld investigation
 
 **Status:** Done

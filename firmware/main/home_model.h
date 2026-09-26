@@ -1,0 +1,40 @@
+#pragma once
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+// Start screen (F-0001): tile geometry and tile reading text, host-testable.
+namespace home {
+struct Rect {int x,y,w,h;};
+constexpr int screen_w=1280,screen_h=720,columns=4,rows=2,margin=24,gap=16,header=84;
+constexpr unsigned tile_count=columns*rows;
+constexpr int tile_w=(screen_w-2*margin-(columns-1)*gap)/columns;
+constexpr int tile_h=(screen_h-header-margin-(rows-1)*gap)/rows;
+inline Rect tile(unsigned index) {
+    return {margin+static_cast<int>(index%columns)*(tile_w+gap),header+static_cast<int>(index/columns)*(tile_h+gap),tile_w,tile_h};
+}
+// Degrees from lying flat (screen up or down), from raw accelerometer axes in any unit.
+inline float tilt_degrees(float ax,float ay,float az) {
+    const float magnitude=std::sqrt(ax*ax+ay*ay+az*az);
+    if(magnitude<=0)return NAN;
+    return std::acos(std::fabs(az)/magnitude)*57.29578f;
+}
+inline void motion_text(float tilt,char* out,size_t size) {
+    if(std::isnan(tilt))snprintf(out,size,"No data");
+    else snprintf(out,size,"Tilt %d\xc2\xb0",static_cast<int>(std::lround(tilt)));
+}
+// INA226 on the battery branch; negative current flows into the battery (G-0001.05 C1).
+// On USB power the load is not on this branch, so the tile shows only charging.
+inline void power_text(float bus_v,float shunt_a,char* out,size_t size) {
+    if(std::isnan(bus_v))snprintf(out,size,"No data");
+    else if(shunt_a<=-0.02f)snprintf(out,size,"%.2f V\nCharging %.2f A",bus_v,-shunt_a);
+    else if(shunt_a>=0.02f)snprintf(out,size,"%.2f V\nUsing %.2f A (%.1f W)",bus_v,shunt_a,bus_v*shunt_a);
+    else snprintf(out,size,"%.2f V\nNo battery current",bus_v);
+}
+// ipv4 as esp_netif stores it (first octet in the low byte); 0 means no address.
+inline void network_text(uint32_t ipv4,char* out,size_t size) {
+    if(!ipv4)snprintf(out,size,"Wi-Fi offline");
+    else snprintf(out,size,"Wi-Fi %u.%u.%u.%u",static_cast<unsigned>(ipv4&0xff),static_cast<unsigned>((ipv4>>8)&0xff),
+                  static_cast<unsigned>((ipv4>>16)&0xff),static_cast<unsigned>(ipv4>>24));
+}
+}

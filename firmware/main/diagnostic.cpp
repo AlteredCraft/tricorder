@@ -10,6 +10,8 @@
 #include "test_storage.h"
 #include "investigation.h"
 #include "audio_devices.h"
+#include "home.h"
+#include "home_model.h"
 #include "restart_sequence.h"
 #include "dsp_diagnostic.h"
 #include "esp_attr.h"
@@ -404,6 +406,7 @@ extern "C" void app_main() {
     lv_obj_center(baseline_label);
     network_ui_init(screen, boot_id);
     investigation_ui_init(screen, media_commands);
+    home_ui_init(screen);
     bsp_display_brightness_set(50);
     bsp_display_unlock();
     auto* panel = diagnostic_event("display_initialized");
@@ -450,9 +453,9 @@ extern "C" void app_main() {
     }
     test_storage_init(boot_id,sd_ready,!resuming_restarts);
     media_idle();
-    // Guided startup opens the instrument directly; diagnostics stay behind Back.
+    // Guided startup opens the start screen; diagnostics stay behind it (F-0001).
     if (guided_startup && !resuming_restarts && bsp_display_lock(1000)) {
-        investigation_ui_open();
+        home_ui_open();
         bsp_display_unlock();
     }
     for (;;) {
@@ -471,6 +474,7 @@ extern "C" void app_main() {
         auto* e = diagnostic_event("telemetry");
         cJSON_AddNumberToObject(e, "free_internal", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
         cJSON_AddNumberToObject(e, "free_psram", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        float tilt=NAN,bus_v=NAN,shunt_a=0;
         if (imu_ready) {
             bmi2_sens_data data{};
             const auto result=imu_read_checked(data);
@@ -479,12 +483,15 @@ extern "C" void app_main() {
                 cJSON_AddNumberToObject(e, "accel_x_raw", data.acc.x);
                 cJSON_AddNumberToObject(e, "accel_y_raw", data.acc.y);
                 cJSON_AddNumberToObject(e, "accel_z_raw", data.acc.z);
+                tilt=home::tilt_degrees(data.acc.x,data.acc.y,data.acc.z);
             }
         }
         if (power_ready) {
-            cJSON_AddNumberToObject(e, "ina226_bus_v", power_monitor.readBusVoltage());
-            cJSON_AddNumberToObject(e, "ina226_shunt_a", power_monitor.readShuntCurrent());
+            bus_v=power_monitor.readBusVoltage();shunt_a=power_monitor.readShuntCurrent();
+            cJSON_AddNumberToObject(e, "ina226_bus_v", bus_v);
+            cJSON_AddNumberToObject(e, "ina226_shunt_a", shunt_a);
         }
+        home_readings(tilt,bus_v,shunt_a,route_speaker());
         diagnostic_emit(e);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }

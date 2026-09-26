@@ -17,6 +17,7 @@
 #include <atomic>
 
 namespace {
+std::atomic<uint32_t> station_ipv4{0}; // 0 while disconnected; read by the start screen
 struct Credentials { char ssid[33]; char password[64]; bool initialize_only; };
 QueueHandle_t requests;
 lv_obj_t *panel, *ssid_field, *password_field, *keyboard, *status;
@@ -70,6 +71,7 @@ void wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
         auto result = esp_wifi_connect();
         if (result != ESP_OK) show_status("Wi-Fi connect failed; open setup to retry.");
     } else if (base==WIFI_EVENT && id==WIFI_EVENT_STA_DISCONNECTED) {
+        station_ipv4.store(0);
         auto* disconnected = static_cast<wifi_event_sta_disconnected_t*>(data);
         auto* event = diagnostic_event("wifi_disconnected");
         cJSON_AddNumberToObject(event, "reason", disconnected->reason);
@@ -82,6 +84,7 @@ void wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
         else show_status("Wi-Fi disconnected; open setup to retry.");
     } else if (base==IP_EVENT && id==IP_EVENT_STA_GOT_IP) {
         auto* address = static_cast<ip_event_got_ip_t*>(data);
+        station_ipv4.store(address->ip_info.ip.addr);
         char ip[24], text[96];
         snprintf(ip, sizeof(ip), IPSTR, IP2STR(&address->ip_info.ip));
         snprintf(text, sizeof(text), "Wi-Fi connected: %s / waiting for Mac echo test", ip);
@@ -272,3 +275,5 @@ bool network_connect_saved(const char* ssid,const char* password) {
     for(size_t i=0;i<sizeof(credentials);++i)p[i]=0;
     return ok;
 }
+
+uint32_t network_ipv4() {return station_ipv4.load();}

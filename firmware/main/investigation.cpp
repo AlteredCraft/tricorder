@@ -14,6 +14,7 @@
 #include "steadiness.h"
 #include "imu_checked.h"
 #include "media.h"
+#include "home.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_transport.h"
 #include "esp_transport_tcp.h"
@@ -75,13 +76,17 @@ char replay_session_text[40]{};
 uint64_t now_ms(){return esp_timer_get_time()/1000;}
 
 void open(lv_event_t*) {lv_obj_remove_flag(panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(panel);}
-void back(lv_event_t*) {if(!running)lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);}
+void back(lv_event_t*) {
+    if(running)return;
+    lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);home_returned("investigate");
+}
 void open_setup(lv_event_t*) {
     if(running)return;
     lv_obj_remove_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(setup_panel);
 }
 void close_setup(lv_event_t*) {
     lv_obj_add_flag(keyboard,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);
+    home_returned("setup",lv_obj_has_flag(panel,LV_OBJ_FLAG_HIDDEN)?nullptr:"investigate");
     InvestigationEndpoint endpoint;
     if(!running)lv_label_set_text(label,endpoint.parse(lv_textarea_get_text(endpoint_field))?
         "Service address saved for this session. Tap Start.":"Service address invalid. Open Setup and enter ws://Mac-LAN-IP:8765/");
@@ -784,6 +789,7 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     context_clear();
 }
 void investigation_ui_open() {open(nullptr);}
+void investigation_setup_open() {open_setup(nullptr);}
 void investigation_ui_enable(bool enabled) {
     if(enabled)lv_obj_remove_state(launch,LV_STATE_DISABLED);else lv_obj_add_state(launch,LV_STATE_DISABLED);
 }
