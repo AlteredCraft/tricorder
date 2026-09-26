@@ -28,3 +28,7 @@ T3 (café, silent, about 5 minutes on USB): an info button on each working tile 
 ### T2 2026-09-26: Sound instrument
 
 `33b1bf9` · run `20260926-sound-t2`. **Tried:** live spectrum, peak hold, level, Freeze in a café. **Telemetry:** 2 sessions (130 s, 97 s): 23 views/s, compute 9.2 ms mean (14.7 max), 0 driver overflows or short reads; about 12 redraws/s; open/close 173–188 ms. **User:** "works as advertised"; Freeze "not that interesting"; wants an info button per tile with a walkthrough. **Decision:** adapt: drop Freeze, add info.
+
+### T3 2026-09-26: info pages, no Freeze
+
+`6714b45` · run `20260926-info-t3`. **Tried:** info page on Sound and Investigate; Sound without Freeze. **Telemetry:** both pages scrolled to the end (about 5 s open each); no tile opened by mistake; Sound ran 212 s with 0 driver loss. **User:** "info's work, and the descriptions look good"; asked whether Sound could analyze its session. **Decision:** continue.
