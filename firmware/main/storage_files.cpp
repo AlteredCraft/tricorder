@@ -15,19 +15,25 @@ bool storage_parse_config(const char* json, StorageConfig& out) {
     if(!json || strlen(json)>1000 || strstr(json,"\\u0000"))return false;
     auto* root=cJSON_ParseWithOpts(json,nullptr,true);
     if(!cJSON_IsObject(root)){cJSON_Delete(root);return false;}
-    bool ok=true;unsigned ssids=0,passwords=0,endpoints=0;
+    bool ok=true;unsigned ssids=0,passwords=0,endpoints=0,modes=0;
     for(auto* item=root->child;item;item=item->next) {
         char* dest=nullptr;size_t capacity=0;
         if(!strcmp(item->string,"ssid")){dest=out.ssid;capacity=sizeof(out.ssid);++ssids;}
         else if(!strcmp(item->string,"password")){dest=out.password;capacity=sizeof(out.password);++passwords;}
         else if(!strcmp(item->string,"endpoint")){dest=out.endpoint;capacity=sizeof(out.endpoint);++endpoints;}
+        else if(!strcmp(item->string,"mode")) {
+            ++modes;
+            if(!cJSON_IsString(item) || (strcmp(item->valuestring,"ap") && strcmp(item->valuestring,"station"))){ok=false;break;}
+            out.access_point=!strcmp(item->valuestring,"ap");continue;
+        }
         else {ok=false;break;}
         if(!cJSON_IsString(item) || strlen(item->valuestring)>=capacity){ok=false;break;}
         strcpy(dest,item->valuestring);
     }
     InvestigationEndpoint endpoint;
-    ok=ok && ssids==1 && passwords==1 && endpoints<=1 && out.ssid[0] &&
-        (!out.endpoint[0] || endpoint.parse(out.endpoint));
+    ok=ok && ssids==1 && passwords==1 && endpoints<=1 && modes<=1 && out.ssid[0] &&
+        (!out.endpoint[0] || endpoint.parse(out.endpoint)) &&
+        (!out.access_point || strlen(out.password)>=8); // WPA2 minimum
     cJSON_Delete(root);
     if(!ok)out={};
     return ok;

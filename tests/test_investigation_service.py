@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from tools.investigation import ProtocolError
-from tools.investigation_service import MockSession, decode_message
+from tools.investigation_service import MockSession, decode_message, provider_settings
 from test_investigation import evidence, fixture
 
 
@@ -320,6 +320,22 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
                         if index:self.assertAlmostEqual(reply['comparison']['rms_delta_db'],-6.020599913)
                         await send('ack',request_id=f'r{index}')
                         self.assertEqual((await receive())['state'],'complete' if index else 'adjust')
+
+
+class ProviderSettingsTests(unittest.TestCase):
+    def test_local_server_needs_no_key_and_allows_a_slow_model(self):
+        local=provider_settings('local')
+        self.assertEqual((local['base_url'],local['model'],local['needs_key']),
+                         ('http://127.0.0.1:11434/v1','gemma4:latest',False))
+        self.assertGreaterEqual(local['timeout_s'],30)
+        custom=provider_settings('local',model='llama3.2:3b',base_url='http://127.0.0.1:1234/v1')
+        self.assertEqual((custom['base_url'],custom['model']),('http://127.0.0.1:1234/v1','llama3.2:3b'))
+        router=provider_settings('openrouter')
+        self.assertEqual((router['base_url'],router['model'],router['needs_key']),
+                         ('https://openrouter.ai/api/v1','openai/gpt-5.6-sol',True))
+        self.assertEqual(provider_settings('openai')['model'],'gpt-4.1-mini')
+        with self.assertRaises(ValueError):provider_settings('mock')
+        with self.assertRaises(ValueError):provider_settings('openrouter',base_url='http://127.0.0.1:1/v1')
 
 
 if __name__=='__main__':unittest.main()

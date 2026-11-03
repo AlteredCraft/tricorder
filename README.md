@@ -66,7 +66,8 @@ Evidence assessors (`python3 -m tools.<name> RUN_DIR`): `camera_baseline_evidenc
 
 - The Tab5's USB serial is **E8:F6:0A:E2:E0:0E**. Rediscover the port with `.tools/python-env/bin/python -m serial.tools.list_ports -v`; another attached board may show up too.
 - **Opening the serial port can reset the Tab5.** Keep one collector open for a whole trial, and prefix long runs with `/usr/bin/caffeinate -is` (Mac sleep drops USB data).
-- Wi-Fi and the service endpoint load from SD at boot. Provision them with `tools.provision_device` ([operations doc](planning/guided-ab-operations.md#sd-provisioning-archive-and-download)). The SD card holds plaintext Wi-Fi credentials, so keep it private. Currently provisioned (2026-09-26) for the phone hotspot (`.env.local.hotspot`, endpoint 172.20.10.9:8765; the device gets 172.20.10.10). Before `a09a2b2`, live sessions lost Wi-Fi when internal RAM ran out during uploads ([G-0001.02](planning/plans/G-0001.02-concurrent-workload.md#observed)). nossa-7c-guest (`.env.local.nossa-7c-guest`) passes device-to-Mac traffic, ping 93–187 ms.
+- Wi-Fi and the service endpoint load from SD at boot. Provision them with `tools.provision_device` or the ops TUI ([operations doc](planning/guided-ab-operations.md#sd-provisioning-archive-and-download)). The SD card holds plaintext Wi-Fi credentials, so keep it private. Currently provisioned (2026-09-26) for the phone hotspot (`.env.local.hotspot`, endpoint 172.20.10.9:8765; the device gets 172.20.10.10).
+- **Hotspot mode** (F-0003): an env file with `WIFI_MODE=ap` (`.env.local.tricorder-ap`, network "Tricorder") makes the device broadcast its own network at 192.168.4.1. Join the Mac to it and start the service with the default `--host 0.0.0.0`; the device sets the service address from the Mac's DHCP lease (`wifi_ap_client` event) and the Setup tile shows "Hotspot on / Mac 192.168.4.x". The Mac has no Internet while joined unless it has another connection, so pair it with `--provider local`. Before `a09a2b2`, live sessions lost Wi-Fi when internal RAM ran out during uploads ([G-0001.02](planning/plans/G-0001.02-concurrent-workload.md#observed)). nossa-7c-guest (`.env.local.nossa-7c-guest`) passes device-to-Mac traffic, ping 93–187 ms.
 - Headphones in the Tab5 jack turn the speaker amp off (since `0fede86`); unplugging turns it back on.
 - The private `firmware/sdkconfig` sets `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y` (boot straight to Guided A/B, skipping diagnostics).
 - Flash backups and recovery steps: `.local/runs/20260920-baseline/RECOVERY.md`.
@@ -83,6 +84,12 @@ Put `OPENROUTER_API_KEY` in the ignored `.env.local.openrouter` (parsed literall
 ```
 
 Only verified measurement summaries, fixture notes and the operator's confirmed question go to the provider. Raw recordings stay local.
+
+Offline, with Ollama running on the Mac (`--provider local`, default model `gemma4:latest` at `http://127.0.0.1:11434/v1`; `--model` and `--base-url` change them; no key file):
+
+```sh
+.tools/investigation-env/bin/python -m tools.investigation_service --output .local/runs/NEW --provider local
+```
 
 The service transcribes spoken questions locally with Parakeet (`--stt parakeet`, the default; loads in about 5 s at start). `--stt none` turns spoken questions off. Guidance is spoken with Pocket TTS, voice "alba" (`--tts pocket`, the default); `--tts say` uses macOS speech, `--tts none` turns it off.
 

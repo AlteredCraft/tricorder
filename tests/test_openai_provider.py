@@ -20,6 +20,17 @@ class OpenAIProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.calls[0]['extra_body']['provider']['require_parameters'])
         self.assertFalse(self.calls[0]['store'])
 
+    async def test_local_route_sends_no_vendor_routing_and_names_itself(self):
+        provider=self.provider(dict(text='Use the recorded evidence.',capture_ids=['take-0']))
+        provider=OpenAIProvider(provider.client,route='local',model='gemma4:latest')
+        reply=await provider.respond(self.request())
+        validate_reply(self.request(),reply)
+        self.assertEqual(provider.name,'local-responses-v1')
+        self.assertEqual(self.calls[0]['model'],'gemma4:latest')
+        self.assertNotIn('extra_body',self.calls[0])
+        self.assertEqual(self.calls[0]['reasoning'],{'effort':'none'})
+        with self.assertRaises(ProtocolError):OpenAIProvider(provider.client,route='ollama')
+
     def request(self, pair=False):
         captures=[]
         for index in range(2 if pair else 1):

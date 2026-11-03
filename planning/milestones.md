@@ -6,12 +6,13 @@
 
 **Theme:** The person picks up the Tricorder, sees what it can do, and opens any capability from a start screen with live readings (the vision's Explore mode and capability view). Deferred: new investigations and hosted service.
 
-**Active feature:** [F-0002](features/F-0002-sound-analysis.md#next)
+**Active feature:** [F-0003](features/F-0003-device-hotspot.md#next). F-0002's T6 (Explain with the Mac) runs over the hotspot once F-0003 T1 passes.
 
 | Feature | Status |
 | --- | --- |
 | [F-0001 Start screen](features/F-0001-start-screen.md) | Done |
 | [F-0002 Sound session analysis](features/F-0002-sound-analysis.md) | In progress |
+| [F-0003 Device hotspot and local text model](features/F-0003-device-hotspot.md) | In progress |
 
 ## M-0001: Validate the handheld investigation
 

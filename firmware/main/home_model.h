@@ -32,9 +32,19 @@ inline void power_text(float bus_v,float shunt_a,char* out,size_t size) {
     else snprintf(out,size,"%.2f V\nNo battery current",bus_v);
 }
 // ipv4 as esp_netif stores it (first octet in the low byte); 0 means no address.
+inline void ipv4_text(uint32_t ipv4,char* out,size_t size) {
+    snprintf(out,size,"%u.%u.%u.%u",static_cast<unsigned>(ipv4&0xff),static_cast<unsigned>((ipv4>>8)&0xff),
+             static_cast<unsigned>((ipv4>>16)&0xff),static_cast<unsigned>(ipv4>>24));
+}
 inline void network_text(uint32_t ipv4,char* out,size_t size) {
-    if(!ipv4)snprintf(out,size,"Wi-Fi offline");
-    else snprintf(out,size,"Wi-Fi %u.%u.%u.%u",static_cast<unsigned>(ipv4&0xff),static_cast<unsigned>((ipv4>>8)&0xff),
-                  static_cast<unsigned>((ipv4>>16)&0xff),static_cast<unsigned>(ipv4>>24));
+    if(!ipv4){snprintf(out,size,"Wi-Fi offline");return;}
+    char address[16];ipv4_text(ipv4,address,sizeof(address));snprintf(out,size,"Wi-Fi %s",address);
+}
+// Hotspot mode (F-0003): ipv4 is the device's own address, peer the last device given one.
+inline void network_text(uint32_t ipv4,uint32_t peer_ipv4,bool access_point,char* out,size_t size) {
+    if(!access_point){network_text(ipv4,out,size);return;}
+    if(!ipv4){snprintf(out,size,"Hotspot starting");return;}
+    if(!peer_ipv4){snprintf(out,size,"Hotspot on\nWaiting for the Mac");return;}
+    char address[16];ipv4_text(peer_ipv4,address,sizeof(address));snprintf(out,size,"Hotspot on\nMac %s",address);
 }
 }

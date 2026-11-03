@@ -97,16 +97,23 @@ class OpsApp(App):
     def refresh_plan(self):
         env = self.query_one('#env', Select).value
         chosen = next((f for f in ops.wifi_env_files(self.root) if str(f.path) == env), None)
+        mode = chosen.mode if chosen else 'station'
         self.plan = self.plan_for(self.root, env_file=Path(env) if chosen else None,
                                   port=self.query_one('#port', Input).value.strip() or None,
-                                  mac_ip=self.query_one('#ip', Input).value.strip() or None)
+                                  mac_ip=self.query_one('#ip', Input).value.strip() or None, mode=mode)
         if chosen and chosen.error:
             self.plan.errors.insert(0, f'{chosen.path.name} is invalid: {chosen.error}')
             self.plan.argv = []
-        text = ('[red]' + '\n'.join(self.plan.errors) + '[/red]' if self.plan.errors else
-                f'Tab5 will join [b]{chosen.ssid}[/b] and use {self.plan.endpoint}\n'
-                f'[dim]{" ".join(self.plan.argv)}[/dim]\n'
-                'The Mac must be on the same network for the reachability check.')
+        if self.plan.errors:
+            text = '[red]' + '\n'.join(self.plan.errors) + '[/red]'
+        elif mode == 'ap':
+            text = (f'Tab5 will broadcast [b]{chosen.ssid}[/b]. Join the Mac to it, then start the service; '
+                    'the Tab5 fills in the service address when the Mac joins.\n'
+                    f'[dim]{" ".join(self.plan.argv)}[/dim]')
+        else:
+            text = (f'Tab5 will join [b]{chosen.ssid}[/b] and use {self.plan.endpoint}\n'
+                    f'[dim]{" ".join(self.plan.argv)}[/dim]\n'
+                    'The Mac must be on the same network for the reachability check.')
         self.query_one('#plan', Static).update(text)
         self.query_one('#run', Button).disabled = bool(self.plan.errors)
 
@@ -118,10 +125,13 @@ class OpsApp(App):
 
     def action_run(self):
         if self.plan and not self.plan.errors:
-            self.provision(self.plan, self.query_one('#ip', Input).value.strip())
+            chosen = self.query_one('#env', Select).value
+            files = {str(f.path): f for f in ops.wifi_env_files(self.root)}
+            mode = files[chosen].mode if chosen in files else 'station'
+            self.provision(self.plan, self.query_one('#ip', Input).value.strip(), mode)
 
     @work(exclusive=True)
-    async def provision(self, plan, mac_ip):
+    async def provision(self, plan, mac_ip, mode='station'):
         log, result, run = self.query_one('#log', RichLog), self.query_one('#result', Static), self.query_one('#run', Button)
         run.disabled = True
         result.update('Running… the Tab5 may reset; allow about a minute.')
@@ -134,8 +144,11 @@ class OpsApp(App):
             lines.append(line)
             log.write(line)
         code = await process.wait()
-        outcome = await asyncio.to_thread(ops.provision_result, lines, mac_ip=mac_ip, reachable=self.reachable)
-        if code == 0 and not outcome.problems:
+        outcome = await asyncio.to_thread(ops.provision_result, lines, mac_ip=mac_ip, reachable=self.reachable, mode=mode)
+        if code == 0 and not outcome.problems and mode == 'ap':
+            result.update(f'[green]Done.[/green] Tab5 hotspot is up at {outcome.tab5_ip}. Join the Mac to it, '
+                          f'then start the service. Evidence: {plan.output.relative_to(self.root)}')
+        elif code == 0 and not outcome.problems:
             result.update(f'[green]Done.[/green] Tab5 is at {outcome.tab5_ip}, reachable from this Mac. '
                           f'Evidence: {plan.output.relative_to(self.root)}')
         else:

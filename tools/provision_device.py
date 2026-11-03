@@ -24,14 +24,23 @@ def load_config(path):
     password = values.get('WIFI_PASSWORD')
     if not 1 <= len(ssid.encode()) <= 32 or password is None or len(password.encode()) > 63:
         raise ValueError('Expected WIFI_NAME/WIFI_SSID (1–32 bytes) and WIFI_PASSWORD (0–63 bytes)')
-    return {'ssid': ssid, 'password': password}
+    mode = values.get('WIFI_MODE', 'station')
+    if mode not in ('station', 'ap'):
+        raise ValueError('WIFI_MODE must be station or ap')
+    config = {'ssid': ssid, 'password': password}
+    if mode == 'ap':
+        # The device broadcasts this network for the Mac to join (F-0003); WPA2 needs 8 bytes.
+        if len(password.encode()) < 8:
+            raise ValueError('A hotspot (WIFI_MODE=ap) needs a WIFI_PASSWORD of 8–63 bytes')
+        config['mode'] = 'ap'
+    return config
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--env', type=Path, required=True)
     parser.add_argument('--port', required=True)
-    parser.add_argument('--endpoint')
+    parser.add_argument('--endpoint', help='Mac service address; not used in hotspot mode (WIFI_MODE=ap)')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     config = load_config(args.env)

@@ -91,7 +91,7 @@ INSTRUCTIONS = (
     'plainly what the data cannot tell. Then describe the overall pattern (steady or changing, '
     'when it was loud) and anything unusual. You may suggest likely kinds of sources as '
     'possibilities, never as findings. End with one practical next measurement. Under 150 words, '
-    'plain words, times as m:ss. State dB and Hz values only as given in the input, rounded if you '
+    'plain words, times as m:ss (15 s is 0:15). State dB and Hz values only as given in the input, rounded if you '
     'like; never compute or quote other measured numbers. Plain ASCII: no arrows or plus-minus signs.')
 
 

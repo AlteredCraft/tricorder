@@ -1,4 +1,8 @@
-"""OpenAI prose behind the unchanged, host-owned A/B evidence contract."""
+"""OpenAI-compatible prose behind the unchanged, host-owned A/B evidence contract.
+
+Routes: openai, openrouter, or local (an OpenAI-compatible server on the Mac such as
+Ollama, which answers the Responses API; F-0003). Only openrouter gets vendor routing extras.
+"""
 import asyncio
 from copy import deepcopy
 import json
@@ -11,11 +15,20 @@ class OpenAIProvider:
     name = 'openai-responses-v1'
 
     def __init__(self, client, *, model='gpt-4.1-mini', route='openai'):
-        require(route in ('openai', 'openrouter'), 'unknown API route')
+        require(route in ('openai', 'openrouter', 'local'), 'unknown API route')
         self.client = client
         self.model = bounded_text(model, 96)
         self.route = route
         self.name = f'{route}-responses-v1'
+
+    def routing(self):
+        """Per-route request extras. Reasoning off: the prose needs no thinking, and a local
+        model otherwise spends the whole token budget thinking (`20261103-local-explain-smoke`)."""
+        if self.route == 'openrouter':
+            return {'extra_body': {'provider': {'require_parameters': True}}, 'reasoning': {'effort': 'none'}}
+        if self.route == 'local':
+            return {'reasoning': {'effort': 'none'}}
+        return {}
 
     async def explain(self, evidence):
         """F-0002: plain prose over a checked sound-analysis summary and voice note."""
@@ -23,8 +36,7 @@ class OpenAIProvider:
         schema = {'type': 'object', 'additionalProperties': False,
                   'properties': {'text': {'type': 'string'}}, 'required': ['text']}
         try:
-            routing = {'extra_body': {'provider': {'require_parameters': True}},
-                       'reasoning': {'effort': 'none'}} if self.route == 'openrouter' else {}
+            routing = self.routing()
             response = await self.client.responses.create(
                 model=self.model, store=False, max_output_tokens=700, instructions=INSTRUCTIONS,
                 input=[{'role': 'user', 'content': json.dumps(evidence, allow_nan=False)}],
@@ -59,8 +71,7 @@ class OpenAIProvider:
                 'capture_ids': {'type': 'array', 'items': {'type': 'string', 'enum': ids}}},
             'required': ['text', 'capture_ids']}
         try:
-            routing = {'extra_body': {'provider': {'require_parameters': True}},
-                       'reasoning': {'effort': 'none'}} if self.route == 'openrouter' else {}
+            routing = self.routing()
             response = await self.client.responses.create(
                 model=self.model, store=False, max_output_tokens=700,
                 instructions=(

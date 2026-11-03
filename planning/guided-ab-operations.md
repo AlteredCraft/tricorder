@@ -25,6 +25,7 @@ On the device (guided startup opens this screen): **Start** (context photo, devi
 
 - Provision Wi-Fi + endpoint over USB (stored in plaintext on SD, so keep the card private):
   `.tools/python-env/bin/python -m tools.provision_device --env .env.local.<net> --port PORT --endpoint ws://MAC_LAN_IP:8765/ --output .local/runs/NEW-provision`
+- Hotspot mode (F-0003): an env file with `WIFI_MODE=ap` and no `--endpoint`. The device broadcasts the network; the Mac joins it, and the device takes the service address from the Mac's lease (port from the compiled default endpoint). Start the service with `--host 0.0.0.0` (the default) and, offline, `--provider local`.
 - Every capture is saved to `/sdcard/tricorder/captures/<id>.raw/.json` after its upload's hash ACK, while the person waits anyway (for the Mac's reply, or walking back to A), and also when an upload fails (`.part` + sync + readback, metadata written last, never overwritten).
 - Download and verify: `.tools/investigation-env/bin/python -m tools.download_storage --url http://DEVICE_IP --output .local/runs/NEW-download`. Only capture files are served.
 

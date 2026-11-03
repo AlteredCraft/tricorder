@@ -25,6 +25,29 @@ from tools.investigation import (CaptureEvidence, Fixture, MAX_CAPTURE_BYTES, MA
                                  validate_reply)
 
 MAX_WIRE_BYTES = 32768
+LOCAL_BASE_URL = 'http://127.0.0.1:11434/v1'  # Ollama's OpenAI-compatible server on the Mac
+REMOTE_TIMEOUT_S = 12
+LOCAL_TIMEOUT_S = 40  # a local 8B model writes 150 words in 5-30 s (F-0003)
+
+
+def provider_settings(provider, model=None, base_url=None):
+    """Where the OpenAI-compatible client talks, which model, and whether a key is needed."""
+    if provider == 'openrouter':
+        settings = dict(base_url='https://openrouter.ai/api/v1', model='openai/gpt-5.6-sol', needs_key=True,
+                        timeout_s=REMOTE_TIMEOUT_S)
+    elif provider == 'openai':
+        settings = dict(base_url='https://api.openai.com/v1', model='gpt-4.1-mini', needs_key=True,
+                        timeout_s=REMOTE_TIMEOUT_S)
+    elif provider == 'local':
+        settings = dict(base_url=base_url or LOCAL_BASE_URL, model='gemma4:latest', needs_key=False,
+                        timeout_s=LOCAL_TIMEOUT_S)
+    else:
+        raise ValueError('unknown provider')
+    if base_url and provider != 'local':
+        raise ValueError('--base-url applies to the local provider only')
+    if model:
+        settings['model'] = model
+    return settings
 # A, B and a repeat of A: start + 282 chunks + end each, plus hello, turns, acks, cancel.
 MAX_MESSAGES = 900
 EXPLAIN_TIMEOUT_S = 30
@@ -518,15 +541,17 @@ async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_o
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host',default='127.0.0.1',help='Use the Mac LAN IP for handheld trials')
+    parser.add_argument('--host',default='0.0.0.0',help='All of the Mac\'s addresses by default (hotspot or LAN)')
     parser.add_argument('--port',type=int,default=8765)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--delay-seconds',type=float,default=0,help='Controlled mock-response delay, 0–30')
     parser.add_argument('--replay-only',action='store_true',help='Require labeled SD replay; no new physical trial')
     parser.add_argument('--replay-speech',action='store_true',
                         help='With --replay-only, also speak replayed guidance (--tts engine; G-0001.02 playback baseline)')
-    parser.add_argument('--provider',choices=('mock','openai','openrouter'),default='mock')
-    parser.add_argument('--model',help='Exact model ID; default OpenRouter openai/gpt-5.6-sol or direct gpt-4.1-mini')
+    parser.add_argument('--provider',choices=('mock','openai','openrouter','local'),default='mock',
+                        help='local is an OpenAI-compatible server on this Mac (Ollama); no key, no Internet')
+    parser.add_argument('--model',help='Exact model ID; defaults openai/gpt-5.6-sol (openrouter), gpt-4.1-mini (openai), gemma4:latest (local)')
+    parser.add_argument('--base-url',help=f'local provider only; default {LOCAL_BASE_URL}')
     parser.add_argument('--env',type=Path,help='Local provider-key file; parsed literally, never sent to device')
     parser.add_argument('--stt',choices=ENGINES,default=DEFAULT_ENGINE,
                         help='Speech-to-text for spoken questions; parakeet is local (tools/stt-requirements.txt)')
@@ -549,19 +574,22 @@ def main():
             from openai import AsyncOpenAI
             from tools.openai_provider import OpenAIProvider
             from tools.service_credentials import load_api_key
-            router=args.provider=='openrouter'
-            try:key=load_api_key(args.provider,args.env)
-            except (ValueError,OSError):parser.error('Cannot load the selected provider key from local configuration')
-            client=AsyncOpenAI(api_key=key,base_url='https://openrouter.ai/api/v1' if router else 'https://api.openai.com/v1',
-                               timeout=12,max_retries=0)
-            provider=OpenAIProvider(client,model=args.model or ('openai/gpt-5.6-sol' if router else 'gpt-4.1-mini'),route=args.provider)
+            try:settings=provider_settings(args.provider,args.model,args.base_url)
+            except ValueError as error:parser.error(str(error))
+            key='local'
+            if settings['needs_key']:
+                try:key=load_api_key(args.provider,args.env)
+                except (ValueError,OSError):parser.error('Cannot load the selected provider key from local configuration')
+            client=AsyncOpenAI(api_key=key,base_url=settings['base_url'],timeout=settings['timeout_s'],max_retries=0)
+            provider=OpenAIProvider(client,model=settings['model'],route=args.provider)
         try:
             server=await serve_mock(args.host,args.port,args.output,delay_s=args.delay_seconds,
                                     replay_only=args.replay_only,provider=provider,transcriber=transcriber,
                                     speaker=speaker)
             speech=transcriber.name if transcriber else 'off'
             voice=speaker.name if speaker else 'off'
-            print(f'{args.provider} service ready at ws://{args.host}:{args.port}; speech-to-text {speech}; '
+            model=f' ({provider.model})' if provider else ''
+            print(f'{args.provider}{model} service ready at ws://{args.host}:{args.port}; speech-to-text {speech}; '
                   f'spoken guidance {voice}; '
                   f'private evidence: {args.output}',flush=True)
             async with server:await server.serve_forever()

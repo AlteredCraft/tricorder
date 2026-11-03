@@ -63,10 +63,12 @@ constexpr TileText tile_text[]={
 "Plugging in or unplugging during guidance switches the output within a quarter of a second. The tile updates once a second."},
 {"Setup","Service and Wi-Fi",
 "Connection settings for guided investigations.\n\n"
+"Hotspot mode (set up over USB): the device broadcasts its own Wi-Fi network. Join the Mac to it and start the service; the service address fills in by itself when the Mac joins. The tile shows Hotspot on and the Mac's address. No router or Internet is needed; the Mac has no Internet while joined unless it has another connection.\n\n"
+"Wi-Fi mode: the device joins a network.\n"
 "• The tile shows the device's Wi-Fi address, or Wi-Fi offline.\n"
 "• Service address: where the Mac service listens, for example ws://172.20.10.9:8765/. It loads from the SD card at boot; a change made here lasts until restart.\n"
 "• Wi-Fi setup: choose a network and enter its password.\n\n"
-"Cafe and guest Wi-Fi often stop the device from reaching the Mac. A phone hotspot on 2.4 GHz works, with both the Mac and the device joined to it."},
+"Cafe and guest Wi-Fi often stop the device from reaching the Mac. Use hotspot mode there, or a phone hotspot on 2.4 GHz with both the Mac and the device joined to it."},
 {"Diagnostics","Hardware checks",
 "The hardware check screen used during development.\n\n"
 "• Record & play: records a short phrase from all four microphone channels and plays it back.\n"

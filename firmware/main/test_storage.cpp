@@ -31,6 +31,8 @@ bool load_config(StorageConfig& config) {
     return storage_load_config(root,config);
 }
 bool apply_config(const StorageConfig& config) {
+    // Hotspot mode: the Mac joins the device, and the endpoint follows its lease (network.cpp).
+    if(config.access_point)return network_start_access_point(config.ssid,config.password);
     if(config.endpoint[0])investigation_set_endpoint(config.endpoint);
     return network_connect_saved(config.ssid,config.password);
 }

@@ -23,7 +23,7 @@ lv_obj_t *home_panel,*readings[home::tile_count],*info_panel,*info_title,*info_s
 int info_tile=-1;int64_t info_opened_us=0;int32_t info_max_scroll=0;
 portMUX_TYPE readings_lock=portMUX_INITIALIZER_UNLOCKED;
 struct Readings {float tilt=NAN,bus_v=NAN,shunt_a=0;bool headphones=false,fresh=false;} latest; // readings_lock
-uint32_t shown_ipv4=1; // LVGL task; 1 forces the first draw
+uint32_t shown_ipv4=1,shown_peer=0; // LVGL task; 1 forces the first draw
 std::atomic<int64_t> touch_down_us{0};
 // One navigation waiting for the refresh that shows it (LVGL task only).
 const char *nav_from=nullptr,*nav_to=nullptr;int64_t nav_pressed=0,nav_handled=0;
@@ -88,8 +88,11 @@ void missed(lv_event_t* ev) {
 }
 void draw(lv_timer_t*) {
     char text[64];
-    const uint32_t ipv4=network_ipv4();
-    if(ipv4!=shown_ipv4){home::network_text(ipv4,text,sizeof(text));lv_label_set_text(readings[setup_tile],text);shown_ipv4=ipv4;}
+    const uint32_t ipv4=network_ipv4(),peer=network_peer_ipv4();
+    if(ipv4!=shown_ipv4 || peer!=shown_peer) {
+        home::network_text(ipv4,peer,network_access_point(),text,sizeof(text));lv_label_set_text(readings[setup_tile],text);
+        shown_ipv4=ipv4;shown_peer=peer;
+    }
     Readings r;
     portENTER_CRITICAL(&readings_lock);r=latest;latest.fresh=false;portEXIT_CRITICAL(&readings_lock);
     if(!r.fresh)return;

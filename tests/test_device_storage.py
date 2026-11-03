@@ -86,6 +86,13 @@ int main(int argc,char** argv) {
  for(auto* s:{"{}",R"({"ssid":"","password":"x"})",R"({"ssid":1,"password":"x"})",R"({"ssid":"x","password":null})",R"({"ssid":"x","password":"x","endpoint":"https://x"})",R"({"ssid":"x","password":"x","ssid":"y"})"})assert(!storage_parse_config(s,cfg));
  std::string big="{\"ssid\":\""+std::string(33,'x')+"\",\"password\":\"\"}";
  assert(!storage_parse_config(big.c_str(),cfg));
+ // F-0003: hotspot mode. The device broadcasts ssid/password (WPA2: 8-63 bytes); the endpoint is derived.
+ assert(storage_parse_config(R"({"ssid":"Tricorder","password":"eight-chars","mode":"ap"})",cfg) && cfg.access_point);
+ assert(storage_parse_config(R"({"ssid":"x","password":"","mode":"station"})",cfg) && !cfg.access_point);
+ assert(storage_parse_config(R"({"ssid":"x","password":"","endpoint":"ws://192.168.1.2:8765/"})",cfg) && !cfg.access_point);
+ for(auto* s:{R"({"ssid":"x","password":"short","mode":"ap"})",R"({"ssid":"x","password":"eight-chars","mode":"mesh"})",
+     R"({"ssid":"x","password":"eight-chars","mode":1})",R"({"ssid":"x","password":"eight-chars","mode":"ap","mode":"ap"})"})
+  assert(!storage_parse_config(s,cfg));
 }
 ''')
             cjson = Path('.tools/esp-idf/components/json/cJSON')

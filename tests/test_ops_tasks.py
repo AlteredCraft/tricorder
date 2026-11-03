@@ -17,13 +17,15 @@ class WifiDiscoveryTests(unittest.TestCase):
             (root/'.env.local.home').write_text('WIFI_NAME="Home Net"\nWIFI_PASSWORD=s3cret\n')
             (root/'.env.local.hotspot').write_text("WIFI_SSID=Sam’s iPhone\nWIFI_PASSWORD=pw\n")
             (root/'.env.local.openrouter').write_text('OPENROUTER_API_KEY=sk-x\n')  # not Wi-Fi
+            (root/'.env.local.tricorder-ap').write_text('WIFI_NAME=Tricorder\nWIFI_PASSWORD=eight-chars\nWIFI_MODE=ap\n')
             (root/'.env.local.broken').write_text('WIFI_NAME=x\nWIFI_NAME=y\nWIFI_PASSWORD=p\n')
             (root/'.env').write_text('WIFI_NAME=ignored\nWIFI_PASSWORD=p\n')
             found = ops.wifi_env_files(root)
-            self.assertEqual([(f.path.name, f.ssid, f.error) for f in found], [
-                ('.env.local.broken', None, 'Duplicate environment key'),
-                ('.env.local.home', 'Home Net', None),
-                ('.env.local.hotspot', 'Sam’s iPhone', None)])
+            self.assertEqual([(f.path.name, f.ssid, f.mode, f.error) for f in found], [
+                ('.env.local.broken', None, 'station', 'Duplicate environment key'),
+                ('.env.local.home', 'Home Net', 'station', None),
+                ('.env.local.hotspot', 'Sam’s iPhone', 'station', None),
+                ('.env.local.tricorder-ap', 'Tricorder', 'ap', None)])
             self.assertNotIn('s3cret', repr(found))
 
     def test_tab5_port_matches_verified_usb_serial_only(self):
@@ -57,6 +59,15 @@ class ProvisionCommandTests(unittest.TestCase):
             str(self.root/'.tools/python-env/bin/python'), '-m', 'tools.provision_device',
             '--env', str(self.root/'.env.local.home'), '--port', '/dev/cu.usbmodem2101',
             '--endpoint', 'ws://192.168.1.20:8765/',
+            '--output', str(self.root/'.local/runs/20260924-140509-provision')])
+
+    def test_hotspot_mode_needs_no_mac_address_or_endpoint(self):
+        plan = self.plan(mode='ap', mac_ip=None)
+        self.assertEqual(plan.errors, [])
+        self.assertIsNone(plan.endpoint)
+        self.assertEqual(plan.argv, [
+            str(self.root/'.tools/python-env/bin/python'), '-m', 'tools.provision_device',
+            '--env', str(self.root/'.env.local.home'), '--port', '/dev/cu.usbmodem2101',
             '--output', str(self.root/'.local/runs/20260924-140509-provision')])
 
     def test_missing_inputs_are_errors_not_guesses(self):
@@ -95,6 +106,16 @@ class ProvisionResultTests(unittest.TestCase):
         self.assertIsNone(r.tab5_ip)
         self.assertEqual(r.problems, ['Tab5 saved the settings but did not report a Wi-Fi address; '
                                       'check the network name, password and 2.4 GHz'])
+
+
+    def test_hotspot_mode_reports_the_device_network_without_a_subnet_check(self):
+        out = self.lines({'event': 'storage_config', 'result': 'pass', 'source': 'usb'},
+                         {'event': 'wifi_address', 'ipv4': '192.168.4.1', 'mode': 'ap'})
+        r = ops.provision_result(out, mac_ip='10.0.0.5', reachable=lambda ip: False, mode='ap')
+        self.assertEqual((r.tab5_ip, r.same_subnet, r.reachable, r.problems), ('192.168.4.1', None, None, []))
+        out = self.lines({'event': 'storage_config', 'result': 'pass', 'source': 'usb'})
+        r = ops.provision_result(out, mac_ip=None, reachable=lambda ip: False, mode='ap')
+        self.assertEqual(r.problems, ['Tab5 saved the settings but did not start its hotspot; check the serial log'])
 
 
 class CatalogueTests(unittest.TestCase):

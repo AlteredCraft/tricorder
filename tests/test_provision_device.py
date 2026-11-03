@@ -13,7 +13,12 @@ class ProvisionTests(unittest.TestCase):
             self.assertEqual(load_config(p), {'ssid':'my wifi','password':'abc!$`#def'})
             p.write_text("WIFI_SSID=network\nWIFI_PASSWORD='eight chars'\n")
             self.assertEqual(load_config(p)['password'], 'eight chars')
-            for value in ['WIFI_NAME=x\n', 'WIFI_NAME='+('x'*33)+'\nWIFI_PASSWORD=SECRET',
+            p.write_text('WIFI_NAME=Tricorder\nWIFI_PASSWORD=eight-chars\nWIFI_MODE=ap\n')
+            self.assertEqual(load_config(p), {'ssid':'Tricorder','password':'eight-chars','mode':'ap'})
+            p.write_text('WIFI_NAME=Tricorder\nWIFI_PASSWORD=eight-chars\nWIFI_MODE=station\n')
+            self.assertEqual(load_config(p), {'ssid':'Tricorder','password':'eight-chars'})
+            for value in ['WIFI_NAME=x\nWIFI_PASSWORD=SECRET\nWIFI_MODE=ap\n', 'WIFI_NAME=x\nWIFI_PASSWORD=SECRETSECRET\nWIFI_MODE=mesh\n',
+                          'WIFI_NAME=x\n', 'WIFI_NAME='+('x'*33)+'\nWIFI_PASSWORD=SECRET',
                           'WIFI_NAME=x\nWIFI_NAME=y\nWIFI_PASSWORD=SECRET']:
                 p.write_text(value)
                 with self.assertRaises(ValueError) as error:

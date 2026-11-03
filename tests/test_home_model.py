@@ -46,6 +46,12 @@ int main() {
     power_text(NAN,0,text,sizeof(text));assert(!strcmp(text,"No data"));
     network_text(0,text,sizeof(text));assert(!strcmp(text,"Wi-Fi offline"));
     network_text(0x0a0a14ac,text,sizeof(text));assert(!strcmp(text,"Wi-Fi 172.20.10.10"));
+    // F-0003 hotspot mode: the device's own network, and whether the Mac has joined.
+    network_text(0,0,false,text,sizeof(text));assert(!strcmp(text,"Wi-Fi offline"));
+    network_text(0x0a0a14ac,0,false,text,sizeof(text));assert(!strcmp(text,"Wi-Fi 172.20.10.10"));
+    network_text(0,0,true,text,sizeof(text));assert(!strcmp(text,"Hotspot starting"));
+    network_text(0x0104a8c0,0,true,text,sizeof(text));assert(!strcmp(text,"Hotspot on\nWaiting for the Mac"));
+    network_text(0x0104a8c0,0x0204a8c0,true,text,sizeof(text));assert(!strcmp(text,"Hotspot on\nMac 192.168.4.2"));
 }
 '''
         with tempfile.TemporaryDirectory() as directory:

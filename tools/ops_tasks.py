@@ -27,7 +27,8 @@ class Task:
 TASKS = [
     Task('wifi', 'Wi-Fi: set up the Tab5',
          'Save a Wi-Fi network and the Mac service address to the Tab5 SD card over USB, '
-         'then check that the Mac can reach it.'),
+         'then check that the Mac can reach it. A file with WIFI_MODE=ap makes the Tab5 '
+         'broadcast that network for the Mac to join instead.'),
 ]
 
 
@@ -35,6 +36,7 @@ TASKS = [
 class WifiEnvFile:
     path: Path
     ssid: str | None
+    mode: str = 'station'  # 'ap': the Tab5 broadcasts this network (F-0003)
     error: str | None = None  # Never holds the password.
 
 
@@ -47,9 +49,10 @@ def wifi_env_files(root):
         if not any(key.startswith('WIFI_') for key in keys):
             continue
         try:
-            found.append(WifiEnvFile(path, load_config(path)['ssid']))
+            config = load_config(path)
+            found.append(WifiEnvFile(path, config['ssid'], config.get('mode', 'station')))
         except ValueError as error:
-            found.append(WifiEnvFile(path, None, str(error)))
+            found.append(WifiEnvFile(path, None, error=str(error)))
     return found
 
 
@@ -88,7 +91,8 @@ class ProvisionPlan:
     errors: list = field(default_factory=list)
 
 
-def provision_plan(root, *, env_file, port, mac_ip, service_port=SERVICE_PORT, when=None):
+def provision_plan(root, *, env_file, port, mac_ip, service_port=SERVICE_PORT, when=None, mode='station'):
+    """In hotspot mode the Tab5 learns the Mac's address when it joins, so none is needed here."""
     root = Path(root)
     stamp = (when or datetime.now()).strftime('%Y%m%d-%H%M%S')
     output = root/'.local/runs'/f'{stamp}-provision'
@@ -98,7 +102,9 @@ def provision_plan(root, *, env_file, port, mac_ip, service_port=SERVICE_PORT, w
     if not port:
         errors.append('Tab5 not found on USB')
     endpoint = None
-    if not mac_ip:
+    if mode == 'ap':
+        pass
+    elif not mac_ip:
         errors.append('Mac has no LAN IPv4 address')
     elif not ipaddress.ip_address(mac_ip).is_private:
         errors.append(f'Mac address {mac_ip} is not a private LAN address')
@@ -107,7 +113,8 @@ def provision_plan(root, *, env_file, port, mac_ip, service_port=SERVICE_PORT, w
     plan = ProvisionPlan(endpoint, output, errors=errors)
     if not errors:
         plan.argv = [str(root/'.tools/python-env/bin/python'), '-m', 'tools.provision_device',
-                     '--env', str(env_file), '--port', port, '--endpoint', endpoint,
+                     '--env', str(env_file), '--port', port,
+                     *(['--endpoint', endpoint] if endpoint else []),
                      '--output', str(output)]
     return plan
 
@@ -129,7 +136,7 @@ class ProvisionResult:
     problems: list
 
 
-def provision_result(lines, *, mac_ip, reachable=tcp_reachable):
+def provision_result(lines, *, mac_ip, reachable=tcp_reachable, mode='station'):
     """Interpret provision_device's JSON event lines (it never prints secrets)."""
     saved, tab5_ip = False, None
     for line in lines:
@@ -147,6 +154,11 @@ def provision_result(lines, *, mac_ip, reachable=tcp_reachable):
     if not saved:
         problems.append('Tab5 did not confirm the new settings')
         return ProvisionResult(None, None, None, problems)
+    if mode == 'ap':
+        # The Mac is not on the Tab5's network yet, so there is nothing to reach.
+        if not tab5_ip:
+            problems.append('Tab5 saved the settings but did not start its hotspot; check the serial log')
+        return ProvisionResult(tab5_ip, None, None, problems)
     if not tab5_ip:
         problems.append('Tab5 saved the settings but did not report a Wi-Fi address; '
                         'check the network name, password and 2.4 GHz')

@@ -1,7 +1,9 @@
 #pragma once
 #include <cstddef>
 #include <cstdio>
-struct StorageConfig { char ssid[33]{}; char password[64]{}; char endpoint[241]{}; };
+// access_point: the device broadcasts ssid/password and the Mac joins it (F-0003);
+// otherwise it joins that network and talks to endpoint.
+struct StorageConfig { char ssid[33]{}; char password[64]{}; char endpoint[241]{}; bool access_point=false; };
 bool storage_parse_config(const char* json, StorageConfig& out);
 bool storage_load_config(const char* directory, StorageConfig& out);
 bool storage_replace_config(const char* directory, const char* json);

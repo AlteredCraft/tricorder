@@ -1,5 +1,7 @@
 #include "network.h"
 #include "test_storage.h"
+#include "investigation.h"
+#include "investigation_wire.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_event.h"
@@ -17,8 +19,13 @@
 #include <atomic>
 
 namespace {
-std::atomic<uint32_t> station_ipv4{0}; // 0 while disconnected; read by the start screen
-struct Credentials { char ssid[33]; char password[64]; bool initialize_only; };
+std::atomic<uint32_t> station_ipv4{0}; // own address, 0 while down; read by the start screen
+// Hotspot mode: the last joined device's lease, and the MAC it was given to.
+std::atomic<uint32_t> peer_ipv4{0};
+std::atomic<bool> hotspot{false};
+uint8_t peer_mac[6]; // event loop task only
+esp_netif_t* ap_netif;
+struct Credentials { char ssid[33]; char password[64]; bool initialize_only; bool access_point; };
 QueueHandle_t requests;
 lv_obj_t *panel, *ssid_field, *password_field, *keyboard, *status;
 const char* current_boot;
@@ -66,10 +73,86 @@ esp_err_t echo(httpd_req_t* request) {
     return result;
 }
 
+void start_server() {
+    if (server) return;
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.max_open_sockets = 2;
+    config.recv_wait_timeout = 3;
+    config.send_wait_timeout = 3;
+    config.uri_match_fn = httpd_uri_match_wildcard;
+    auto result = httpd_start(&server, &config);
+    if (result == ESP_OK) {
+        httpd_uri_t route{};
+        route.uri = "/echo";
+        route.method = HTTP_POST;
+        route.handler = echo;
+        result = httpd_register_uri_handler(server, &route);
+        test_storage_http(server);
+    }
+    diagnostic_check("wifi_echo_server", result==ESP_OK ? "pass" : "fail",
+                     "Listener startup only; host challenge exchange required.");
+}
+
+void address_event(const char* mode, uint32_t ipv4) {
+    char ip[24];
+    snprintf(ip, sizeof(ip), IPSTR, IP2STR(reinterpret_cast<const esp_ip4_addr_t*>(&ipv4)));
+    auto* event = diagnostic_event("wifi_address");
+    cJSON_AddStringToObject(event, "ipv4", ip);
+    cJSON_AddStringToObject(event, "mode", mode);
+    diagnostic_emit(event);
+}
+
+// The Mac joined the hotspot: its lease is where the service listens, on the configured port.
+void peer_assigned(const ip_event_ap_staipassigned_t& assigned) {
+    peer_ipv4.store(assigned.ip.addr);
+    memcpy(peer_mac, assigned.mac, sizeof(peer_mac));
+    InvestigationEndpoint configured;
+    const int port = configured.parse(CONFIG_TRICORDER_INVESTIGATION_ENDPOINT) ? configured.port : 8765;
+    char ip[24], endpoint[64], text[128];
+    snprintf(ip, sizeof(ip), IPSTR, IP2STR(&assigned.ip));
+    snprintf(endpoint, sizeof(endpoint), "ws://%s:%d/", ip, port);
+    investigation_set_endpoint(endpoint);
+    snprintf(text, sizeof(text), "Mac joined the hotspot: %s / service %s", ip, endpoint);
+    show_status(text);
+    auto* event = diagnostic_event("wifi_ap_client");
+    cJSON_AddStringToObject(event, "ipv4", ip);
+    cJSON_AddStringToObject(event, "endpoint", endpoint);
+    diagnostic_emit(event);
+}
+
 void wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
     if (base==WIFI_EVENT && id==WIFI_EVENT_STA_START) {
+        if (hotspot.load()) return;
         auto result = esp_wifi_connect();
         if (result != ESP_OK) show_status("Wi-Fi connect failed; open setup to retry.");
+    } else if (base==WIFI_EVENT && id==WIFI_EVENT_AP_START) {
+        esp_netif_ip_info_t info{};
+        if (ap_netif && esp_netif_get_ip_info(ap_netif, &info)==ESP_OK) station_ipv4.store(info.ip.addr);
+        peer_ipv4.store(0);
+        show_status("Hotspot on. Join it from the Mac, then start the service.");
+        address_event("ap", station_ipv4.load());
+        start_server();
+    } else if (base==WIFI_EVENT && id==WIFI_EVENT_AP_STOP) {
+        station_ipv4.store(0);
+        peer_ipv4.store(0);
+    } else if (base==WIFI_EVENT && id==WIFI_EVENT_AP_STACONNECTED) {
+        auto* joined = static_cast<wifi_event_ap_staconnected_t*>(data);
+        auto* event = diagnostic_event("wifi_ap_station");
+        cJSON_AddStringToObject(event, "state", "joined");
+        cJSON_AddNumberToObject(event, "aid", joined->aid);
+        diagnostic_emit(event);
+    } else if (base==WIFI_EVENT && id==WIFI_EVENT_AP_STADISCONNECTED) {
+        auto* left = static_cast<wifi_event_ap_stadisconnected_t*>(data);
+        const bool was_peer = peer_ipv4.load() && !memcmp(left->mac, peer_mac, sizeof(peer_mac));
+        if (was_peer) { peer_ipv4.store(0); show_status("The Mac left the hotspot."); }
+        auto* event = diagnostic_event("wifi_ap_station");
+        cJSON_AddStringToObject(event, "state", "left");
+        cJSON_AddNumberToObject(event, "aid", left->aid);
+        cJSON_AddNumberToObject(event, "reason", left->reason);
+        cJSON_AddBoolToObject(event, "was_service_peer", was_peer);
+        diagnostic_emit(event);
+    } else if (base==IP_EVENT && id==IP_EVENT_AP_STAIPASSIGNED) {
+        peer_assigned(*static_cast<ip_event_ap_staipassigned_t*>(data));
     } else if (base==WIFI_EVENT && id==WIFI_EVENT_STA_DISCONNECTED) {
         station_ipv4.store(0);
         auto* disconnected = static_cast<wifi_event_sta_disconnected_t*>(data);
@@ -89,27 +172,8 @@ void wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
         snprintf(ip, sizeof(ip), IPSTR, IP2STR(&address->ip_info.ip));
         snprintf(text, sizeof(text), "Wi-Fi connected: %s / waiting for Mac echo test", ip);
         show_status(text);
-        auto* event = diagnostic_event("wifi_address");
-        cJSON_AddStringToObject(event, "ipv4", ip);
-        diagnostic_emit(event);
-        if (!server) {
-            httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-            config.max_open_sockets = 2;
-            config.recv_wait_timeout = 3;
-            config.send_wait_timeout = 3;
-            config.uri_match_fn = httpd_uri_match_wildcard;
-            auto result = httpd_start(&server, &config);
-            if (result == ESP_OK) {
-                httpd_uri_t route{};
-                route.uri = "/echo";
-                route.method = HTTP_POST;
-                route.handler = echo;
-                result = httpd_register_uri_handler(server, &route);
-                test_storage_http(server);
-            }
-            diagnostic_check("wifi_echo_server", result==ESP_OK ? "pass" : "fail",
-                             "Listener startup only; host challenge exchange required.");
-        }
+        address_event("station", address->ip_info.ip.addr);
+        start_server();
     }
 }
 
@@ -122,12 +186,14 @@ esp_err_t initialize() {
     if ((result=esp_netif_init()) != ESP_OK) return result;
     if ((result=esp_event_loop_create_default()) != ESP_OK) return result;
     if (!esp_netif_create_default_wifi_sta()) return ESP_FAIL;
+    if (!(ap_netif=esp_netif_create_default_wifi_ap())) return ESP_FAIL;
     wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
     if ((result=esp_wifi_init(&config)) != ESP_OK) return result;
     if ((result=esp_wifi_set_storage(WIFI_STORAGE_RAM)) != ESP_OK) return result;
     if ((result=esp_wifi_set_mode(WIFI_MODE_STA)) != ESP_OK) return result;
     if ((result=esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event, nullptr)) != ESP_OK) return result;
     if ((result=esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event, nullptr)) != ESP_OK) return result;
+    if ((result=esp_event_handler_register(IP_EVENT, IP_EVENT_AP_STAIPASSIGNED, wifi_event, nullptr)) != ESP_OK) return result;
     esp_hosted_coprocessor_fwver_t version{};
     auto version_result = esp_hosted_get_coprocessor_fwversion(&version);
     auto* event = diagnostic_event("c6_firmware");
@@ -150,26 +216,47 @@ void network_task(void*) {
         esp_err_t result=ESP_OK;
         if (!attempted) { attempted=true; result=initialize(); initialized=result==ESP_OK; }
         else if (!initialized) result=ESP_FAIL;
-        if (initialized && !credentials.initialize_only) {
+        if (initialized && !credentials.initialize_only && credentials.access_point) {
+            wifi_config_t config{};
+            memcpy(config.ap.ssid, credentials.ssid, strlen(credentials.ssid));
+            config.ap.ssid_len = strlen(credentials.ssid);
+            memcpy(config.ap.password, credentials.password, strlen(credentials.password));
+            config.ap.authmode = WIFI_AUTH_WPA2_PSK;
+            config.ap.max_connection = 4;
+            config.ap.channel = 1;
+            if (started && !hotspot.load()) esp_wifi_disconnect();
+            station_ipv4.store(0); peer_ipv4.store(0);
+            hotspot.store(true);
+            result=esp_wifi_set_mode(WIFI_MODE_AP);
+            if (result==ESP_OK) result=esp_wifi_set_config(WIFI_IF_AP, &config);
+            volatile unsigned char* clear = reinterpret_cast<volatile unsigned char*>(&config);
+            for (size_t i=0; i<sizeof(config); ++i) clear[i]=0;
+            if (result==ESP_OK && !started) { result=esp_wifi_start(); if (result==ESP_OK) started=true; }
+        } else if (initialized && !credentials.initialize_only) {
             wifi_config_t config{};
             memcpy(config.sta.ssid, credentials.ssid, strlen(credentials.ssid));
             memcpy(config.sta.password, credentials.password, strlen(credentials.password));
-            if (started) esp_wifi_disconnect();
-            result=esp_wifi_set_config(WIFI_IF_STA, &config);
+            if (started && !hotspot.load()) esp_wifi_disconnect();
+            // Leaving hotspot mode (manual Wi-Fi setup): the mode change posts STA_START, which connects.
+            const bool from_hotspot = hotspot.exchange(false);
+            if (from_hotspot) { station_ipv4.store(0); peer_ipv4.store(0); }
+            result=esp_wifi_set_mode(WIFI_MODE_STA);
+            if (result==ESP_OK) result=esp_wifi_set_config(WIFI_IF_STA, &config);
             // Clear local copies without printing credentials to the serial log.
             volatile unsigned char* clear = reinterpret_cast<volatile unsigned char*>(&config);
             for (size_t i=0; i<sizeof(config); ++i) clear[i]=0;
             if (result==ESP_OK) {
-                result=started ? esp_wifi_connect() : esp_wifi_start();
+                result=!started ? esp_wifi_start() : from_hotspot ? ESP_OK : esp_wifi_connect();
                 if (result==ESP_OK) started=true;
             }
         }
-        bool initialize_only=credentials.initialize_only;
+        bool initialize_only=credentials.initialize_only, access_point=credentials.access_point;
         if (initialize_only) prepare_result.store(result==ESP_OK ? 0 : 1);
         volatile unsigned char* clear = reinterpret_cast<volatile unsigned char*>(&credentials);
         for (size_t i=0; i<sizeof(credentials); ++i) clear[i]=0;
         if (result!=ESP_OK) show_status("Wi-Fi initialization failed; inspect serial evidence.");
-        auto* event = diagnostic_event(initialize_only ? "wifi_initialize_requested" : "wifi_connect_requested");
+        auto* event = diagnostic_event(initialize_only ? "wifi_initialize_requested" :
+                                       access_point ? "wifi_access_point_requested" : "wifi_connect_requested");
         cJSON_AddStringToObject(event, "result", esp_err_to_name(result));
         diagnostic_emit(event);
     }
@@ -276,4 +363,15 @@ bool network_connect_saved(const char* ssid,const char* password) {
     return ok;
 }
 
+bool network_start_access_point(const char* ssid,const char* password) {
+    if(!ssid || !password || !strlen(ssid) || strlen(ssid)>32 || strlen(password)<8 || strlen(password)>63)return false;
+    Credentials credentials{};strcpy(credentials.ssid,ssid);strcpy(credentials.password,password);credentials.access_point=true;
+    bool ok=xQueueSend(requests,&credentials,0)==pdTRUE;
+    volatile unsigned char* p=reinterpret_cast<volatile unsigned char*>(&credentials);
+    for(size_t i=0;i<sizeof(credentials);++i)p[i]=0;
+    return ok;
+}
+
 uint32_t network_ipv4() {return station_ipv4.load();}
+uint32_t network_peer_ipv4() {return peer_ipv4.load();}
+bool network_access_point() {return hotspot.load();}
