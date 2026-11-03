@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from tools.investigation import ProtocolError
-from tools.investigation_service import MockSession, decode_message, provider_settings
+from tools.investigation_service import MockSession, decode_message, peer_allowed, provider_settings
 from test_investigation import evidence, fixture
 
 
@@ -320,6 +320,14 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
                         if index:self.assertAlmostEqual(reply['comparison']['rms_delta_db'],-6.020599913)
                         await send('ack',request_id=f'r{index}')
                         self.assertEqual((await receive())['state'],'complete' if index else 'adjust')
+
+
+class PeerPolicyTests(unittest.TestCase):
+    def test_only_private_or_loopback_peers_may_connect(self):
+        for address in ('127.0.0.1','::1','192.168.4.2','172.20.10.9','10.0.0.5','fd00::1'):
+            self.assertTrue(peer_allowed(address),address)
+        for address in ('8.8.8.8','2001:4860:4860::8888','93.184.216.34','not-an-address',None):
+            self.assertFalse(peer_allowed(address),address)
 
 
 class ProviderSettingsTests(unittest.TestCase):

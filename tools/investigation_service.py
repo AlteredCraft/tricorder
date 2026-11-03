@@ -8,6 +8,7 @@ import argparse
 import base64
 import asyncio
 from contextlib import suppress
+import ipaddress
 import json
 import inspect
 from pathlib import Path
@@ -56,6 +57,16 @@ QUESTION_MESSAGES = MAX_QUESTIONS*(-(-MAX_QUESTION_FRAMES*2//4096)+3)
 # Spoken guidance: 24 kHz mono s16 in chunks of at most 4096 bytes, at most 60 s per reply.
 SPEECH_RATE_HZ = text_to_speech.RATE_HZ
 MAX_SPEECH_FRAMES = 60*SPEECH_RATE_HZ
+
+
+def peer_allowed(address):
+    """Only devices on a private network or this Mac may open a session: the service binds every
+    interface by default so the hotspot flow needs no address, and it speaks plaintext (ADR-0010)."""
+    try:
+        peer = ipaddress.ip_address(address)
+    except (TypeError, ValueError):
+        return False
+    return peer.is_private or peer.is_loopback
 
 
 def decode_message(wire):
@@ -508,6 +519,9 @@ async def serve_mock(host, port, output, *, delay_s=0, max_sessions=32, replay_o
     active=False
     async def handler(socket):
         nonlocal active
+        peer=socket.remote_address[0] if socket.remote_address else None
+        if not peer_allowed(peer):
+            await socket.close(code=1008,reason='private network only');return
         if active or sum(1 for _ in output.iterdir())>=max_sessions:
             await socket.close(code=1013,reason='session capacity');return
         active=True
