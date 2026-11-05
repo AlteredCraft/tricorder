@@ -36,6 +36,7 @@
 ## Later
 
 - Hosted agent service (device auth, TLS, credential provisioning, internet latency).
+- Device event log to SD, so untethered trials keep device telemetry (the serial collector needs USB; F-0003 T1 lost it when the Tab5 was unplugged).
 - Send the context photo and steadiness reading to the model (device-only now; not needed for the dB comparison). The user asked "What is this a picture of?" in a live loop.
 - Sleep and wake (removed from G-0001.05 on 2026-09-25; the device is always on). Start with screen-off on idle and touch wake, once on-battery power shows the backlight's share.
 - From G-0001 (2026-09-26, user-approved), each to be picked up by a feature that needs it: cold starts (none logged yet); INA226 on battery and power profiles; SD power loss mid-save; 30-minute handheld battery session; speech/playback overlapping a measurement (full-duplex); finger touch-to-submit baseline (`pressed_us` is logged every session).

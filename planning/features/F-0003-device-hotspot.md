@@ -10,13 +10,17 @@
 
 ## Assumptions
 
-1. [?] The C6 radio in access-point mode over ESP-Hosted gives the Mac an address and carries a session (uploads of 1.15 MB, spoken replies) as well as a phone hotspot did.
-2. [?] Deriving the service address from the DHCP lease (the last device to join) removes every provisioning step except joining the hotspot once.
-3. [partly] A local 8B model (gemma4 via Ollama) answers Explain inside the device's 45 s wait with prose that passes the unbacked-number check. Offline smoke on the T4 summary with a note: with reasoning off 3.0 s and passes; with reasoning on it spent the 700-token budget thinking (`20261103-local-explain-smoke`). A/B guidance has a 15 s device deadline; untested with the local model.
+1. [partly] (T1) The C6 radio in access-point mode over ESP-Hosted gives the Mac an address and carries a session (uploads of 1.15 MB, spoken replies) as well as a phone hotspot did. Explain and a 36 s spoken reply worked; no capture upload yet.
+2. [yes] (T1) Deriving the service address from the DHCP lease (the last device to join) removes every provisioning step except joining the hotspot once.
+3. [partly] (T1) A local 8B model (gemma4 via Ollama) answers Explain inside the device's 45 s wait with prose that passes the unbacked-number check: 4.3 s live, 3.0 s offline with reasoning off (with reasoning on it spent the 700-token budget thinking, `20261103-local-explain-smoke`). A/B guidance has a 15 s device deadline; untested with the local model.
 4. [?] The Mac keeps Internet by other means when needed; while joined to the device it has none, and the person accepts that.
 
 ## Next
 
-T1 (anywhere, 10 minutes, headphones optional): Provision the device for hotspot mode with the ops TUI (`.env.local.tricorder-ap`), join the Mac to the Tricorder network, start the service with `--provider local`, then Sound → listen → Analysis → Voice note → Explain. Then one A/B session. Telemetry: `wifi_access_point`, `wifi_ap_client`, `sound_explain` (connected_ms, replied_ms), `provider_timing` in the service run. Tests assumptions 1–3.
+T2 (anywhere, 10 minutes, Tab5 on USB for the whole trial): one A/B session over the hotspot with `--provider local`, to test the 1.15 MB uploads, the 15 s guidance deadline against the local model, and the spoken guidance (assumptions 1 and 3). Telemetry: `investigation_transport`, `investigation_turn`, the service `provider_timing`. The collector needs the USB cable; T1 lost device telemetry when the Tab5 was unplugged.
 
 ## Trials
+
+### T1 2026-11-03: Explain over the hotspot with the local model
+
+`e26eeb8` · run `20261103-hotspot-t1` (service side only: the collector lost USB at 16 min, before the trial) · provisioning `20261103-provision-ap`. **Tried:** provision hotspot mode over USB, Mac joined "Tricorder", voice note, Explain. **Telemetry:** boot straight into hotspot mode (`wifi_address` 192.168.4.1, mode ap); the note "Test zero." transcribed in 0.5 s and the device closed that session without confirming it; a second session ran Explain without a note: local model 4.3 s, reply passed the checks, spoken reply 36 s streamed in 13.8 s, session closed complete. **User:** "the tile shows Mac 192.168.4.2 and explain worked". **Learned:** the whole loop runs with no router and no Internet; device telemetry needs the cable. **Decision:** continue (A/B next).
