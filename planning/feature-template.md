@@ -6,20 +6,14 @@
 
 **Outcome:** One or two sentences: what the person holding the device can do when this is done.
 
-**Done when:** the user uses it on the device and says it does the job, plus any concrete condition.
-
-## Assumptions
-
-What we're unsure of. Mark each `[?]`, `[yes]` or `[no]` as trials answer it, citing the trial.
-
-1. [?] Assumption.
+**Done when:** the user uses it on the device and says it does the job.
 
 ## Next
 
-The next trial: what we'll try, the assumption it tests, the telemetry that answers it, and what the user does (minutes, place, needs).
+One or two lines: what the next build does and what the user should try (minutes, place, needs).
 
 ## Trials
 
 ### T1 YYYY-MM-DD: title
 
-`abc1234` · run `YYYYMMDD-topic`. **Tried:** … **Telemetry:** key numbers. **User:** what they said. **Learned:** … **Decision:** continue | adapt | stop.
+`abc1234`. **Tried:** … **Happened:** what worked, what didn't, what the user said. **Next:** continue | adapt | stop.

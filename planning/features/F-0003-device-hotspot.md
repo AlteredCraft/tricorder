@@ -17,7 +17,7 @@
 
 ## Next
 
-T2 (anywhere, 10 minutes, Tab5 on USB for the whole trial): one A/B session over the hotspot with `--provider local`, to test the 1.15 MB uploads, the 15 s guidance deadline against the local model, and the spoken guidance (assumptions 1 and 3). Telemetry: `investigation_transport`, `investigation_turn`, the service `provider_timing`. The collector needs the USB cable; T1 lost device telemetry when the Tab5 was unplugged.
+T2 (anywhere, 10 minutes): one A/B session over the hotspot with `--provider local`. Tells us whether the uploads, the 15 s guidance deadline and spoken guidance work with the local model. The user says whether the session completed and the guidance made sense.
 
 ## Trials
 
