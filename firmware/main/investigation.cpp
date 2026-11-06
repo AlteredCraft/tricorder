@@ -952,13 +952,15 @@ void investigation_run_replay() {
 
 void investigation_stop_speech() {stop_speech.store(true);}
 
-// F-0002 T5, media owner: the Mac's reading of a sound analysis. Reuses the A/B
+// F-0002 T5, F-0005, media owner: the Mac's reading of a sound or motion analysis. Reuses the A/B
 // session's hello, spoken-question upload (the voice note, accepted as heard) and
 // speech stream; analysis_explain replaces the captures.
-bool investigation_explain_sound(const char* boot,const char* session,const InvestigationCapture* note,
-                                 cJSON* analysis,const SoundExplainHooks& hooks,SoundExplainResult& out) {
+bool investigation_explain_analysis(const char* boot,const char* session,const InvestigationCapture* note,
+                                 cJSON* analysis,const AnalysisExplainHooks& hooks,AnalysisExplainResult& out) {
     auto progress=hooks.progress;
     std::unique_ptr<cJSON,decltype(&cJSON_Delete)> summary(analysis,cJSON_Delete);
+    auto* kind_item=cJSON_GetObjectItemCaseSensitive(analysis,"kind");
+    const std::string kind=cJSON_IsString(kind_item)?kind_item->valuestring:"sound";
     InvestigationEndpoint endpoint;
     auto p=std::make_unique<InvestigationProtocol>(boot,session);p->ask(now_ms());
     cancelled.store(false);stop_speech.store(false);
@@ -969,7 +971,8 @@ bool investigation_explain_sound(const char* boot,const char* session,const Inve
     const char* transcript_status="none";
     auto finish=[&](const char* error) {
         if(error)out.error=error;
-        auto* e=diagnostic_event("sound_explain");cJSON_AddStringToObject(e,"session_id",session);
+        auto* e=diagnostic_event("analysis_explain");cJSON_AddStringToObject(e,"session_id",session);
+        cJSON_AddStringToObject(e,"kind",kind.c_str());
         cJSON_AddBoolToObject(e,"ok",!error);if(error)cJSON_AddStringToObject(e,"error",error);
         cJSON_AddBoolToObject(e,"note",note!=nullptr);cJSON_AddStringToObject(e,"transcript_status",transcript_status);
         cJSON_AddStringToObject(e,"protocol_state",p->state_name());

@@ -24,12 +24,28 @@ constexpr TileText tile_text[]={
 "• The listening audio is never saved or sent. Explain sends only the analysis numbers to the Mac.\n"
 "• The level is not a calibrated sound level. Use it to compare sounds, not as an absolute measurement.\n"
 "• The speaker is off while this screen listens."},
-{"Motion","Screen coming",
-"The tile shows how far the device is tilted from lying flat, measured by the accelerometer.\n\n"
-"• 0° is flat, screen up or down. 90° is standing on an edge.\n"
-"• It updates once a second while this screen is showing.\n\n"
-"The motion sensor measures the device itself, not the thing you point it at. To measure an object's vibration, the device has to be attached to it.\n\n"
-"A full Motion screen is coming."},
+{"Motion","Movement and vibration",
+"A live view of how the device moves, from its accelerometer, 100 times a second. The tile shows how far the device is tilted from lying flat, once a second.\n\n"
+"Reading the screen\n"
+"• Green trace: acceleration minus gravity over the last 6 seconds, in g (1 g is the pull of gravity; mg is a thousandth of that). It sits near 0 when the device is still and jumps when it is tapped, bumped or shaken. The scale grows to fit.\n"
+"• Blue trace: tilt from lying flat. 0° is flat, screen up or down; 90° is standing on an edge.\n"
+"• Tilt at the top is the tilt right now. Peak is the biggest jump since you opened the screen or tapped Reset peak.\n\n"
+"Try it\n"
+"1. Set the device on a table and keep still for a few seconds.\n"
+"2. Tap the table next to it, then knock on the device.\n"
+"3. Pick it up and hold it, then shake it.\n"
+"4. Set it on something running, such as a washing machine, a fan's base or a laptop with its fan on, and leave it there for 10 seconds or more.\n\n"
+"Analysis\n"
+"Tap Analysis to stop measuring and see what happened: how steady it was (held still, in hand or moving, from the spread of the acceleration in each second), the steadiest and shakiest second, each jolt (0.1 g or more above the quiet level) with its time, length and size, the range of tilt and the usual orientation, and any vibration. It covers up to 10 minutes.\n\n"
+"Vibration is measured only while the device rests on something for at least 4 seconds. The analysis reports the strongest repeating frequency, in Hz, and its size, when one stands out.\n\n"
+"Ask the agent\n"
+"1. On the analysis, tap Explain to send the analysis to the Mac.\n"
+"2. The agent's reading appears above the jolts and is spoken; Stop voice ends the speech.\n\n"
+"Notes\n"
+"• The sensor measures the device itself, not what you point it at. To measure something's vibration, set the device on it.\n"
+"• The readings are not calibrated. Use them to compare, not as exact measurements.\n"
+"• Vibration faster than 50 times a second can show up at a lower frequency.\n"
+"• The samples are never saved or sent. Explain sends only the analysis numbers to the Mac."},
 {"Camera","Instrument coming",nullptr},
 {"Power","Screen coming",
 "The tile reads the battery through the INA226 power monitor.\n\n"

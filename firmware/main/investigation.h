@@ -19,20 +19,21 @@ bool investigation_set(const char* name,bool value);
 bool investigation_request_replay(const char* session);
 void investigation_run_replay();
 
-// F-0002 T5 (media owner): send a sound-analysis summary (taken) and an optional voice
-// note (recorded for this boot/session as <session>-q1) to the Mac; the agent's reading
+// F-0002 T5, F-0005 (media owner): send an analysis summary (taken; its "kind" is sound or
+// motion) and an optional voice note (recorded for this boot/session as <session>-q1) to
+// the Mac; the agent's reading
 // comes back as text and is spoken. Hooks run on the media task without the display lock:
 // progress(stage, transcript, text) gives a short status line, then the reading's text.
 // With show_transcript, the note's transcript (status heard, empty or failed) is shown
 // and poll_choice is polled until it returns 1 explain, 2 record again or 0 cancel;
 // without it, a heard note is used as is.
-struct SoundExplainHooks {
+struct AnalysisExplainHooks {
     void(*progress)(const char* stage,const char* transcript,const char* text);
     void(*show_transcript)(const char* status,const char* text)=nullptr;
     int(*poll_choice)()=nullptr;
 };
-struct SoundExplainResult {std::string transcript,text,error;bool spoke=false;int choice=1;};
-bool investigation_explain_sound(const char* boot,const char* session,const InvestigationCapture* note,
-                                 cJSON* analysis,const SoundExplainHooks& hooks,SoundExplainResult& out);
+struct AnalysisExplainResult {std::string transcript,text,error;bool spoke=false;int choice=1;};
+bool investigation_explain_analysis(const char* boot,const char* session,const InvestigationCapture* note,
+                                 cJSON* analysis,const AnalysisExplainHooks& hooks,AnalysisExplainResult& out);
 // Stops spoken guidance or an explanation being spoken (any task).
 void investigation_stop_speech();

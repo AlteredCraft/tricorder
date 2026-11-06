@@ -8,7 +8,7 @@
 
 **Retargeted 2026-11-05 (user):** the Investigate tile (guided A/B) is dropped as not compelling to demo. The Sound tile stays. The premise is now the device, its screen, touch and sensors, connected to an LLM running locally on the Mac.
 
-**Active:** Setup screen layout ([#7](https://github.com/AlteredCraft/tricorder/issues/7)) and dropping the voice note from Sound ([#8](https://github.com/AlteredCraft/tricorder/issues/8)), then Motion ([#3](https://github.com/AlteredCraft/tricorder/issues/3)).
+**Active:** Motion ([F-0005](features/F-0005-motion.md), [#3](https://github.com/AlteredCraft/tricorder/issues/3)).
 
 | Feature | Status |
 | --- | --- |
@@ -16,8 +16,9 @@
 | [F-0002 Sound session analysis](features/F-0002-sound-analysis.md) | Done |
 | [F-0003 Device hotspot and local text model](features/F-0003-device-hotspot.md) | Done (Explain over the hotspot; A/B part dropped) |
 | [F-0004 Start screen for the demo](features/F-0004-demo-start-screen.md) ([#2](https://github.com/AlteredCraft/tricorder/issues/2)) | Done |
+| [F-0005 Motion instrument](features/F-0005-motion.md) ([#3](https://github.com/AlteredCraft/tricorder/issues/3)) | In progress |
 
-After F-0004, in order, each the Sound shape for another sensor: Motion ([#3](https://github.com/AlteredCraft/tricorder/issues/3)), Camera to a local vision model ([#4](https://github.com/AlteredCraft/tricorder/issues/4)), Power ([#5](https://github.com/AlteredCraft/tricorder/issues/5)). Removing the dropped A/B code waits until F-0004 lands ([#6](https://github.com/AlteredCraft/tricorder/issues/6)).
+Next, in order, each the Sound shape for another sensor: Camera to a local vision model ([#4](https://github.com/AlteredCraft/tricorder/issues/4)), Power ([#5](https://github.com/AlteredCraft/tricorder/issues/5)). Removing the dropped A/B code waits until F-0004 lands ([#6](https://github.com/AlteredCraft/tricorder/issues/6)).
 
 ## M-0001: Validate the handheld investigation
 

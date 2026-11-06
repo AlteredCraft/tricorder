@@ -4,6 +4,7 @@
 #include "network.h"
 #include "setup.h"
 #include "sound.h"
+#include "motion.h"
 #include "diagnostic_events.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -14,9 +15,9 @@
 #include <initializer_list>
 
 namespace {
-enum Opens {None,Sound,Setup,Diagnostics};
+enum Opens {None,Sound,Motion,Setup,Diagnostics};
 // What each tile opens, in home::tile_text order (names, notes and info text).
-constexpr Opens opens_for[home::tile_count]={Sound,None,None,None,Setup,Diagnostics};
+constexpr Opens opens_for[home::tile_count]={Sound,Motion,None,None,Setup,Diagnostics};
 constexpr unsigned sound_tile=0,motion_tile=1,power_tile=3,setup_tile=4;
 lv_obj_t *home_panel,*readings[home::tile_count],*info_panel,*info_title,*info_scroll,*info_text;
 // The open info page (LVGL task): tile, when it opened, furthest scroll.
@@ -56,6 +57,7 @@ void tile_clicked(lv_event_t* ev) {
         cJSON_AddBoolToObject(e,"opens",false);diagnostic_emit(e);return;
     }
     if(opens==Sound){sound_ui_open();note_nav("home","sound");}
+    else if(opens==Motion){motion_ui_open();note_nav("home","motion");}
     else if(opens==Setup){setup_open();note_nav("home","setup");}
     else {show_home(false);note_nav("home","diagnostics");}
 }

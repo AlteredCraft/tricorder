@@ -397,6 +397,7 @@ cJSON* rounded(double value) {return cJSON_CreateNumber(std::round(value*10)/10)
 // The summary the Mac checks (tools/sound_explain.py FIELDS); levels in device dBFS.
 cJSON* analysis_summary() {
     const auto& a=result;auto* o=cJSON_CreateObject();
+    cJSON_AddStringToObject(o,"kind","sound");
     const std::pair<const char*,float> top[]={{"duration_s",a.duration_s},{"background_db",a.background_db},
         {"loud_db",a.loud_db},{"average_db",a.average_db},{"max_db",a.max_db},{"max_at_s",a.max_at_s},
         {"threshold_db",a.threshold_db},{"strongest_background_hz",a.strongest_background_hz}};
@@ -449,10 +450,10 @@ void restore_buttons(const char* status) {
 void sound_explain(const char* boot) {
     // A fresh session each time, so Explain can be retried.
     char session[40];new_session(session,sizeof(session));
-    SoundExplainHooks hooks{explain_progress};
-    SoundExplainResult out;
+    AnalysisExplainHooks hooks{explain_progress};
+    AnalysisExplainResult out;
     const bool ok=analysis_state.load()==Ready &&
-        investigation_explain_sound(boot,session,nullptr,analysis_summary(),hooks,out);
+        investigation_explain_analysis(boot,session,nullptr,analysis_summary(),hooks,out);
     explaining.store(false);
     restore_buttons(ok?"Tap Explain to ask again.":out.error.empty()?"Nothing to explain yet.":out.error.c_str());
 }

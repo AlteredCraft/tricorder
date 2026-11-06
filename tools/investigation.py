@@ -438,9 +438,9 @@ class MockProvider:
     name = 'scripted-mock-v1'
 
     def explain(self, evidence):
-        """Deterministic reading of a sound analysis (F-0002); see tools.sound_explain."""
-        from tools.sound_explain import mock_text
-        return mock_text(evidence)
+        """Deterministic reading of a sound (F-0002) or motion (F-0005) analysis."""
+        from tools import motion_explain, sound_explain
+        return (motion_explain if evidence.get('kind') == 'motion' else sound_explain).mock_text(evidence)
 
     def respond(self, request):
         validate_request(request)

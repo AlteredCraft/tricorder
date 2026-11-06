@@ -1,6 +1,6 @@
 # Guided A/B protocol
 
-**History (2026-11-05):** the guided A/B (Investigate tile) was dropped. The connection, wire framing, spoken ask and `analysis_explain` parts still carry Sound → Explain; the A/B states are kept for reference.
+**History (2026-11-05):** the guided A/B (Investigate tile) was dropped. The connection, wire framing, spoken ask and `analysis_explain` parts still carry Sound and Motion → Explain (the analysis's `kind` is `sound` or `motion`; missing means sound; tools/sound_explain.py and tools/motion_explain.py check each); the A/B states are kept for reference.
 
 Reference for [G-0002.01](plans/G-0002.01-guided-ab-slice.md). Running trials, SD provisioning and replay: [guided-ab-operations.md](guided-ab-operations.md). Design decisions: [ADR-0010](adrs/ADR-0010-device-owned-ab-lan-experiment.md), [0011](adrs/ADR-0011-bounded-tcp-write-completion.md), [0012](adrs/ADR-0012-live-prose-over-verified-summaries.md), [0013](adrs/ADR-0013-local-first-speech-to-text.md), [0014](adrs/ADR-0014-spoken-guidance-streamed-from-the-mac.md).
 

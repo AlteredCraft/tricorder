@@ -18,7 +18,7 @@ import wave
 from tools.captures import CaptureStore
 from tools.speech_to_text import DEFAULT_ENGINE, ENGINES, load_transcriber
 from tools import text_to_speech
-from tools.sound_explain import checked_text, explain_evidence, validate_analysis
+from tools import motion_explain, sound_explain
 from tools.investigation import (CaptureEvidence, Fixture, MAX_CAPTURE_BYTES, MAX_QUESTIONS,
                                  MAX_QUESTION_FRAMES, MAX_QUESTION_TEXT, MockProvider,
                                  ProtocolError, QUESTION_FIELDS, QUESTION_RATE_HZ, QuestionAudio,
@@ -218,16 +218,24 @@ class MockSession:
             self.phase='pending'
             self.task=asyncio.create_task(self.respond(request))
         elif kind=='analysis_explain':
-            # F-0002: a sound session analysed on the device, explained once, before any capture.
+            # F-0002, F-0005: a sound or motion session analysed on the device, explained once,
+            # before any capture. A missing kind is sound.
             require(self.phase=='await_a' and not self.ids and self.pending is None and not self.requests,
                     'explain only once, before any capture')
             request_id=identity(message['request_id'])
-            analysis=validate_analysis(message['analysis'])
-            self.archive.record({'type':'sound_analysis','request_id':request_id,'analysis':analysis})
+            analysis=message['analysis']
+            require(isinstance(analysis,dict),'analysis fields')
+            kind=analysis.get('kind','sound')
+            if kind=='motion':
+                analysis=motion_explain.validate_analysis(analysis)
+            else:
+                require(kind=='sound','unknown analysis kind')
+                analysis=sound_explain.validate_analysis({k:v for k,v in analysis.items() if k!='kind'})
+            self.archive.record({'type':f'{kind}_analysis','request_id':request_id,'analysis':analysis})
             self.requests.add(request_id)
             self.pending={'request_id':request_id}
             self.phase='pending'
-            self.task=asyncio.create_task(self.explain(request_id,analysis))
+            self.task=asyncio.create_task(self.explain(request_id,kind,analysis))
         elif kind=='ack':
             require(self.phase=='await_ack' and self.pending is not None,'no response awaiting acknowledgement')
             require(time.monotonic()<self.expires,'ack deadline expired')
@@ -393,14 +401,16 @@ class MockSession:
             # Exceptions from future providers can include URLs/keys; record only a fixed reason.
             await self.emit(self.envelope('incomplete',reason='provider_or_evidence_failure'))
 
-    async def explain(self, key, analysis):
-        evidence=explain_evidence(analysis,self.operator_question)
+    async def explain(self, key, kind, analysis):
+        module=motion_explain if kind=='motion' else sound_explain
+        evidence=(motion_explain.explain_evidence(analysis) if kind=='motion'
+                  else sound_explain.explain_evidence(analysis,self.operator_question))
         try:
             async with asyncio.timeout(EXPLAIN_TIMEOUT_S):
                 started=time.monotonic_ns()
                 text=self.provider.explain(evidence)
                 text=await text if inspect.isawaitable(text) else text
-                text=checked_text(text,evidence)
+                text=module.checked_text(text,evidence)
                 self.archive.record({'type':'provider_timing','request_id':key,'provider':self.provider.name,
                     'model':getattr(self.provider,'model',None),'started_host_ns':started,
                     'finished_host_ns':time.monotonic_ns()})

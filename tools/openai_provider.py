@@ -31,16 +31,18 @@ class OpenAIProvider:
         return {}
 
     async def explain(self, evidence):
-        """F-0002: plain prose over a checked sound-analysis summary and voice note."""
-        from tools.sound_explain import INSTRUCTIONS
+        """F-0002, F-0005: plain prose over a checked sound or motion analysis summary."""
+        from tools import motion_explain, sound_explain
+        motion = evidence.get('kind') == 'motion'
+        instructions = (motion_explain if motion else sound_explain).INSTRUCTIONS
         schema = {'type': 'object', 'additionalProperties': False,
                   'properties': {'text': {'type': 'string'}}, 'required': ['text']}
         try:
             routing = self.routing()
             response = await self.client.responses.create(
-                model=self.model, store=False, max_output_tokens=700, instructions=INSTRUCTIONS,
+                model=self.model, store=False, max_output_tokens=700, instructions=instructions,
                 input=[{'role': 'user', 'content': json.dumps(evidence, allow_nan=False)}],
-                text={'format': {'type': 'json_schema', 'name': 'sound_analysis_reading',
+                text={'format': {'type': 'json_schema', 'name': 'motion_analysis_reading' if motion else 'sound_analysis_reading',
                                  'strict': True, 'schema': schema}}, **routing)
             require(response.status == 'completed', 'OpenAI response incomplete')
             wire = response.output_text
