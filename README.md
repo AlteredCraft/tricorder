@@ -2,7 +2,7 @@
 
 A handheld with a screen, touch and sensors (M5Stack Tab5, ESP32-P4), talking to an LLM that runs locally on a Mac.
 
-The device shows live sensor readings. The person opens an instrument, records a voice note and taps Explain. The Mac, joined to the device's own Wi-Fi hotspot, transcribes the note (Parakeet), has a local model (Ollama) interpret the readings, and speaks the answer back (Pocket TTS). No router, no Internet. Co-developed with OpenAI Codex and Claude Code.
+The device shows live sensor readings. The person opens an instrument, measures, taps Analysis and then Explain. The Mac, joined to the device's own Wi-Fi hotspot, has a local model (Ollama) read the analysis and speaks the answer back (Pocket TTS). No router, no Internet. Sound and Motion work this way today; Camera and Power are next. Co-developed with OpenAI Codex and Claude Code.
 
 ## Start here
 
@@ -10,14 +10,15 @@ The device shows live sensor readings. The person opens an instrument, records a
 - [Milestones](planning/milestones.md): current state and next work, via Milestone → Feature → Trials, plus [ADRs](planning/adrs/).
 - [Planning guidelines](planning/README.md): how the docs are kept.
 - [Service wire protocol](planning/guided-ab-protocol.md) and [operations](planning/guided-ab-operations.md) (provisioning, replay). Written for the dropped guided A/B; the transport and provisioning parts still apply.
+- [GitHub issues](https://github.com/AlteredCraft/tricorder/issues): the work queue. The milestone's **Active** line says which is next.
 - [TODO](TODO.md): tasks that need the operator.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `firmware/` | ESP-IDF 5.4.2 app (`main/`): start screen, Sound instrument and analysis, service client, SD, Wi-Fi, diagnostics |
-| `tools/` | Mac-side Python: the service (local model, speech-to-text, speech), serial collector, provisioning, evidence assessors |
+| `firmware/` | ESP-IDF 5.4.2 app (`main/`): start screen (`home*`), Sound and Motion instruments with header-only analyses (`sound*`, `motion*`), Setup screen, service client (`investigation.cpp`, slated for trimming in #6), SD, Wi-Fi, diagnostics |
+| `tools/` | Mac-side Python: the service (`investigation_service.py`, with `sound_explain.py` and `motion_explain.py` per instrument), serial collector, provisioning, evidence assessors |
 | `tests/` | Host tests (Python + native C++ under ASan) |
 | `planning/` | Milestones, features, ADRs, fixtures; M-0001 goals/specs as history |
 | `.tools/`, `.local/` | Ignored: toolchains, private runs, captures, backups |
@@ -73,9 +74,9 @@ Everything runs locally. With [Ollama](https://ollama.com) running on the Mac (d
 .tools/investigation-env/bin/python -m tools.investigation_service --output .local/runs/NEW --provider local
 ```
 
-The service listens on `ws://0.0.0.0:8765`. It transcribes voice notes with Parakeet (`--stt parakeet`, the default; loads in about 5 s) and speaks replies with Pocket TTS, voice "alba" (`--tts pocket`, the default; `--tts say` uses macOS speech, `--tts none` turns it off).
+The service listens on `ws://0.0.0.0:8765` and speaks replies with Pocket TTS, voice "alba" (`--tts pocket`, the default; `--tts say` uses macOS speech, `--tts none` turns it off). Local speech-to-text (Parakeet, `--stt parakeet`) still loads for a later voice demo; `--stt none` skips it.
 
-Only the device's analysis numbers and the transcribed note go to the model. Raw audio never leaves the Mac. The model writes the explanation; the service rejects replies that quote numbers the analysis doesn't contain.
+Only the device's analysis numbers go to the model, with a `kind` field (sound, motion) that picks the prompt and the checker. The model writes the explanation; the service rejects replies that quote numbers the analysis doesn't contain.
 
 A hosted model is still possible for comparison: put `OPENROUTER_API_KEY` in the ignored `.env.local.openrouter` and run with `--provider openrouter --model openai/gpt-5.6-sol --env .env.local.openrouter`. The Mac then needs Internet, so this doesn't work while joined to the device's hotspot.
 

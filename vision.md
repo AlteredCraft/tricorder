@@ -10,10 +10,10 @@ Tricorder is an exploration project on the **M5Stack Tab5 (ESP32-P4)**. The devi
 
 1. Pick up the device. The start screen shows one tile per sensor, with a live reading where there is one.
 2. Open **Sound**. Watch the live spectrum, make some noise, tap **Analysis**.
-3. Tap **Voice note** and say what you heard or want to know. Tap **Explain**.
-4. The Mac transcribes the note, the local model reads the analysis and answers, and the answer is shown on the device and spoken.
+3. Tap **Explain**.
+4. The local model on the Mac reads the analysis and answers. The answer is shown on the device and spoken.
 
-Every sensor gets the same shape: live instrument → analysis on the device → voice note → Explain.
+Every sensor gets the same shape: live instrument → analysis on the device → Explain. Sound and Motion do this today.
 
 ## What we want to learn
 
@@ -32,7 +32,7 @@ Guided investigations (the Investigate tile, A/B comparisons with the agent stee
 
 ## Later
 
-Camera to a local vision model. Motion and Power instruments with Explain. External sensors over the expansion ports. A hosted service instead of the Mac.
+Camera to a local vision model and a Power instrument, the same shape. A voice demo of its own (ask a question by speaking; the Mac transcribes locally). External sensors over the expansion ports. A hosted service instead of the Mac.
 
 ## Hardware references
 
