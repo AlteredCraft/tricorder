@@ -15,9 +15,9 @@
 | [F-0001 Start screen](features/F-0001-start-screen.md) | Done |
 | [F-0002 Sound session analysis](features/F-0002-sound-analysis.md) | In progress |
 | [F-0003 Device hotspot and local text model](features/F-0003-device-hotspot.md) | Done (Explain over the hotspot; A/B part dropped) |
-| [F-0004 Start screen for the demo](features/F-0004-demo-start-screen.md) | Proposed |
+| [F-0004 Start screen for the demo](features/F-0004-demo-start-screen.md) ([#2](https://github.com/AlteredCraft/tricorder/issues/2)) | Proposed |
 
-Candidates after F-0004, each the Sound shape for another sensor: Motion (tilt, shake, vibration over time, Explain), Camera (photo to a local vision model), Power (what the device draws as features turn on, Explain).
+After F-0004, in order, each the Sound shape for another sensor: Motion ([#3](https://github.com/AlteredCraft/tricorder/issues/3)), Camera to a local vision model ([#4](https://github.com/AlteredCraft/tricorder/issues/4)), Power ([#5](https://github.com/AlteredCraft/tricorder/issues/5)). Removing the dropped A/B code waits until F-0004 lands ([#6](https://github.com/AlteredCraft/tricorder/issues/6)).
 
 ## M-0001: Validate the handheld investigation
 
@@ -40,9 +40,9 @@ Candidates after F-0004, each the Sound shape for another sensor: Motion (tilt, 
 
 ## Later
 
+Ideas, none scheduled. Dropped 2026-11-05 as verification rather than demo work: SD event log, battery power profiles, SD power loss mid-save.
+
+- Sleep and wake: screen-off on idle and touch wake.
+- Speech overlapping a live measurement (full-duplex, AEC); wake words.
+- External environmental sensors; USB/RS-485 peripherals.
 - Hosted service instead of the Mac (device auth, TLS, credential provisioning, internet latency).
-- Device event log to SD, so untethered trials keep device telemetry.
-- Camera to a local vision model (the user asked "What is this a picture of?" in a live loop).
-- Sleep and wake: screen-off on idle and touch wake, once on-battery power shows the backlight's share.
-- Battery: INA226 power profiles, a 30-minute handheld session, SD power loss mid-save.
-- Speech overlapping a live measurement (full-duplex, AEC); wake words; external environmental sensors; USB/RS-485 peripherals.

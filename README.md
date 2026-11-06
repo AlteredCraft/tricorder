@@ -45,15 +45,6 @@ uv run tools/ops.py
 
 ![](./docs/img/tools-ui.png)
 
-Planning view (needs only `uv`; standalone package in [`tools/planview`](tools/planview/README.md)). It reads M-0001's goal/spec docs and has not been updated for features:
-
-```sh
-uvx --from ./tools/planview planview planning     # http://localhost:8420/
-# check for any missalignment in the current planning
-uvx --from ./tools/planview planview --check planning
-```
-
-
 Serial capture of a diagnostic run (see `--help` for `--checks`, `--stop-file`, `--spec-id`):
 
 ```sh
