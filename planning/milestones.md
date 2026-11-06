@@ -18,7 +18,7 @@
 | [F-0004 Start screen for the demo](features/F-0004-demo-start-screen.md) ([#2](https://github.com/AlteredCraft/tricorder/issues/2)) | Done |
 | [F-0005 Motion instrument](features/F-0005-motion.md) ([#3](https://github.com/AlteredCraft/tricorder/issues/3)) | In progress |
 
-Next, in order, each the Sound shape for another sensor: Camera to a local vision model ([#4](https://github.com/AlteredCraft/tricorder/issues/4)), Power ([#5](https://github.com/AlteredCraft/tricorder/issues/5)). Removing the dropped A/B code waits until F-0004 lands ([#6](https://github.com/AlteredCraft/tricorder/issues/6)).
+Next, in order, each the Sound shape for another sensor: Camera to a local vision model ([#4](https://github.com/AlteredCraft/tricorder/issues/4)), Power ([#5](https://github.com/AlteredCraft/tricorder/issues/5)). Removing the dropped A/B code is [#6](https://github.com/AlteredCraft/tricorder/issues/6); Setup copy and known networks is [#9](https://github.com/AlteredCraft/tricorder/issues/9).
 
 ## M-0001: Validate the handheld investigation
 
