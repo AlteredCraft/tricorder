@@ -6,7 +6,7 @@
 // Start screen (F-0001): tile geometry and tile reading text, host-testable.
 namespace home {
 struct Rect {int x,y,w,h;};
-constexpr int screen_w=1280,screen_h=720,columns=4,rows=2,margin=24,gap=16,header=84;
+constexpr int screen_w=1280,screen_h=720,columns=3,rows=2,margin=24,gap=16,header=84;
 constexpr unsigned tile_count=columns*rows;
 constexpr int tile_w=(screen_w-2*margin-(columns-1)*gap)/columns;
 constexpr int tile_h=(screen_h-header-margin-(rows-1)*gap)/rows;

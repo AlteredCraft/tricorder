@@ -14,16 +14,17 @@
 #include <initializer_list>
 
 namespace {
-enum Opens {None,Investigate,Sound,Setup,Diagnostics};
+enum Opens {None,Sound,Setup,Diagnostics};
 // What each tile opens, in home::tile_text order (names, notes and info text).
-constexpr Opens opens_for[home::tile_count]={Investigate,Sound,None,None,None,None,Setup,Diagnostics};
-constexpr unsigned motion_tile=3,power_tile=4,audio_tile=5,setup_tile=6;
+constexpr Opens opens_for[home::tile_count]={Sound,None,None,None,Setup,Diagnostics};
+constexpr unsigned sound_tile=0,motion_tile=1,power_tile=3,setup_tile=4;
 lv_obj_t *home_panel,*readings[home::tile_count],*info_panel,*info_title,*info_scroll,*info_text;
 // The open info page (LVGL task): tile, when it opened, furthest scroll.
 int info_tile=-1;int64_t info_opened_us=0;int32_t info_max_scroll=0;
 portMUX_TYPE readings_lock=portMUX_INITIALIZER_UNLOCKED;
 struct Readings {float tilt=NAN,bus_v=NAN,shunt_a=0;bool headphones=false,fresh=false;} latest; // readings_lock
 uint32_t shown_ipv4=1,shown_peer=0; // LVGL task; 1 forces the first draw
+int shown_route=-1; // LVGL task: -1 before the first reading, else headphones
 std::atomic<int64_t> touch_down_us{0};
 // One navigation waiting for the refresh that shows it (LVGL task only).
 const char *nav_from=nullptr,*nav_to=nullptr;int64_t nav_pressed=0,nav_handled=0;
@@ -54,8 +55,7 @@ void tile_clicked(lv_event_t* ev) {
         auto* e=diagnostic_event("home_tap");cJSON_AddStringToObject(e,"tile",text.name);
         cJSON_AddBoolToObject(e,"opens",false);diagnostic_emit(e);return;
     }
-    if(opens==Investigate){investigation_ui_open();note_nav("home","investigate");}
-    else if(opens==Sound){sound_ui_open();note_nav("home","sound");}
+    if(opens==Sound){sound_ui_open();note_nav("home","sound");}
     else if(opens==Setup){investigation_setup_open();note_nav("home","setup");}
     else {show_home(false);note_nav("home","diagnostics");}
 }
@@ -87,18 +87,21 @@ void missed(lv_event_t* ev) {
     diagnostic_emit(e);
 }
 void draw(lv_timer_t*) {
-    char text[64];
-    const uint32_t ipv4=network_ipv4(),peer=network_peer_ipv4();
-    if(ipv4!=shown_ipv4 || peer!=shown_peer) {
-        home::network_text(ipv4,peer,network_access_point(),text,sizeof(text));lv_label_set_text(readings[setup_tile],text);
-        shown_ipv4=ipv4;shown_peer=peer;
-    }
+    char text[80];
     Readings r;
     portENTER_CRITICAL(&readings_lock);r=latest;latest.fresh=false;portEXIT_CRITICAL(&readings_lock);
+    // Setup: the network line, then where speech plays (Audio out folded in, F-0004).
+    const uint32_t ipv4=network_ipv4(),peer=network_peer_ipv4();
+    const int route=r.fresh?r.headphones:shown_route;
+    if(ipv4!=shown_ipv4 || peer!=shown_peer || route!=shown_route) {
+        home::network_text(ipv4,peer,network_access_point(),text,sizeof(text));
+        if(route>=0)strlcat(text,route?"\nHeadphones":"\nSpeaker",sizeof(text));
+        lv_label_set_text(readings[setup_tile],text);
+        shown_ipv4=ipv4;shown_peer=peer;shown_route=route;
+    }
     if(!r.fresh)return;
     home::motion_text(r.tilt,text,sizeof(text));lv_label_set_text(readings[motion_tile],text);
     home::power_text(r.bus_v,r.shunt_a,text,sizeof(text));lv_label_set_text(readings[power_tile],text);
-    lv_label_set_text(readings[audio_tile],r.headphones?"Headphones":"Speaker");
 }
 lv_obj_t* label(lv_obj_t* parent,const char* value,const lv_font_t* font,uint32_t color) {
     auto* l=lv_label_create(parent);lv_label_set_text(l,value);
@@ -139,8 +142,8 @@ void home_ui_init(lv_obj_t* screen) {
         lv_obj_set_width(readings[i],r.w-40);lv_label_set_long_mode(readings[i],LV_LABEL_LONG_WRAP);
         lv_obj_align(readings[i],LV_ALIGN_BOTTOM_LEFT,0,0);
     }
-    for(unsigned i:{motion_tile,power_tile,audio_tile})lv_label_set_text(readings[i],"No data");
-    lv_label_set_text(readings[0],"Open");lv_label_set_text(readings[1],"Open");
+    for(unsigned i:{motion_tile,power_tile})lv_label_set_text(readings[i],"No data");
+    lv_label_set_text(readings[sound_tile],"Open");
     info_panel=lv_obj_create(screen);lv_obj_remove_style_all(info_panel);
     lv_obj_set_size(info_panel,home::screen_w,home::screen_h);lv_obj_set_pos(info_panel,0,0);
     lv_obj_set_style_bg_color(info_panel,lv_color_hex(0x101418),0);lv_obj_set_style_bg_opa(info_panel,LV_OPA_COVER,0);

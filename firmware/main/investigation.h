@@ -6,7 +6,6 @@
 #include <string>
 // All UI creation/enabling with BSP display lock held.
 void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands);
-void investigation_ui_enable(bool enabled);
 void investigation_ui_open();
 void investigation_setup_open(); // no-op while a session runs
 // Called by the existing media owner for command 4. Returns after a terminal

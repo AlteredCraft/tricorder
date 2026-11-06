@@ -5,21 +5,6 @@
 namespace home {
 struct TileText {const char* name;const char* note;const char* info;};
 constexpr TileText tile_text[]={
-{"Investigate","Guided sound A/B",
-"Compare the sound at two places, with the agent guiding you through the Mac service.\n\n"
-"Before you start\n"
-"• The Mac service must be running and reachable (see Setup).\n"
-"• Headphones are optional. With them plugged in, the speaker stays off.\n\n"
-"Walkthrough\n"
-"1. Tap Start. The camera takes a context photo, which stays on the device.\n"
-"2. Optional: tap Ask, say your question (up to 8 seconds), then tap Stop. Check the transcript and tap Use or Retry.\n"
-"3. Hold the device still at place A and tap Record A. The motion label turns green when you are steady.\n"
-"4. Listen to the guidance, move to place B, tap Confirm position B, then Record B.\n"
-"5. Go back to A and tap Record A again. This checks that A did not change while you were away.\n"
-"6. Read or listen to the comparison. A, B and A again are drawn over each other.\n\n"
-"What it measures\n"
-"The microphone by the hole farther from the USB connector, 3 seconds per recording. The Mac recomputes every number from the raw audio; the model only writes the explanation.\n\n"
-"Cancel stops a session at any time. Back returns here."},
 {"Sound","Live spectrum",
 "A live view of what the microphone hears.\n\n"
 "Reading the screen\n"
@@ -41,13 +26,13 @@ constexpr TileText tile_text[]={
 "• The listening audio is never saved or sent. Explain sends the analysis numbers and your voice note to the Mac.\n"
 "• The level is not a calibrated sound level. Use it to compare sounds, not as an absolute measurement.\n"
 "• The speaker is off while this screen listens."},
-{"Camera","Instrument coming",nullptr},
 {"Motion","Screen coming",
 "The tile shows how far the device is tilted from lying flat, measured by the accelerometer.\n\n"
 "• 0° is flat, screen up or down. 90° is standing on an edge.\n"
 "• It updates once a second while this screen is showing.\n\n"
 "The motion sensor measures the device itself, not the thing you point it at. To measure an object's vibration, the device has to be attached to it.\n\n"
 "A full Motion screen is coming."},
+{"Camera","Instrument coming",nullptr},
 {"Power","Screen coming",
 "The tile reads the battery through the INA226 power monitor.\n\n"
 "• Volts: the battery pack. About 8.4 V is full.\n"
@@ -56,24 +41,23 @@ constexpr TileText tile_text[]={
 "• No battery current: the battery is neither charging nor in use.\n\n"
 "On USB, the device runs from USB, so its own consumption does not show here. Unplug USB to see what it uses.\n\n"
 "It updates once a second. A full Power screen is coming."},
-{"Audio out","Screen coming",
-"Where spoken guidance plays.\n\n"
-"• Headphones: something is plugged into the headphone jack, and the speaker is switched off.\n"
-"• Speaker: nothing is plugged in, so guidance plays on the built-in speaker, which is quiet.\n\n"
-"Plugging in or unplugging during guidance switches the output within a quarter of a second. The tile updates once a second."},
-{"Setup","Service and Wi-Fi",
-"Connection settings for guided investigations.\n\n"
-"Hotspot mode (set up over USB): the device broadcasts its own Wi-Fi network. Join the Mac to it and start the service; the service address fills in by itself when the Mac joins. The tile shows Hotspot on and the Mac's address. No router or Internet is needed; the Mac has no Internet while joined unless it has another connection.\n\n"
+{"Setup","Mac, Wi-Fi, audio out",
+"How the device reaches the Mac service, which runs Explain with a local model.\n\n"
+"Hotspot mode (the default, set up over USB): the device broadcasts its own Wi-Fi network, \"Tricorder\". Join the Mac to it and start the service; the service address fills in from the Mac's DHCP lease. The tile shows Hotspot on and the Mac's address, for example Mac 192.168.4.2. No router or Internet is needed; the Mac has no Internet while joined unless it has another connection.\n\n"
 "Wi-Fi mode: the device joins a network.\n"
 "• The tile shows the device's Wi-Fi address, or Wi-Fi offline.\n"
 "• Service address: where the Mac service listens, for example ws://172.20.10.9:8765/. It loads from the SD card at boot; a change made here lasts until restart.\n"
-"• Wi-Fi setup: choose a network and enter its password.\n\n"
-"Cafe and guest Wi-Fi often stop the device from reaching the Mac. Use hotspot mode there, or a phone hotspot on 2.4 GHz with both the Mac and the device joined to it."},
+"• Wi-Fi setup: choose a network and enter its password.\n"
+"Cafe and guest Wi-Fi often stop the device from reaching the Mac; use hotspot mode there.\n\n"
+"Audio out\n"
+"The tile's last line shows where the agent's voice plays.\n"
+"• Headphones: something is plugged into the headphone jack, and the speaker is switched off.\n"
+"• Speaker: nothing is plugged in, so it plays on the built-in speaker, which is quiet.\n"
+"Plugging in or unplugging switches the output within a quarter of a second."},
 {"Diagnostics","Hardware checks",
 "The hardware check screen used during development.\n\n"
 "• Record & play: records a short phrase from all four microphone channels and plays it back.\n"
 "• Test 10 restarts and Audio baseline 60s: longer automated checks that report over the USB serial console.\n"
-"• Guided A/B: opens the investigation directly.\n"
 "• The playback volume slider sets the level for Record & play.\n\n"
 "Tap Home at the top right to come back here."},
 };

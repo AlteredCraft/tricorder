@@ -248,12 +248,11 @@ static void volume_changed(lv_event_t* event) {
 }
 
 static void media_idle() {
-    diagnostic_stage("TRICORDER / hardware diagnostic\n\nTap Record & play when ready.\nWait for RECORDING, then say the test phrase.\nListen to slots 0, 1, 2 and 3.\n\nGuided A/B saves captures when SD is available.");
+    diagnostic_stage("TRICORDER / hardware diagnostic\n\nTap Record & play when ready.\nWait for RECORDING, then say the test phrase.\nListen to slots 0, 1, 2 and 3.");
     if (bsp_display_lock(1000)) {
         lv_obj_remove_state(record_button, LV_STATE_DISABLED);
         lv_obj_remove_state(restart_button, LV_STATE_DISABLED);
         lv_obj_remove_state(baseline_button, LV_STATE_DISABLED);
-        investigation_ui_enable(true);
         bsp_display_unlock();
     }
     diagnostic_emit(diagnostic_event("audio_test_ready"));

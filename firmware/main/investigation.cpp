@@ -39,7 +39,7 @@
 extern const uint8_t fixture_start[] asm("_binary_guided_ab_fixture_json_start");
 extern const uint8_t fixture_end[] asm("_binary_guided_ab_fixture_json_end");
 namespace {
-lv_obj_t *launch,*panel,*heading,*label,*start_button,*action_button,*action_label,*back_button,*cancel_button,*setup_button;
+lv_obj_t *panel,*heading,*label,*start_button,*action_button,*action_label,*back_button,*cancel_button,*setup_button;
 // Spoken ask: Ask/Stop/Retry beside Record A/Use, and a live input level while listening.
 lv_obj_t *ask_button,*ask_label,*level_bar;
 std::atomic<bool> listening{false},stop_question{false};
@@ -700,7 +700,6 @@ lv_obj_t* text(lv_obj_t* parent,const char* value,int x,int y,const lv_font_t* f
 
 void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     media_queue=media_commands;actions=xQueueCreate(1,sizeof(uint8_t));configASSERT(actions);
-    launch=button(screen,"Guided A/B",30,220,open);lv_obj_add_state(launch,LV_STATE_DISABLED);
     panel=lv_obj_create(screen);lv_obj_set_size(panel,1220,680);lv_obj_center(panel);
     lv_obj_set_style_bg_color(panel,lv_color_hex(0x101418),0);lv_obj_remove_flag(panel,LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);
@@ -790,9 +789,6 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
 }
 void investigation_ui_open() {open(nullptr);}
 void investigation_setup_open() {open_setup(nullptr);}
-void investigation_ui_enable(bool enabled) {
-    if(enabled)lv_obj_remove_state(launch,LV_STATE_DISABLED);else lv_obj_add_state(launch,LV_STATE_DISABLED);
-}
 static void run_investigation(const char* boot,const char* replay=nullptr) {
     InvestigationEndpoint endpoint;char session[40];
     if(replay)strcpy(session,replay);

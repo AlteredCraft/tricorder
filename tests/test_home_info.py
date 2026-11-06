@@ -28,7 +28,7 @@ int main() {
             output = subprocess.run([str(root/'test')], check=True, capture_output=True).stdout.decode('utf-8')
         tiles = [record.split('\x1f') for record in output.split('\x1e') if record]
         names = [name for name, _, _ in tiles]
-        self.assertEqual(names, ['Investigate', 'Sound', 'Camera', 'Motion', 'Power', 'Audio out', 'Setup', 'Diagnostics'])
+        self.assertEqual(names, ['Sound', 'Motion', 'Camera', 'Power', 'Setup', 'Diagnostics'])
         # Only the placeholder has no walkthrough.
         for name, _, info in tiles:
             self.assertEqual(info == '', name == 'Camera', name)

@@ -16,7 +16,7 @@ class HomeModelTests(unittest.TestCase):
 #include <cstring>
 int main() {
     using namespace home;
-    // Eight tiles fill the screen below the header, in bounds, without overlap, at least 250 px.
+    // Six tiles fill the screen below the header, in bounds, without overlap, at least 250 px.
     for (unsigned i=0;i<tile_count;++i) {
         const Rect a=tile(i);
         assert(a.w>=250 && a.h>=250);
@@ -26,8 +26,8 @@ int main() {
             assert(a.x+a.w<=b.x || b.x+b.w<=a.x || a.y+a.h<=b.y || b.y+b.h<=a.y);
         }
     }
-    assert(tile(0).x==tile(4).x && tile(0).y<tile(4).y);
-    assert(tile(0).y==tile(3).y && tile(0).x<tile(3).x);
+    assert(tile(0).x==tile(3).x && tile(0).y<tile(3).y);
+    assert(tile(0).y==tile(2).y && tile(0).x<tile(2).x);
 
     // Tilt from lying flat, independent of units and screen up/down.
     assert(std::fabs(tilt_degrees(0,0,1000))<0.01f);
