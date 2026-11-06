@@ -2,7 +2,7 @@
 
 **Milestone:** [M-0002](../milestones.md#m-0002-sensors-explained-by-a-local-llm)
 
-**Status:** In progress · [#2](https://github.com/AlteredCraft/tricorder/issues/2)
+**Status:** Done (2026-11-05, user-approved) · [#2](https://github.com/AlteredCraft/tricorder/issues/2)
 
 **Outcome:** The start screen reads as "sensors, explained by the Mac": no Investigate tile, Sound first, and the Setup and Diagnostics text describe Explain rather than guided investigations. The demo (Sound → Analysis → Voice note → Explain) runs over the hotspot with the local model.
 
@@ -10,6 +10,10 @@
 
 ## Next
 
-T1 (anywhere, 10 minutes): flashed. 3×2 grid (Sound, Motion, Camera, Power, Setup, Diagnostics); no Investigate tile or Guided A/B button; Setup shows the audio route. The user checks the screen and info pages, then runs the Sound demo with the Mac joined to "Tricorder" and the service on `--provider local` (also [F-0002 T6](F-0002-sound-analysis.md#next)).
+None. Follow-ups: Setup screen layout ([#7](https://github.com/AlteredCraft/tricorder/issues/7)), drop the voice note from Sound ([#8](https://github.com/AlteredCraft/tricorder/issues/8)).
 
 ## Trials
+
+### T1 2026-11-05: start screen without Investigate; Sound demo over the hotspot
+
+`60b82c4` · service run `20261105-f0004-t1`. **Tried:** six-tile 3x2 start screen, Setup and Diagnostics info pages, Mac on the hotspot, Sound → Analysis → Voice note → Explain with the local model. **Happened:** "screen looks right and explain worked". The Setup screen and its Wi-Fi dialog have layout problems (text clipped at the right edge, dialog wider than the screen, mostly empty screen with a small label). The user wants the voice note out of Sound; voice gets its own demo later. **Next:** stop; follow-ups #7 and #8.

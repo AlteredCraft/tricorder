@@ -2,7 +2,7 @@
 
 **Milestone:** [M-0002](../milestones.md#m-0002-explore-the-device)
 
-**Status:** In progress
+**Status:** Done (2026-11-05, user-approved)
 
 **Outcome:** After listening on the Sound screen, the person taps Analysis and sees what happened: the background level, how loud it got, each loud event with its strongest band, and any steady tone. Then the agent on the Mac can explain it.
 
@@ -13,11 +13,11 @@
 1. [partly] (T4) A summary of 48 bands and the level, about 12 times a second, is enough to find the events and steady tones the user heard. Sounds shorter than 0.3 s (taps, clinks) are missed.
 2. [yes] (T4) The measurements, shown relative to the background, are understandable and useful.
 3. [yes] (T4) Recording the summary doesn't slow the live view (views/s, compute, driver loss).
-4. [?] A voice note from the user steers the agent, and the agent's reading adds something beyond the numbers.
+4. [dropped] (T6) The voice note worked but the user dropped it from Sound; voice gets its own demo later.
 
 ## Next
 
-T6 (anywhere, a few minutes, headphones optional): Mac joined to the device's hotspot, service with `--provider local`. Listen, Analysis, Voice note, check the transcript dialog, Explain. The user says whether the transcript was right and whether the local model's reading added anything. Runs on the F-0004 build.
+None. Explain stays; the voice note leaves ([#8](https://github.com/AlteredCraft/tricorder/issues/8)).
 
 ## Trials
 
@@ -28,3 +28,7 @@ T6 (anywhere, a few minutes, headphones optional): Mac joined to the device's ho
 ### T5 2026-09-26: voice note and Explain (offline)
 
 `36b88c0` · no run (logger off; the hotspot had dropped). **Tried:** Voice note and sharp sounds in the café; Explain could not reach the Mac. Live model checked offline on a T4 summary with a note: answered the note first, 3–5 s, no unbacked numbers (`20260926-explain-smoke`). **User:** "looks like it all worked, aside from explain"; wants to see the transcript before it is used. **Decision:** adapt: transcript dialog; Explain at home.
+
+### T6 2026-11-05: Explain over the hotspot with the local model
+
+`60b82c4` · service run `20261105-f0004-t1` (with F-0004 T1). **Tried:** Analysis, Voice note with the transcript dialog, Explain, Mac on the device's hotspot, gemma4 via Ollama. **Happened:** "explain worked". The user doesn't want the voice note in Sound. **Next:** stop; Sound is the template for the other sensors.
