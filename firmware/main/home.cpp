@@ -1,8 +1,8 @@
 #include "home.h"
 #include "home_model.h"
 #include "home_info.h"
-#include "investigation.h"
 #include "network.h"
+#include "setup.h"
 #include "sound.h"
 #include "diagnostic_events.h"
 #include "esp_timer.h"
@@ -56,7 +56,7 @@ void tile_clicked(lv_event_t* ev) {
         cJSON_AddBoolToObject(e,"opens",false);diagnostic_emit(e);return;
     }
     if(opens==Sound){sound_ui_open();note_nav("home","sound");}
-    else if(opens==Setup){investigation_setup_open();note_nav("home","setup");}
+    else if(opens==Setup){setup_open();note_nav("home","setup");}
     else {show_home(false);note_nav("home","diagnostics");}
 }
 void info_open(lv_event_t* ev) {
@@ -179,6 +179,8 @@ void home_readings(float tilt_degrees,float bus_v,float shunt_a,bool headphones)
     latest.tilt=tilt_degrees;latest.bus_v=bus_v;latest.shunt_a=shunt_a;latest.headphones=headphones;latest.fresh=true;
     portEXIT_CRITICAL(&readings_lock);
 }
+
+int home_audio_route() {return shown_route;}
 
 void home_returned(const char* from,const char* to) {
     note_nav(from,to?to:lv_obj_has_flag(home_panel,LV_OBJ_FLAG_HIDDEN)?"diagnostics":"home");

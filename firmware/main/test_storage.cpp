@@ -2,6 +2,7 @@
 #include "storage_files.h"
 #include "network.h"
 #include "investigation.h"
+#include "setup.h"
 #include "investigation_capture.h"
 #include "diagnostic_events.h"
 #include "esp_heap_caps.h"
@@ -33,7 +34,7 @@ bool load_config(StorageConfig& config) {
 bool apply_config(const StorageConfig& config) {
     // Hotspot mode: the Mac joins the device, and the endpoint follows its lease (network.cpp).
     if(config.access_point)return network_start_access_point(config.ssid,config.password);
-    if(config.endpoint[0])investigation_set_endpoint(config.endpoint);
+    if(config.endpoint[0])setup_set_endpoint(config.endpoint,EndpointSource::Sd);
     return network_connect_saved(config.ssid,config.password);
 }
 void provision(const char* json) {

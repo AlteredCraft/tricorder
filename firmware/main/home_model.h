@@ -47,4 +47,15 @@ inline void network_text(uint32_t ipv4,uint32_t peer_ipv4,bool access_point,char
     if(!peer_ipv4){snprintf(out,size,"Hotspot on\nWaiting for the Mac");return;}
     char address[16];ipv4_text(peer_ipv4,address,sizeof(address));snprintf(out,size,"Hotspot on\nMac %s",address);
 }
+// The Setup screen's longer form of the same state; ssid is the hotspot's network name.
+inline void setup_network_text(uint32_t ipv4,uint32_t peer_ipv4,bool access_point,const char* ssid,char* out,size_t size) {
+    char address[16];
+    if(!access_point) {
+        if(!ipv4){snprintf(out,size,"Wi-Fi offline");return;}
+        ipv4_text(ipv4,address,sizeof(address));snprintf(out,size,"Wi-Fi on, device %s",address);return;
+    }
+    if(!ipv4){snprintf(out,size,"Hotspot starting, network %s",ssid);return;}
+    if(!peer_ipv4){snprintf(out,size,"Hotspot on, network %s\nWaiting for the Mac to join",ssid);return;}
+    ipv4_text(peer_ipv4,address,sizeof(address));snprintf(out,size,"Hotspot on, network %s\nMac %s joined",ssid,address);
+}
 }

@@ -52,6 +52,12 @@ int main() {
     network_text(0,0,true,text,sizeof(text));assert(!strcmp(text,"Hotspot starting"));
     network_text(0x0104a8c0,0,true,text,sizeof(text));assert(!strcmp(text,"Hotspot on\nWaiting for the Mac"));
     network_text(0x0104a8c0,0x0204a8c0,true,text,sizeof(text));assert(!strcmp(text,"Hotspot on\nMac 192.168.4.2"));
+    setup_network_text(0,0,false,"",text,sizeof(text));assert(!strcmp(text,"Wi-Fi offline"));
+    setup_network_text(0x0a0a14ac,0,false,"",text,sizeof(text));assert(!strcmp(text,"Wi-Fi on, device 172.20.10.10"));
+    setup_network_text(0x0104a8c0,0,true,"Tricorder",text,sizeof(text));
+    assert(!strcmp(text,"Hotspot on, network Tricorder\nWaiting for the Mac to join"));
+    setup_network_text(0x0104a8c0,0x0204a8c0,true,"Tricorder",text,sizeof(text));
+    assert(!strcmp(text,"Hotspot on, network Tricorder\nMac 192.168.4.2 joined"));
 }
 '''
         with tempfile.TemporaryDirectory() as directory:

@@ -9,7 +9,7 @@
 #include "audio_devices.h"
 #include "test_storage.h"
 #include "diagnostic_events.h"
-#include "network.h"
+#include "setup.h"
 #include "spectrum_display.h"
 #include "steadiness.h"
 #include "imu_checked.h"
@@ -46,7 +46,6 @@ std::atomic<bool> listening{false},stop_question{false};
 // Spoken comparison at the end: Cancel stops the speech, not the finished session.
 std::atomic<bool> final_speech{false},stop_speech{false};
 float live_level=-120;bool level_fresh=false; // Guarded by live_lock.
-lv_obj_t *setup_panel,*endpoint_field,*keyboard;
 // Instrument view: live spectrum while recording, then A and B overlaid.
 lv_obj_t *chart,*legend[4];
 lv_chart_series_t* series[4]; // live, A, B, A again
@@ -80,18 +79,7 @@ void back(lv_event_t*) {
     if(running)return;
     lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);home_returned("investigate");
 }
-void open_setup(lv_event_t*) {
-    if(running)return;
-    lv_obj_remove_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(setup_panel);
-}
-void close_setup(lv_event_t*) {
-    lv_obj_add_flag(keyboard,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);
-    home_returned("setup",lv_obj_has_flag(panel,LV_OBJ_FLAG_HIDDEN)?nullptr:"investigate");
-    InvestigationEndpoint endpoint;
-    if(!running)lv_label_set_text(label,endpoint.parse(lv_textarea_get_text(endpoint_field))?
-        "Service address saved for this session. Tap Start.":"Service address invalid. Open Setup and enter ws://Mac-LAN-IP:8765/");
-}
-void open_wifi(lv_event_t*) {network_ui_open();}
+void open_setup(lv_event_t*) {if(!running)setup_open();}
 
 // Capture-loop tap: copy only; the LVGL timer below draws.
 void live_tap(const float* db) {
@@ -208,21 +196,18 @@ void ask(lv_event_t*) {
     if(listening.load()){stop_question.store(true);lv_obj_add_state(ask_button,LV_STATE_DISABLED);}
     else choose(2);
 }
-void edit_endpoint(lv_event_t*) {
-    if(!running)lv_obj_remove_flag(keyboard,LV_OBJ_FLAG_HIDDEN);
-}
 void set_running(bool value) {
     running=value;
-    for(auto* b:{start_button,back_button,setup_button,endpoint_field})
+    for(auto* b:{start_button,back_button,setup_button})
         if(value)lv_obj_add_state(b,LV_STATE_DISABLED);else lv_obj_remove_state(b,LV_STATE_DISABLED);
     if(value)lv_obj_remove_state(cancel_button,LV_STATE_DISABLED);else lv_obj_add_state(cancel_button,LV_STATE_DISABLED);
 }
 void start(lv_event_t*) {
     if(running)return;
     InvestigationEndpoint endpoint;
-    const char* text=lv_textarea_get_text(endpoint_field);
-    if(!endpoint.parse(text)){lv_label_set_text(label,"No valid service address. Open Setup: join Wi-Fi and enter ws://Mac-LAN-IP:8765/");return;}
-    strcpy(endpoint_text,text);cancel_requested_us.store(0);cancelled.store(false);xQueueReset(actions);
+    setup_endpoint(endpoint_text,sizeof(endpoint_text));
+    if(!endpoint.parse(endpoint_text)){lv_label_set_text(label,"No valid service address. Open Setup: join Wi-Fi and enter ws://Mac-LAN-IP:8765/");return;}
+    cancel_requested_us.store(0);cancelled.store(false);xQueueReset(actions);
     uint8_t command=4;
     if(xQueueSend(media_queue,&command,0)!=pdTRUE){lv_label_set_text(label,"Media owner busy. Try again.");return;}
     set_running(true);chart_clear();context_clear();
@@ -760,35 +745,17 @@ void investigation_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_timer_create(draw_live,60,nullptr);
     lv_timer_create([](lv_timer_t*){ui_pulse.tick(esp_timer_get_time());},20,nullptr);
 
-    // Setup stays off the main flow: service address, Wi-Fi and keyboard.
-    setup_panel=lv_obj_create(screen);lv_obj_set_size(setup_panel,1220,680);lv_obj_center(setup_panel);
-    lv_obj_add_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);
-    text(setup_panel,"Setup",0,0,&lv_font_montserrat_28,0x000000);
-    auto* done=button(setup_panel,"Done",955,0,close_setup);
-    text(setup_panel,"Mac service address (loaded from SD at boot)",0,75,&lv_font_montserrat_20,0x000000);
-    endpoint_field=lv_textarea_create(setup_panel);lv_obj_set_pos(endpoint_field,0,110);lv_obj_set_size(endpoint_field,920,60);
-    lv_textarea_set_one_line(endpoint_field,true);lv_textarea_set_max_length(endpoint_field,240);
-    lv_textarea_set_placeholder_text(endpoint_field,"ws://Mac-LAN-IP:8765/");
-    lv_textarea_set_text(endpoint_field,CONFIG_TRICORDER_INVESTIGATION_ENDPOINT);
-    auto* wifi=button(setup_panel,"Wi-Fi setup",955,110,open_wifi);
-    keyboard=lv_keyboard_create(setup_panel);lv_obj_set_size(keyboard,1160,300);lv_obj_align(keyboard,LV_ALIGN_BOTTOM_MID,0,0);
-    lv_keyboard_set_textarea(keyboard,endpoint_field);lv_obj_add_flag(keyboard,LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(endpoint_field,edit_endpoint,LV_EVENT_FOCUSED,nullptr);
-
-    for(auto* p:{panel,setup_panel,keyboard})lv_obj_remove_flag(p,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(panel,LV_OBJ_FLAG_HIDDEN);
     lv_obj_update_layout(screen);
-    diagnostic_check("investigation_keyboard_layout",layout_ok(setup_panel,{done,endpoint_field,wifi,keyboard})?"pass":"fail",
-                     "Resolved setup controls and keyboard stay inside the setup panel without overlap.");
     diagnostic_check("investigation_layout",layout_ok(panel,{heading,steady_label,legend[0],legend[1],legend[2],legend[3],chart,transcript,context_image,start_button,ask_button,action_button,cancel_button,setup_button,back_button})?"pass":"fail",
                      "Resolved A/B heading, spectrum, guidance and buttons stay inside the panel without overlap.");
     diagnostic_check("investigation_level_layout",layout_ok(panel,{heading,level_bar,legend[0],chart})?"pass":"fail",
                      "The question level meter stays inside the panel, clear of the heading, legend and spectrum.");
     lv_obj_add_flag(level_bar,LV_OBJ_FLAG_HIDDEN);
-    for(auto* p:{panel,setup_panel,keyboard})lv_obj_add_flag(p,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);
     context_clear();
 }
 void investigation_ui_open() {open(nullptr);}
-void investigation_setup_open() {open_setup(nullptr);}
 static void run_investigation(const char* boot,const char* replay=nullptr) {
     InvestigationEndpoint endpoint;char session[40];
     if(replay)strcpy(session,replay);
@@ -948,13 +915,14 @@ bool investigation_tap(const char* name) {
 }
 bool investigation_request_replay(const char* session) {
     if(!investigation_replay_session(session) || !media_queue || !bsp_display_lock(1000))return false;
-    InvestigationEndpoint endpoint;bool ok=!running && endpoint.parse(lv_textarea_get_text(endpoint_field));
+    char address[sizeof(endpoint_text)];setup_endpoint(address,sizeof(address));
+    InvestigationEndpoint endpoint;bool ok=!running && endpoint.parse(address);
     if(ok) {
-        strcpy(endpoint_text,lv_textarea_get_text(endpoint_field));strcpy(replay_session_text,session);
+        strcpy(endpoint_text,address);strcpy(replay_session_text,session);
         cancel_requested_us.store(0);cancelled.store(false);xQueueReset(actions);
         uint8_t command=5;ok=xQueueSend(media_queue,&command,0)==pdTRUE;
         if(ok) {
-            set_running(true);chart_clear();context_clear();lv_obj_add_flag(setup_panel,LV_OBJ_FLAG_HIDDEN);
+            set_running(true);chart_clear();context_clear();
             lv_obj_remove_flag(panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(panel);
             lv_label_set_text(label,"SD REPLAY: checking saved recording identity...");
         }
@@ -978,13 +946,6 @@ void investigation_run_replay() {
     if(valid){run_investigation(boot.c_str(),replay_session_text);return;}
     if(bsp_display_lock(1000)) {
         set_running(false);lv_label_set_text(label,"SD REPLAY failed: saved recording missing or invalid.");
-        bsp_display_unlock();
-    }
-}
-
-void investigation_set_endpoint(const char* endpoint) {
-    if(bsp_display_lock(1000)) {
-        if(!running)lv_textarea_set_text(endpoint_field,endpoint);
         bsp_display_unlock();
     }
 }
@@ -1020,8 +981,7 @@ bool investigation_explain_sound(const char* boot,const char* session,const Inve
         return !error;
     };
     progress("Connecting to the Mac...",nullptr,nullptr);
-    // The Setup field holds the address (loaded from SD at boot); A/B copies it at Start.
-    if(bsp_display_lock(1000)){strcpy(endpoint_text,lv_textarea_get_text(endpoint_field));bsp_display_unlock();}
+    setup_endpoint(endpoint_text,sizeof(endpoint_text));
     if(!fixture || !endpoint.parse(endpoint_text) || !socket.connect(endpoint))
         return finish("Could not reach the Mac service. Check Wi-Fi and the service address in Setup.");
     auto* hello=p->envelope("hello");cJSON_AddItemToObject(hello,"fixture",cJSON_Duplicate(fixture.get(),true));

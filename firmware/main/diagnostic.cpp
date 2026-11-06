@@ -11,6 +11,7 @@
 #include "investigation.h"
 #include "audio_devices.h"
 #include "home.h"
+#include "setup.h"
 #include "sound.h"
 #include "home_model.h"
 #include "restart_sequence.h"
@@ -407,6 +408,7 @@ extern "C" void app_main() {
     network_ui_init(screen, boot_id);
     investigation_ui_init(screen, media_commands);
     sound_ui_init(screen, media_commands);
+    setup_ui_init(screen);
     home_ui_init(screen);
     bsp_display_brightness_set(50);
     bsp_display_unlock();

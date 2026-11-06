@@ -1,6 +1,6 @@
 #include "network.h"
 #include "test_storage.h"
-#include "investigation.h"
+#include "setup.h"
 #include "investigation_wire.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
@@ -23,11 +23,13 @@ std::atomic<uint32_t> station_ipv4{0}; // own address, 0 while down; read by the
 // Hotspot mode: the last joined device's lease, and the MAC it was given to.
 std::atomic<uint32_t> peer_ipv4{0};
 std::atomic<bool> hotspot{false};
+portMUX_TYPE name_lock=portMUX_INITIALIZER_UNLOCKED;
+char hotspot_name[33]; // name_lock
 uint8_t peer_mac[6]; // event loop task only
 esp_netif_t* ap_netif;
 struct Credentials { char ssid[33]; char password[64]; bool initialize_only; bool access_point; };
 QueueHandle_t requests;
-lv_obj_t *panel, *ssid_field, *password_field, *keyboard, *status;
+lv_obj_t *panel, *ssid_field, *password_field, *keyboard, *status, *hint;
 const char* current_boot;
 httpd_handle_t server;
 bool initialized;
@@ -111,7 +113,7 @@ void peer_assigned(const ip_event_ap_staipassigned_t& assigned) {
     char ip[24], endpoint[64], text[128];
     snprintf(ip, sizeof(ip), IPSTR, IP2STR(&assigned.ip));
     snprintf(endpoint, sizeof(endpoint), "ws://%s:%d/", ip, port);
-    investigation_set_endpoint(endpoint);
+    setup_set_endpoint(endpoint, EndpointSource::Hotspot);
     snprintf(text, sizeof(text), "Mac joined the hotspot: %s / service %s", ip, endpoint);
     show_status(text);
     auto* event = diagnostic_event("wifi_ap_client");
@@ -226,6 +228,9 @@ void network_task(void*) {
             config.ap.channel = 1;
             if (started && !hotspot.load()) esp_wifi_disconnect();
             station_ipv4.store(0); peer_ipv4.store(0);
+            portENTER_CRITICAL(&name_lock);
+            strlcpy(hotspot_name, credentials.ssid, sizeof(hotspot_name));
+            portEXIT_CRITICAL(&name_lock);
             hotspot.store(true);
             result=esp_wifi_set_mode(WIFI_MODE_AP);
             if (result==ESP_OK) result=esp_wifi_set_config(WIFI_IF_AP, &config);
@@ -263,7 +268,8 @@ void network_task(void*) {
 }
 
 void focus(lv_event_t* event) { lv_keyboard_set_textarea(keyboard, static_cast<lv_obj_t*>(lv_event_get_target(event))); }
-void open_panel(lv_event_t*) { lv_obj_remove_flag(panel, LV_OBJ_FLAG_HIDDEN); }
+constexpr const char* hint_text="Temporary until restart; SD settings reload at boot.";
+void open_panel(lv_event_t*) { network_ui_open(); }
 void close_panel(lv_event_t*) {
     lv_textarea_set_text(password_field, "");
     lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
@@ -274,6 +280,7 @@ void connect_clicked(lv_event_t*) {
     const char* password=lv_textarea_get_text(password_field);
     if (!strlen(ssid) || strlen(ssid)>32 || strlen(password)>63) {
         lv_label_set_text(status, "SSID must be 1–32 bytes; password at most 63 bytes.");
+        lv_label_set_text(hint, "Wi-Fi name: 1 to 32 characters. Password: at most 63.");
         return;
     }
     memcpy(credentials.ssid, ssid, strlen(ssid));
@@ -296,9 +303,26 @@ lv_obj_t* button(lv_obj_t* parent, const char* text, int x, int y, lv_event_cb_t
     lv_obj_center(label);
     return object;
 }
+lv_obj_t* dialog_button(const char* text, int x, int width, lv_event_cb_t callback) {
+    auto* object=button(panel, text, x, 14, callback);
+    lv_obj_set_size(object, width, 64);
+    lv_obj_set_style_text_font(lv_obj_get_child(object, 0), &lv_font_montserrat_28, 0);
+    return object;
+}
+lv_obj_t* dialog_field(int x, const char* placeholder, unsigned max_length) {
+    auto* field=lv_textarea_create(panel);
+    lv_obj_set_pos(field, x, 100); lv_obj_set_size(field, 608, 72);
+    lv_obj_set_style_text_font(field, &lv_font_montserrat_28, 0);
+    lv_textarea_set_one_line(field, true);
+    lv_textarea_set_placeholder_text(field, placeholder);
+    lv_textarea_set_max_length(field, max_length);
+    lv_obj_add_event_cb(field, focus, LV_EVENT_FOCUSED, nullptr);
+    return field;
+}
 }
 
 void network_ui_open() {
+    lv_label_set_text(hint, hint_text);
     lv_obj_remove_flag(panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(panel);
 }
@@ -322,35 +346,33 @@ void network_ui_init(lv_obj_t* screen, const char* boot_id) {
     lv_label_set_text(status,"Wi-Fi not connected");
     lv_obj_align(status,LV_ALIGN_TOP_MID,0,20);
     button(screen,"Wi-Fi setup",30,620,open_panel);
+    // Full screen and opaque, so the Setup screen underneath does not show at the edges.
     panel=lv_obj_create(screen);
-    lv_obj_set_size(panel,1100,580);
-    lv_obj_center(panel);
+    lv_obj_remove_style_all(panel);
+    lv_obj_set_size(panel,1280,720); lv_obj_set_pos(panel,0,0);
+    lv_obj_set_style_bg_color(panel,lv_color_hex(0x101418),0);
+    lv_obj_set_style_bg_opa(panel,LV_OPA_COVER,0);
+    lv_obj_remove_flag(panel,LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);
     auto* title=lv_label_create(panel);
     lv_label_set_text(title,"Join a 2.4 GHz network on the Mac's LAN");
-    lv_obj_set_pos(title,15,0);
-    ssid_field=lv_textarea_create(panel);
-    lv_obj_set_pos(ssid_field,15,50); lv_obj_set_size(ssid_field,500,60);
-    lv_textarea_set_one_line(ssid_field,true);
-    lv_textarea_set_placeholder_text(ssid_field,"Wi-Fi name");
-    lv_textarea_set_max_length(ssid_field,32);
-    password_field=lv_textarea_create(panel);
-    lv_obj_set_pos(password_field,535,50); lv_obj_set_size(password_field,500,60);
-    lv_textarea_set_one_line(password_field,true);
+    lv_obj_set_style_text_font(title,&lv_font_montserrat_32,0);
+    lv_obj_set_style_text_color(title,lv_color_hex(0xffffff),0);
+    lv_obj_set_pos(title,24,26);
+    dialog_button("Connect",842,220,connect_clicked);
+    dialog_button("Cancel",1076,180,close_panel);
+    ssid_field=dialog_field(24,"Wi-Fi name",32);
+    password_field=dialog_field(648,"Password",63);
     lv_textarea_set_password_mode(password_field,true);
-    lv_textarea_set_placeholder_text(password_field,"Password");
-    lv_textarea_set_max_length(password_field,63);
-    auto* hint=lv_label_create(panel);
-    lv_label_set_text(hint,"1# opens symbols; abc returns to letters. Manual entries are temporary; SD settings reload at boot.");
-    lv_obj_set_pos(hint,15,114);
+    hint=lv_label_create(panel);
+    lv_label_set_text(hint,hint_text);
+    lv_obj_set_style_text_font(hint,&lv_font_montserrat_22,0);
+    lv_obj_set_style_text_color(hint,lv_color_hex(0x90a4ae),0);
+    lv_obj_set_pos(hint,24,184);
     keyboard=lv_keyboard_create(panel);
-    lv_obj_set_size(keyboard,1040,300);
-    lv_obj_align(keyboard,LV_ALIGN_BOTTOM_MID,0,0);
+    lv_obj_set_pos(keyboard,24,224); lv_obj_set_size(keyboard,1232,488);
+    lv_obj_set_style_text_font(keyboard,&lv_font_montserrat_28,LV_PART_ITEMS);
     lv_keyboard_set_textarea(keyboard,ssid_field);
-    lv_obj_add_event_cb(ssid_field,focus,LV_EVENT_FOCUSED,nullptr);
-    lv_obj_add_event_cb(password_field,focus,LV_EVENT_FOCUSED,nullptr);
-    button(panel,"Connect",15,140,connect_clicked);
-    button(panel,"Cancel",225,140,close_panel);
     configASSERT(xTaskCreate(network_task,"network",6144,nullptr,5,nullptr)==pdPASS);
 }
 
@@ -375,3 +397,6 @@ bool network_start_access_point(const char* ssid,const char* password) {
 uint32_t network_ipv4() {return station_ipv4.load();}
 uint32_t network_peer_ipv4() {return peer_ipv4.load();}
 bool network_access_point() {return hotspot.load();}
+void network_access_point_name(char* out,size_t size) {
+    portENTER_CRITICAL(&name_lock);strlcpy(out,hotspot_name,size);portEXIT_CRITICAL(&name_lock);
+}

@@ -1,5 +1,6 @@
 #pragma once
 #include "lvgl.h"
+#include <cstddef>
 #include <cstdint>
 
 // Called with the LVGL lock held; network work runs outside the UI task.
@@ -19,3 +20,5 @@ uint32_t network_ipv4();
 // Hotspot only: the last device given an address, 0 when none has one. Any task.
 uint32_t network_peer_ipv4();
 bool network_access_point();
+// Hotspot only: the network name the device broadcasts. Any task.
+void network_access_point_name(char* out, size_t size);
