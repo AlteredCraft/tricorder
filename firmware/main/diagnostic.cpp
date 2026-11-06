@@ -470,7 +470,6 @@ extern "C" void app_main() {
             else if (command==3) run_audio_baseline(boot_id);
             else if (command==6) run_power_steps();
             else if (command==sound_media_command) sound_run();
-            else if (command==sound_note_command) sound_record_note(boot_id);
             else if (command==sound_explain_command) sound_explain(boot_id);
             else capture_audio(boot_id, true);
             media_idle();

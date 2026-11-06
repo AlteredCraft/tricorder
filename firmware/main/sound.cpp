@@ -7,7 +7,6 @@
 #include "diagnostic_events.h"
 #include "home.h"
 #include "investigation.h"
-#include "investigation_capture.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_random.h"
 #include "esp_heap_caps.h"
@@ -38,14 +37,11 @@ std::atomic<int> analysis_state{Idle};
 sound::Analysis result;constexpr size_t strip_points=240;float strip[strip_points];size_t strip_count=0;
 bool analysis_shown=false; // LVGL task
 lv_obj_t *analysis_panel,*analysis_heading,*summary_label,*events_label,*strip_chart,*strip_end,*listen_button;
-lv_obj_t *status_label,*note_button,*note_label,*explain_button,*explain_label,*home_button;
+lv_obj_t *status_label,*explain_button,*explain_label,*home_button;
 std::string events_text; // LVGL task: the event list, shown under the agent's reading
-// Media owner only: per-second loudest level (sent to the Mac) and the voice note.
+// Media owner only: per-second loudest level (sent to the Mac).
 constexpr size_t max_seconds=900;float per_second[max_seconds];size_t second_count=0;
-std::unique_ptr<InvestigationCapture> note;
-std::atomic<bool> note_stop{false},note_recording{false},explaining{false},never_cancel{false};
-lv_obj_t *dialog,*dialog_text,*dialog_explain_label;
-std::atomic<int> dialog_choice{-1}; // -1 waiting, 1 explain, 2 record again, 0 cancel
+std::atomic<bool> explaining{false};
 lv_chart_series_t *strip_series,*threshold_series;
 
 void set_chart(lv_chart_series_t* series,const float* db) {
@@ -118,8 +114,8 @@ void show_analysis() {
     }
     events_text=events;lv_label_set_text(events_label,events.c_str());
     lv_label_set_text(analysis_heading,"Sound analysis");
-    lv_label_set_text(status_label,"Add a voice note to steer the agent, then tap Explain.");
-    lv_obj_remove_state(note_button,LV_STATE_DISABLED);lv_obj_remove_state(explain_button,LV_STATE_DISABLED);
+    lv_label_set_text(status_label,"Tap Explain to have the agent read this analysis.");
+    lv_obj_remove_state(explain_button,LV_STATE_DISABLED);
     // Level over time with the event threshold; y spans background-10 to loudest+3 dB.
     lv_chart_set_point_count(strip_chart,strip_count);
     lv_chart_set_range(strip_chart,LV_CHART_AXIS_PRIMARY_Y,static_cast<int32_t>(std::floor(a.background_db-10)),
@@ -142,8 +138,8 @@ void analysis_clicked(lv_event_t*) {
     lv_label_set_text(analysis_heading,"Analyzing...");lv_label_set_text(summary_label,"");lv_label_set_text(events_label,"");
     lv_obj_add_flag(strip_chart,LV_OBJ_FLAG_HIDDEN);lv_label_set_text(strip_end,"");
     lv_obj_add_state(listen_button,LV_STATE_DISABLED); // until the listening loop has ended
-    lv_obj_add_state(note_button,LV_STATE_DISABLED);lv_obj_add_state(explain_button,LV_STATE_DISABLED);
-    lv_label_set_text(status_label,"");lv_label_set_text(note_label,"Voice note");lv_label_set_text(explain_label,"Explain");
+    lv_obj_add_state(explain_button,LV_STATE_DISABLED);
+    lv_label_set_text(status_label,"");lv_label_set_text(explain_label,"Explain");
     lv_obj_remove_flag(analysis_panel,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(analysis_panel);
     log_control("analysis");
 }
@@ -156,27 +152,11 @@ void send_media(uint8_t command) {
         cJSON_AddNumberToObject(e,"command",command);diagnostic_emit(e);
     }
 }
-// Voice note: tap to record (up to 8 s), tap again to stop.
-void note_clicked(lv_event_t*) {
-    if(note_recording.load()){note_stop.store(true);log_control("note_stop");return;}
-    note_stop.store(false);note_recording.store(true);
-    lv_label_set_text(note_label,"Stop");lv_obj_add_state(explain_button,LV_STATE_DISABLED);
-    lv_obj_add_state(listen_button,LV_STATE_DISABLED);
-    lv_label_set_text(status_label,"Recording your voice note: tap Stop (up to 8 s).");
-    log_control("note_start");send_media(sound_note_command);
-}
-void dialog_pick(lv_event_t* ev) {
-    const int choice=static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(ev)));
-    lv_obj_add_flag(dialog,LV_OBJ_FLAG_HIDDEN);
-    if(choice==1){explaining.store(true);lv_label_set_text(explain_label,"Stop voice");lv_obj_remove_state(explain_button,LV_STATE_DISABLED);}
-    log_control(choice==1?"dialog_explain":choice==2?"dialog_record_again":"dialog_cancel");
-    dialog_choice.store(choice);
-}
 // Explain: while the agent answers or speaks, the button stops the voice.
 void explain_clicked(lv_event_t*) {
     if(explaining.load()){investigation_stop_speech();log_control("explain_stop_voice");return;}
     explaining.store(true);lv_label_set_text(explain_label,"Stop voice");
-    for(auto* b:{note_button,listen_button})lv_obj_add_state(b,LV_STATE_DISABLED);
+    lv_obj_add_state(listen_button,LV_STATE_DISABLED);
     log_control("explain");send_media(sound_explain_command);
 }
 void analysis_home(lv_event_t*) {
@@ -244,9 +224,8 @@ void sound_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_obj_set_style_bg_color(analysis_panel,lv_color_hex(0x101418),0);lv_obj_set_style_bg_opa(analysis_panel,LV_OPA_COVER,0);
     lv_obj_remove_flag(analysis_panel,LV_OBJ_FLAG_SCROLLABLE);
     analysis_heading=text(analysis_panel,"Sound analysis",24,20,&lv_font_montserrat_40,0xffffff);
-    note_label=button(analysis_panel,"Voice note",494,note_clicked);note_button=lv_obj_get_parent(note_label);
     explain_label=button(analysis_panel,"Explain",690,explain_clicked);explain_button=lv_obj_get_parent(explain_label);
-    lv_obj_add_state(note_button,LV_STATE_DISABLED);lv_obj_add_state(explain_button,LV_STATE_DISABLED);
+    lv_obj_add_state(explain_button,LV_STATE_DISABLED);
     status_label=text(analysis_panel,"",24,82,&lv_font_montserrat_20,0x4fc3f7);
     lv_obj_set_width(status_label,1232);lv_label_set_long_mode(status_label,LV_LABEL_LONG_DOT);
     listen_button=lv_obj_get_parent(button(analysis_panel,"Listen again",886,listen_again));
@@ -276,25 +255,6 @@ void sound_ui_init(lv_obj_t* screen,QueueHandle_t media_commands) {
     lv_obj_set_width(events_label,lv_pct(100));lv_label_set_long_mode(events_label,LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(events_label,6,0);
     lv_timer_create(draw_analysis,100,nullptr);
-
-    dialog=lv_obj_create(screen);lv_obj_set_size(dialog,960,480);lv_obj_center(dialog);
-    lv_obj_set_style_bg_color(dialog,lv_color_hex(0x1e2a33),0);lv_obj_set_style_border_width(dialog,3,0);
-    lv_obj_set_style_border_color(dialog,lv_color_hex(0x4fc3f7),0);lv_obj_set_style_radius(dialog,16,0);
-    lv_obj_set_style_pad_all(dialog,28,0);lv_obj_remove_flag(dialog,LV_OBJ_FLAG_SCROLLABLE);
-    text(dialog,"Your voice note",0,0,&lv_font_montserrat_32,0xffffff);
-    auto* heard=lv_obj_create(dialog);lv_obj_set_pos(heard,0,56);lv_obj_set_size(heard,lv_pct(100),250);
-    lv_obj_set_style_bg_color(heard,lv_color_hex(0x161c21),0);lv_obj_set_style_border_width(heard,0,0);
-    lv_obj_set_scroll_dir(heard,LV_DIR_VER);
-    dialog_text=text(heard,"",0,0,&lv_font_montserrat_28,0xe0e0e0);
-    lv_obj_set_width(dialog_text,lv_pct(100));lv_label_set_long_mode(dialog_text,LV_LABEL_LONG_WRAP);
-    auto choice_button=[](const char* value,int x,int choice) {
-        auto* b=lv_button_create(dialog);lv_obj_set_pos(b,x,330);lv_obj_set_size(b,280,64);
-        lv_obj_add_event_cb(b,dialog_pick,LV_EVENT_CLICKED,reinterpret_cast<void*>(static_cast<intptr_t>(choice)));
-        auto* l=lv_label_create(b);lv_label_set_text(l,value);lv_obj_set_style_text_font(l,&lv_font_montserrat_24,0);lv_obj_center(l);
-        return l;
-    };
-    dialog_explain_label=choice_button("Explain",0,1);choice_button("Record again",309,2);choice_button("Cancel",618,0);
-    lv_obj_add_flag(dialog,LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(analysis_panel,LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -361,7 +321,6 @@ void analyze_session(const sound::Frame* frames,size_t n,float period_s,bool tru
 }
 
 void sound_run() {
-    note.reset(); // a note belongs to the analysis it was recorded for
     constexpr size_t window_frames=spectrum_max_frames,block_frames=1024,warmup_frames=24000;
     struct Work {
         SpectrumWorkspace workspace;float amplitudes[window_frames/2+1];
@@ -468,93 +427,32 @@ void new_session(char* out,size_t size) {
     snprintf(out,size,"sa-%08lx%08lx%08lx%08lx",static_cast<unsigned long>(esp_random()),static_cast<unsigned long>(esp_random()),
              static_cast<unsigned long>(esp_random()),static_cast<unsigned long>(esp_random()));
 }
-void set_ids(cJSON* metadata,const char* session) {
-    char id[64];snprintf(id,sizeof(id),"%s-q1",session);
-    cJSON_ReplaceItemInObjectCaseSensitive(metadata,"session_id",cJSON_CreateString(session));
-    cJSON_ReplaceItemInObjectCaseSensitive(metadata,"question_id",cJSON_CreateString(id));
-}
 // Media task -> screen; takes the display lock for each update.
-void explain_progress(const char* stage,const char* transcript,const char* text) {
+void explain_progress(const char* stage,const char*,const char* text) {
     if(!bsp_display_lock(1000))return;
     if(stage)lv_label_set_text(status_label,stage);
     if(text) {
-        std::string shown;
-        if(transcript && transcript[0])shown+="You said: \""+std::string(transcript)+"\"\n\n";
-        shown+="Agent: "+std::string(text)+"\n\n"+events_text;
+        const std::string shown="Agent: "+std::string(text)+"\n\n"+events_text;
         lv_label_set_text(events_label,shown.c_str());lv_obj_scroll_to_y(lv_obj_get_parent(events_label),0,LV_ANIM_OFF);
         lv_label_set_text(status_label,"The agent's reading is below. Stop voice ends the speech.");
     }
     bsp_display_unlock();
 }
-// Voice-note dialog (F-0002 T5): the media task shows it; its buttons set the choice.
-void show_transcript(const char* status,const char* text) {
-    dialog_choice.store(-1);
-    if(!bsp_display_lock(1000)){dialog_choice.store(0);return;}
-    const bool heard=!strcmp(status,"heard");
-    std::string shown=heard?"\""+std::string(text)+"\"":!strcmp(status,"empty")?
-        "Nothing was recognised in the recording.":"The Mac could not transcribe the recording.";
-    lv_label_set_text(dialog_text,shown.c_str());
-    lv_label_set_text(dialog_explain_label,heard?"Explain":"Explain without it");
-    lv_obj_remove_flag(dialog,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(dialog);
-    lv_label_set_text(status_label,"Check what the Mac heard.");
-    bsp_display_unlock();
-}
-int poll_choice() {return dialog_choice.load();}
 void restore_buttons(const char* status) {
     if(!bsp_display_lock(1000))return;
-    lv_label_set_text(status_label,status);lv_label_set_text(explain_label,"Explain");lv_label_set_text(note_label,"Voice note");
-    for(auto* b:{note_button,explain_button,listen_button})lv_obj_remove_state(b,LV_STATE_DISABLED);
+    lv_label_set_text(status_label,status);lv_label_set_text(explain_label,"Explain");
+    for(auto* b:{explain_button,listen_button})lv_obj_remove_state(b,LV_STATE_DISABLED);
     bsp_display_unlock();
 }
-// One Explain session; with dialog, the note's transcript is shown for a choice first.
-int explain_run(const char* boot,bool with_dialog) {
-    // A fresh session each time, so Explain can be retried; the note takes its IDs.
+}
+
+void sound_explain(const char* boot) {
+    // A fresh session each time, so Explain can be retried.
     char session[40];new_session(session,sizeof(session));
-    if(note)set_ids(note->metadata,session);
     SoundExplainHooks hooks{explain_progress};
-    if(with_dialog){hooks.show_transcript=show_transcript;hooks.poll_choice=poll_choice;}
     SoundExplainResult out;
     const bool ok=analysis_state.load()==Ready &&
-        investigation_explain_sound(boot,session,note.get(),analysis_summary(),hooks,out);
+        investigation_explain_sound(boot,session,nullptr,analysis_summary(),hooks,out);
     explaining.store(false);
-    if(!ok) {
-        std::string status=out.error.empty()?"Nothing to explain yet.":out.error;
-        if(with_dialog && note && !out.error.empty())status+=" The note is kept; Explain will transcribe it.";
-        restore_buttons(status.c_str());
-    }
-    else if(out.choice==1)restore_buttons("Tap Explain to ask again, or record a new voice note first.");
-    else if(out.choice==0){note.reset();restore_buttons("Voice note discarded.");}
-    return ok?out.choice:0;
+    restore_buttons(ok?"Tap Explain to ask again.":out.error.empty()?"Nothing to explain yet.":out.error.c_str());
 }
-}
-
-void sound_record_note(const char* boot) {
-    for(;;) {
-        char session[40];new_session(session,sizeof(session));
-        char id[64];snprintf(id,sizeof(id),"%s-q1",session);
-        auto recorded=std::make_unique<InvestigationCapture>();
-        const bool ok=investigation_record_question(boot,session,id,never_cancel,note_stop,*recorded,nullptr);
-        note_recording.store(false);
-        double seconds=0;
-        if(ok){seconds=cJSON_GetObjectItemCaseSensitive(recorded->metadata,"frames")->valuedouble/16000;note=std::move(recorded);}
-        auto* e=diagnostic_event("sound_note");cJSON_AddBoolToObject(e,"ok",ok);cJSON_AddNumberToObject(e,"seconds",seconds);
-        if(ok)for(const char* key:{"stopped_by","input_clipped"})
-            cJSON_AddItemToObject(e,key,cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(note->metadata,key),true));
-        diagnostic_emit(e);
-        if(!ok){restore_buttons(note?"Recording failed; the earlier note is kept.":"Recording failed. Try again.");return;}
-        if(bsp_display_lock(1000)) {
-            char text[80];snprintf(text,sizeof(text),"Voice note recorded (%.1f s). Transcribing on the Mac...",seconds);
-            lv_label_set_text(status_label,text);lv_label_set_text(note_label,"Voice note");
-            lv_obj_add_state(note_button,LV_STATE_DISABLED);bsp_display_unlock();
-        }
-        // Offline, the note stays on the device and Explain transcribes it later.
-        if(explain_run(boot,true)!=2)return;
-        note_stop.store(false);note_recording.store(true);
-        if(bsp_display_lock(1000)) {
-            lv_label_set_text(status_label,"Recording your voice note: tap Stop (up to 8 s).");lv_label_set_text(note_label,"Stop");
-            lv_obj_remove_state(note_button,LV_STATE_DISABLED);bsp_display_unlock();
-        }
-    }
-}
-
-void sound_explain(const char* boot) {explain_run(boot,false);}
