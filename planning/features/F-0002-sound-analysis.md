@@ -17,7 +17,7 @@
 
 ## Next
 
-T6 (home, on the home network, a few minutes, headphones): Voice note now opens a dialog with the Mac's transcript (Explain, Record again, Cancel; user's request after T5). Run a session, record a note, check the transcript, Explain. Before: provision the device for the home network and start the service. Telemetry: `sound_note`, `sound_explain` (choice, timings), the service run. Tests assumption 4.
+T6 (anywhere, a few minutes, headphones optional): Mac joined to the device's hotspot, service with `--provider local`. Listen, Analysis, Voice note, check the transcript dialog, Explain. The user says whether the transcript was right and whether the local model's reading added anything. Runs on the F-0004 build.
 
 ## Trials
 

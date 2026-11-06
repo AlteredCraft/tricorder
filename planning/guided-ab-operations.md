@@ -1,5 +1,7 @@
 # Guided A/B operations
 
+**History (2026-11-05):** the guided A/B was dropped. The service command, SD provisioning and hotspot sections still apply; the A/B trial and replay sections are reference only.
+
 How to run, provision and replay the guided A/B loop. States and wire format: [guided-ab-protocol.md](guided-ab-protocol.md). The guided startup option is in the [README device notes](../README.md#device-notes).
 
 ## Running a trial

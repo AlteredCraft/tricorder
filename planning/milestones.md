@@ -1,18 +1,23 @@
 # Tricorder milestones
 
-## M-0002: Explore the device
+## M-0002: Sensors, explained by a local LLM
 
 **Status:** In progress
 
-**Theme:** The person picks up the Tricorder, sees what it can do, and opens any capability from a start screen with live readings (the vision's Explore mode and capability view). Deferred: new investigations and hosted service.
+**Theme:** The person picks up the Tricorder, opens a sensor instrument from the start screen, and asks the LLM on the Mac about what it measured. Everything runs locally: the device's own hotspot, Ollama, Parakeet, Pocket TTS. Sound is the first instrument and the template for the rest.
 
-**Active feature:** [F-0003](features/F-0003-device-hotspot.md#next). F-0002's T6 (Explain with the Mac) runs over the hotspot once F-0003 T1 passes.
+**Retargeted 2026-11-05 (user):** the Investigate tile (guided A/B) is dropped as not compelling to demo. The Sound tile stays. The premise is now the device, its screen, touch and sensors, connected to an LLM running locally on the Mac.
+
+**Active feature:** [F-0004](features/F-0004-demo-start-screen.md#next): start screen without Investigate, then the Sound → Explain demo over the hotspot (also F-0002 T6).
 
 | Feature | Status |
 | --- | --- |
 | [F-0001 Start screen](features/F-0001-start-screen.md) | Done |
 | [F-0002 Sound session analysis](features/F-0002-sound-analysis.md) | In progress |
-| [F-0003 Device hotspot and local text model](features/F-0003-device-hotspot.md) | In progress |
+| [F-0003 Device hotspot and local text model](features/F-0003-device-hotspot.md) | Done (Explain over the hotspot; A/B part dropped) |
+| [F-0004 Start screen for the demo](features/F-0004-demo-start-screen.md) | Proposed |
+
+Candidates after F-0004, each the Sound shape for another sensor: Motion (tilt, shake, vibration over time, Explain), Camera (photo to a local vision model), Power (what the device draws as features turn on, Explain).
 
 ## M-0001: Validate the handheld investigation
 
@@ -26,7 +31,7 @@
 
 **Stack (agreed 2026-09-20):** C++/ESP-IDF 5.4.2 + LVGL 9 on the device ([ADR-0003](adrs/ADR-0003-tab5-diagnostic-foundation.md)); Python service on the Mac, mock first, then a live provider ([ADR-0010](adrs/ADR-0010-device-owned-ab-lan-experiment.md), [ADR-0012](adrs/ADR-0012-live-prose-over-verified-summaries.md)); local speech-to-text and spoken guidance on the Mac ([ADR-0013](adrs/ADR-0013-local-first-speech-to-text.md), [ADR-0014](adrs/ADR-0014-spoken-guidance-streamed-from-the-mac.md)).
 
-**Closed:** 2026-09-26, both goals Met; G-0001 with reduced scope (user-approved). Lesson: the goals were too large (over a week) and checks ran ahead of product use. Later work is feature-first, trial-driven ([planning README](README.md)).
+**Closed:** 2026-09-26, both goals Met; G-0001 with reduced scope (user-approved). Lesson: the goals were too large (over a week) and checks ran ahead of product use. The guided A/B it produced was dropped 2026-11-05 as not compelling to demo; its service, transport and speech path carry Explain.
 
 | Goal | Status |
 | --- | --- |
@@ -35,10 +40,9 @@
 
 ## Later
 
-- Hosted agent service (device auth, TLS, credential provisioning, internet latency).
-- Device event log to SD, so untethered trials keep device telemetry (the serial collector needs USB; F-0003 T1 lost it when the Tab5 was unplugged).
-- Send the context photo and steadiness reading to the model (device-only now; not needed for the dB comparison). The user asked "What is this a picture of?" in a live loop.
-- Sleep and wake (removed from G-0001.05 on 2026-09-25; the device is always on). Start with screen-off on idle and touch wake, once on-battery power shows the backlight's share.
-- From G-0001 (2026-09-26, user-approved), each to be picked up by a feature that needs it: cold starts (none logged yet); INA226 on battery and power profiles; SD power loss mid-save; 30-minute handheld battery session; speech/playback overlapping a measurement (full-duplex); finger touch-to-submit baseline (`pressed_us` is logged every session).
-- Live turn latency: end of turn to first sound 10.9 s p95, 7.2 s of it raw upload (G-0001.04).
-- Candidate later milestones: local ESP-DL inference, full-duplex speech/AEC, wake words, higher-resolution video, USB/RS-485 peripherals, external environmental sensors.
+- Hosted service instead of the Mac (device auth, TLS, credential provisioning, internet latency).
+- Device event log to SD, so untethered trials keep device telemetry.
+- Camera to a local vision model (the user asked "What is this a picture of?" in a live loop).
+- Sleep and wake: screen-off on idle and touch wake, once on-battery power shows the backlight's share.
+- Battery: INA226 power profiles, a 30-minute handheld session, SD power loss mid-save.
+- Speech overlapping a live measurement (full-duplex, AEC); wake words; external environmental sensors; USB/RS-485 peripherals.

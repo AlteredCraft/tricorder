@@ -1,5 +1,7 @@
 # Tricorder: agent notes
 
+**Premise:** a handheld with a screen, touch and sensors (M5Stack Tab5) talking to an LLM, speech-to-text and text-to-speech that all run locally on the Mac, over the device's own Wi-Fi hotspot. The demo shape for every sensor: live instrument → analysis on the device → voice note → Explain. Sound is the model; the other sensors follow it. Guided investigations (Investigate tile, A/B) were dropped 2026-11-05 as not compelling to demo; their transport and service carry Explain.
+
 Hobby project. Speed over certainty: build the feature, flash it, let the user try it. If something breaks, we fix it next time. Don't propose checks, re-runs, hardening or extra telemetry unless the user hits a problem.
 
 - Start with [planning/milestones.md](planning/milestones.md) and the active feature's **Next**. Planning rules: [planning/README.md](planning/README.md). Ask the user only to change a feature's outcome or to mark it Done or Dropped. Everything else, proceed.
