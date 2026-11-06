@@ -370,7 +370,7 @@ void network_ui_init(lv_obj_t* screen, const char* boot_id) {
     lv_obj_set_style_text_color(hint,lv_color_hex(0x90a4ae),0);
     lv_obj_set_pos(hint,24,184);
     keyboard=lv_keyboard_create(panel);
-    lv_obj_set_pos(keyboard,24,224); lv_obj_set_size(keyboard,1232,488);
+    lv_obj_set_size(keyboard,1232,488); lv_obj_align(keyboard,LV_ALIGN_TOP_LEFT,24,224);
     lv_obj_set_style_text_font(keyboard,&lv_font_montserrat_28,LV_PART_ITEMS);
     lv_keyboard_set_textarea(keyboard,ssid_field);
     configASSERT(xTaskCreate(network_task,"network",6144,nullptr,5,nullptr)==pdPASS);
