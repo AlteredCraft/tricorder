@@ -45,5 +45,5 @@ Ideas, none scheduled. Dropped 2026-11-05 as verification rather than demo work:
 
 - Sleep and wake: screen-off on idle and touch wake.
 - Speech overlapping a live measurement (full-duplex, AEC); wake words.
-- External environmental sensors; USB/RS-485 peripherals.
+- External environmental sensors over the Tab5 ExtPort2 pigtail ([#10](https://github.com/AlteredCraft/tricorder/issues/10)); USB/RS-485 peripherals.
 - Hosted service instead of the Mac (device auth, TLS, credential provisioning, internet latency).
