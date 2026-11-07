@@ -18,7 +18,7 @@ import wave
 from tools.captures import CaptureStore
 from tools.speech_to_text import DEFAULT_ENGINE, ENGINES, load_transcriber
 from tools import text_to_speech
-from tools import motion_explain, sound_explain
+from tools import camera_explain, motion_explain, sound_explain
 from tools.investigation import (CaptureEvidence, Fixture, MAX_CAPTURE_BYTES, MAX_QUESTIONS,
                                  MAX_QUESTION_FRAMES, MAX_QUESTION_TEXT, MockProvider,
                                  ProtocolError, QUESTION_FIELDS, QUESTION_RATE_HZ, QuestionAudio,
@@ -99,6 +99,7 @@ class MockSession:
         self.phase='new'
         self.ids=[]
         self.requests=set()
+        self.photos={} # F-0006: request_id -> JPEG bytes arriving in photo_chunk messages
         self.reserved_bytes=0
         self.messages=0
         # Spoken ask (ADR-0013): separate IDs, store and budget; never a measurement.
@@ -134,7 +135,7 @@ class MockSession:
             'question_start':{'metadata'}, 'question_chunk':{'question_id','offset','data'},
             'question_end':{'question_id','sha256'}, 'question_confirm':{'question_id','accepted'},
             'speak':{'request_id'}, 'speech_stop':{'request_id'},
-            'analysis_explain':{'request_id','analysis'}}
+            'analysis_explain':{'request_id','analysis'}, 'photo_chunk':{'request_id','offset','data'}}
         require(isinstance(kind,str) and kind in fields,'unknown message type')
         allowed={'version','type','boot_id','session_id'}|fields[kind]
         if kind=='hello' and self.replay_only:allowed.add('replay')
@@ -177,7 +178,7 @@ class MockSession:
         require(message['boot_id']==self.archive.boot_id and message['session_id']==self.archive.session_id,
                 'session mismatch')
         # Never log media/base64 or arbitrary extra fields. Raw evidence stays in captures/.
-        if kind not in ('capture_chunk','question_chunk'):self.archive.record({'direction':'in','payload':message})
+        if kind not in ('capture_chunk','question_chunk','photo_chunk'):self.archive.record({'direction':'in','payload':message})
         # While a reply is being spoken the device may only stop it or cancel.
         require(self.speaking is None or kind in ('speech_stop','cancel'),'speech in progress')
         if kind=='cancel':
@@ -217,25 +218,48 @@ class MockSession:
             self.expires=time.monotonic()+(deadline-now)/1000
             self.phase='pending'
             self.task=asyncio.create_task(self.respond(request))
+        elif kind=='photo_chunk':
+            # F-0006: the photo for the analysis_explain that follows, in order, one at a time.
+            require(self.phase=='await_a' and not self.ids and self.pending is None,'photo only before any capture')
+            request_id=identity(message['request_id'])
+            require(request_id not in self.requests and len(self.photos)<=1 and
+                    (not self.photos or request_id in self.photos),'photo request')
+            buffer=self.photos.setdefault(request_id,bytearray())
+            require(integer(message['offset'],0,camera_explain.MAX_PHOTO_BYTES)==len(buffer),'photo chunk out of order')
+            data=message['data']
+            require(isinstance(data,str) and len(data)<=5464,'photo chunk size')
+            try:raw=base64.b64decode(data,validate=True)
+            except ValueError as error:raise ProtocolError('photo chunk encoding') from error
+            require(0<len(raw)<=camera_explain.CHUNK_BYTES and len(buffer)+len(raw)<=camera_explain.MAX_PHOTO_BYTES,
+                    'photo chunk size')
+            buffer+=raw
         elif kind=='analysis_explain':
-            # F-0002, F-0005: a sound or motion session analysed on the device, explained once,
-            # before any capture. A missing kind is sound.
+            # F-0002, F-0005, F-0006: a sound or motion session analysed on the device, or a photo,
+            # explained once, before any capture. A missing kind is sound.
             require(self.phase=='await_a' and not self.ids and self.pending is None and not self.requests,
                     'explain only once, before any capture')
             request_id=identity(message['request_id'])
             analysis=message['analysis']
             require(isinstance(analysis,dict),'analysis fields')
             kind=analysis.get('kind','sound')
+            photo=None
             if kind=='motion':
                 analysis=motion_explain.validate_analysis(analysis)
+            elif kind=='camera':
+                analysis=camera_explain.validate_analysis(analysis)
+                photo=bytes(self.photos.pop(request_id,b''))
+                camera_explain.check_photo(analysis,photo)
+                folder=self.archive.root/'photos';folder.mkdir(exist_ok=True)
+                (folder/f'{request_id}.jpg').write_bytes(photo)
             else:
                 require(kind=='sound','unknown analysis kind')
                 analysis=sound_explain.validate_analysis({k:v for k,v in analysis.items() if k!='kind'})
+            require(not self.photos,'photo without its explain')
             self.archive.record({'type':f'{kind}_analysis','request_id':request_id,'analysis':analysis})
             self.requests.add(request_id)
             self.pending={'request_id':request_id}
             self.phase='pending'
-            self.task=asyncio.create_task(self.explain(request_id,kind,analysis))
+            self.task=asyncio.create_task(self.explain(request_id,kind,analysis,photo))
         elif kind=='ack':
             require(self.phase=='await_ack' and self.pending is not None,'no response awaiting acknowledgement')
             require(time.monotonic()<self.expires,'ack deadline expired')
@@ -401,9 +425,10 @@ class MockSession:
             # Exceptions from future providers can include URLs/keys; record only a fixed reason.
             await self.emit(self.envelope('incomplete',reason='provider_or_evidence_failure'))
 
-    async def explain(self, key, kind, analysis):
-        module=motion_explain if kind=='motion' else sound_explain
+    async def explain(self, key, kind, analysis, photo=None):
+        module={'motion':motion_explain,'camera':camera_explain}.get(kind,sound_explain)
         evidence=(motion_explain.explain_evidence(analysis) if kind=='motion'
+                  else camera_explain.explain_evidence(analysis,photo) if kind=='camera'
                   else sound_explain.explain_evidence(analysis,self.operator_question))
         try:
             async with asyncio.timeout(EXPLAIN_TIMEOUT_S):

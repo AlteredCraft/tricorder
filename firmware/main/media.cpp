@@ -117,6 +117,54 @@ static const char* map_buffers(VideoSession& video) {
     return nullptr;
 }
 
+// Opens the CSI camera in RGB565 with its buffers mapped and queued; nullptr on success.
+static const char* open_rgb565(VideoSession& video,v4l2_format& format) {
+    video.fd = open(ESP_VIDEO_MIPI_CSI_DEVICE_NAME, O_RDONLY);
+    if (video.fd < 0) return "open video failed";
+    format={};
+    format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if (ioctl(video.fd, VIDIOC_G_FMT, &format)) return "get video format failed";
+    if (format.fmt.pix.pixelformat != V4L2_PIX_FMT_RGB565) {
+        format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE; // Vendor G_FMT returns type 0.
+        format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB565;
+        if (ioctl(video.fd, VIDIOC_S_FMT, &format)) return "RGB565 format failed";
+    }
+    format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if (ioctl(video.fd, VIDIOC_G_FMT, &format)) return "final video format read failed";
+    return map_buffers(video);
+}
+
+bool camera_stream(const std::atomic<bool>& stop,CameraFrameSink sink,void* user,const char** error) {
+    auto fail=[&](const char* step) {if (error) *error=step;return false;};
+    if (!video_init_once()) return fail("esp_video_init failed");
+    VideoSession video;v4l2_format format{};
+    if (const char* step=open_rgb565(video,format)) return fail(step);
+    const unsigned width=format.fmt.pix.width,height=format.fmt.pix.height;
+    const size_t frame_bytes=size_t(width)*height*2;
+    configure_camera_ingress(frame_bytes);
+    int type=V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if (ioctl(video.fd,VIDIOC_STREAMON,&type)) return fail("start video stream failed");
+    video.streaming=true;
+    const int64_t started=esp_timer_get_time();
+    unsigned frames=0,short_frames=0,dequeue_errors=0;bool more=true;
+    while (more && !stop.load()) {
+        v4l2_buffer buffer{};buffer.type=V4L2_BUF_TYPE_VIDEO_CAPTURE;buffer.memory=V4L2_MEMORY_MMAP;
+        if (ioctl(video.fd,VIDIOC_DQBUF,&buffer)) {if (++dequeue_errors>=5) break;continue;}
+        if (buffer.index<camera_capture_buffer_count && buffer.bytesused==frame_bytes) {
+            ++frames;more=sink(reinterpret_cast<const uint16_t*>(video.buffers[buffer.index]),width,height,user);
+        } else ++short_frames;
+        if (ioctl(video.fd,VIDIOC_QBUF,&buffer)) break;
+    }
+    auto* e=diagnostic_event("camera_stream");
+    cJSON_AddNumberToObject(e,"width",width);cJSON_AddNumberToObject(e,"height",height);
+    cJSON_AddNumberToObject(e,"frames",frames);cJSON_AddNumberToObject(e,"short_frames",short_frames);
+    cJSON_AddNumberToObject(e,"dequeue_errors",dequeue_errors);
+    cJSON_AddNumberToObject(e,"duration_ms",(esp_timer_get_time()-started)/1000);
+    diagnostic_emit(e);
+    if (dequeue_errors>=5) return fail("frame dequeue failed");
+    return true;
+}
+
 bool camera_context_shot(uint16_t* output,size_t output_bytes,unsigned output_width,unsigned output_height,
                          CameraContextShot& shot) {
     shot={};
@@ -137,25 +185,13 @@ bool camera_context_shot(uint16_t* output,size_t output_bytes,unsigned output_wi
         return !error;
     };
     if (!video_init_once()) return finish("esp_video_init failed");
-    VideoSession video;
-    video.fd = open(ESP_VIDEO_MIPI_CSI_DEVICE_NAME, O_RDONLY);
-    if (video.fd < 0) return finish("open video failed");
-    v4l2_format format{};
-    format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    if (ioctl(video.fd, VIDIOC_G_FMT, &format)) return finish("get video format failed");
-    if (format.fmt.pix.pixelformat != V4L2_PIX_FMT_RGB565) {
-        format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE; // Vendor G_FMT returns type 0.
-        format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB565;
-        if (ioctl(video.fd, VIDIOC_S_FMT, &format)) return finish("RGB565 format failed");
-    }
-    format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    if (ioctl(video.fd, VIDIOC_G_FMT, &format)) return finish("final video format read failed");
+    VideoSession video;v4l2_format format{};
+    if (const char* error=open_rgb565(video,format)) return finish(error);
     shot.source_width=format.fmt.pix.width;shot.source_height=format.fmt.pix.height;
     const unsigned factor=output_width ? shot.source_width/output_width : 0;
     if (!factor || shot.source_width!=output_width*factor || shot.source_height!=output_height*factor)
         return finish("source is not an integer multiple of the context size");
     const size_t frame_bytes=size_t(shot.source_width)*shot.source_height*2;
-    if (const char* error=map_buffers(video)) return finish(error);
     configure_camera_ingress(frame_bytes);
     int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if (ioctl(video.fd, VIDIOC_STREAMON, &type)) return finish("start video stream failed");

@@ -46,7 +46,16 @@ constexpr TileText tile_text[]={
 "• The readings are not calibrated. Use them to compare, not as exact measurements.\n"
 "• Vibration faster than 50 times a second can show up at a lower frequency.\n"
 "• The samples are never saved or sent. Explain sends only the analysis numbers to the Mac."},
-{"Camera","Instrument coming",nullptr},
+{"Camera","Photo to the vision model",
+"A live view from the camera on the back of the device. Take a photo and ask the Mac's local vision model what it shows.\n\n"
+"Try it\n"
+"1. Point the camera at something: an object, a label, a page, a plant.\n"
+"2. Tap Take photo. The view freezes on the photo; tap Retake for another.\n"
+"3. Tap Explain. The photo goes to the Mac, and the agent's reading appears on the right and is spoken; Stop voice ends the speech.\n\n"
+"Notes\n"
+"• The photo is 1280 by 720 and goes to the Mac as a JPEG, where the service keeps a copy with the run. The live view is never sent.\n"
+"• The model answers one fixed question, what is this; it reads text it can see and guesses when unsure.\n"
+"• The live view is half size; the photo is sent at full size."},
 {"Power","Screen coming",
 "The tile reads the battery through the INA226 power monitor.\n\n"
 "• Volts: the battery pack. About 8.4 V is full.\n"

@@ -424,14 +424,14 @@ bool capture_ack(Socket& s,InvestigationProtocol& p,const char* id,const char* s
 }
 // One reusable base64 scratch buffer; at most 4096 raw bytes per message.
 // Counts the chunks sent and the slowest chunk write (G-0001.02 upload baseline).
-bool send_chunks(Socket& s,InvestigationProtocol& p,const char* type,const char* key,const char* id,const InvestigationCapture& c,
-                 unsigned* chunks=nullptr,int64_t* max_us=nullptr) {
+bool send_chunks(Socket& s,InvestigationProtocol& p,const char* type,const char* key,const char* id,
+                 const unsigned char* bytes,size_t size,unsigned* chunks=nullptr,int64_t* max_us=nullptr) {
     auto* encoded=static_cast<unsigned char*>(malloc(5465));if(!encoded)return false;
     bool ok=true;
-    for(size_t offset=0;ok && offset<c.size;offset+=4096) {
+    for(size_t offset=0;ok && offset<size;offset+=4096) {
         if(!active(p)){ok=false;break;}
-        size_t count=std::min(size_t(4096),c.size-offset),written=0;
-        ok=mbedtls_base64_encode(encoded,5465,&written,c.bytes+offset,count)==0;
+        size_t count=std::min(size_t(4096),size-offset),written=0;
+        ok=mbedtls_base64_encode(encoded,5465,&written,bytes+offset,count)==0;
         if(!ok)break;
         encoded[written]=0;
         auto* o=p.envelope(type);cJSON_AddStringToObject(o,key,id);
@@ -450,7 +450,7 @@ bool upload(Socket& s,InvestigationProtocol& p,const InvestigationCapture& c,uns
     const int64_t started=esp_timer_get_time();unsigned chunks=0;int64_t max_chunk_us=0;
     // G-0001.02 Wi-Fi loss: the lowest free internal RAM during this upload.
     const bool monitoring=heap_caps_monitor_local_minimum_free_size_start()==ESP_OK;
-    bool ok=s.send(o) && capture_ack(s,p,id,"start") && send_chunks(s,p,"capture_chunk","capture_id",id,c,&chunks,&max_chunk_us);
+    bool ok=s.send(o) && capture_ack(s,p,id,"start") && send_chunks(s,p,"capture_chunk","capture_id",id,c.bytes,c.size,&chunks,&max_chunk_us);
     const char* sha=cJSON_GetObjectItemCaseSensitive(c.metadata,"sha256")->valuestring;
     if(ok) {
         o=p.envelope("capture_end");cJSON_AddStringToObject(o,"capture_id",id);cJSON_AddStringToObject(o,"sha256",sha);
@@ -475,7 +475,7 @@ bool upload_question(Socket& s,InvestigationProtocol& p,const InvestigationCaptu
     const char* id=p.question_id();auto* o=p.envelope("question_start");
     cJSON_AddItemToObject(o,"metadata",cJSON_Duplicate(q.metadata,true));
     if(!active(p)){cJSON_Delete(o);return false;}
-    if(!s.send(o) || !send_chunks(s,p,"question_chunk","question_id",id,q))return false;
+    if(!s.send(o) || !send_chunks(s,p,"question_chunk","question_id",id,q.bytes,q.size))return false;
     o=p.envelope("question_end");cJSON_AddStringToObject(o,"question_id",id);
     cJSON_AddStringToObject(o,"sha256",cJSON_GetObjectItemCaseSensitive(q.metadata,"sha256")->valuestring);
     if(!active(p)){cJSON_Delete(o);return false;}
@@ -956,7 +956,8 @@ void investigation_stop_speech() {stop_speech.store(true);}
 // session's hello, spoken-question upload (the voice note, accepted as heard) and
 // speech stream; analysis_explain replaces the captures.
 bool investigation_explain_analysis(const char* boot,const char* session,const InvestigationCapture* note,
-                                 cJSON* analysis,const AnalysisExplainHooks& hooks,AnalysisExplainResult& out) {
+                                 cJSON* analysis,const AnalysisExplainHooks& hooks,AnalysisExplainResult& out,
+                                 const unsigned char* photo,size_t photo_bytes) {
     auto progress=hooks.progress;
     std::unique_ptr<cJSON,decltype(&cJSON_Delete)> summary(analysis,cJSON_Delete);
     auto* kind_item=cJSON_GetObjectItemCaseSensitive(analysis,"kind");
@@ -1015,8 +1016,18 @@ bool investigation_explain_analysis(const char* boot,const char* session,const I
             if(!socket.send(p->confirm_question(true)))return finish("The connection dropped.");
         }
     }
-    progress("Asking the agent...",out.transcript.c_str(),nullptr);
     char request_id[64];snprintf(request_id,sizeof(request_id),"%s-explain",session);
+    if(photo && photo_bytes) {
+        progress("Sending the photo...",nullptr,nullptr);
+        const int64_t sending=esp_timer_get_time();unsigned chunks=0;int64_t max_chunk_us=0;
+        const bool sent=send_chunks(socket,*p,"photo_chunk","request_id",request_id,photo,photo_bytes,&chunks,&max_chunk_us);
+        auto* e=diagnostic_event("analysis_photo_upload");cJSON_AddStringToObject(e,"session_id",session);
+        cJSON_AddBoolToObject(e,"ok",sent);cJSON_AddNumberToObject(e,"bytes",photo_bytes);cJSON_AddNumberToObject(e,"chunks",chunks);
+        cJSON_AddNumberToObject(e,"upload_us",esp_timer_get_time()-sending);cJSON_AddNumberToObject(e,"max_chunk_us",max_chunk_us);
+        diagnostic_emit(e);
+        if(!sent)return finish("The photo could not be sent.");
+    }
+    progress("Asking the agent...",out.transcript.c_str(),nullptr);
     auto* ask=p->envelope("analysis_explain");cJSON_AddStringToObject(ask,"request_id",request_id);
     cJSON_AddItemToObject(ask,"analysis",summary.release());
     if(!socket.send(ask))return finish("The connection dropped.");

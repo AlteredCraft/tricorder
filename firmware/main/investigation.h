@@ -33,7 +33,10 @@ struct AnalysisExplainHooks {
     int(*poll_choice)()=nullptr;
 };
 struct AnalysisExplainResult {std::string transcript,text,error;bool spoke=false;int choice=1;};
+// F-0006: a photo (JPEG bytes) goes up in photo_chunk messages before the analysis that
+// describes it (kind camera).
 bool investigation_explain_analysis(const char* boot,const char* session,const InvestigationCapture* note,
-                                 cJSON* analysis,const AnalysisExplainHooks& hooks,AnalysisExplainResult& out);
+                                 cJSON* analysis,const AnalysisExplainHooks& hooks,AnalysisExplainResult& out,
+                                 const unsigned char* photo=nullptr,size_t photo_bytes=0);
 // Stops spoken guidance or an explanation being spoken (any task).
 void investigation_stop_speech();

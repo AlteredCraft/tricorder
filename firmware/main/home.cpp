@@ -5,6 +5,7 @@
 #include "setup.h"
 #include "sound.h"
 #include "motion.h"
+#include "camera.h"
 #include "diagnostic_events.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -15,10 +16,10 @@
 #include <initializer_list>
 
 namespace {
-enum Opens {None,Sound,Motion,Setup,Diagnostics};
+enum Opens {None,Sound,Motion,Camera,Setup,Diagnostics};
 // What each tile opens, in home::tile_text order (names, notes and info text).
-constexpr Opens opens_for[home::tile_count]={Sound,Motion,None,None,Setup,Diagnostics};
-constexpr unsigned sound_tile=0,motion_tile=1,power_tile=3,setup_tile=4;
+constexpr Opens opens_for[home::tile_count]={Sound,Motion,Camera,None,Setup,Diagnostics};
+constexpr unsigned sound_tile=0,motion_tile=1,camera_tile=2,power_tile=3,setup_tile=4;
 lv_obj_t *home_panel,*readings[home::tile_count],*info_panel,*info_title,*info_scroll,*info_text;
 // The open info page (LVGL task): tile, when it opened, furthest scroll.
 int info_tile=-1;int64_t info_opened_us=0;int32_t info_max_scroll=0;
@@ -58,6 +59,7 @@ void tile_clicked(lv_event_t* ev) {
     }
     if(opens==Sound){sound_ui_open();note_nav("home","sound");}
     else if(opens==Motion){motion_ui_open();note_nav("home","motion");}
+    else if(opens==Camera){camera_ui_open();note_nav("home","camera");}
     else if(opens==Setup){setup_open();note_nav("home","setup");}
     else {show_home(false);note_nav("home","diagnostics");}
 }
@@ -145,7 +147,7 @@ void home_ui_init(lv_obj_t* screen) {
         lv_obj_align(readings[i],LV_ALIGN_BOTTOM_LEFT,0,0);
     }
     for(unsigned i:{motion_tile,power_tile})lv_label_set_text(readings[i],"No data");
-    lv_label_set_text(readings[sound_tile],"Open");
+    for(unsigned i:{sound_tile,camera_tile})lv_label_set_text(readings[i],"Open");
     info_panel=lv_obj_create(screen);lv_obj_remove_style_all(info_panel);
     lv_obj_set_size(info_panel,home::screen_w,home::screen_h);lv_obj_set_pos(info_panel,0,0);
     lv_obj_set_style_bg_color(info_panel,lv_color_hex(0x101418),0);lv_obj_set_style_bg_opa(info_panel,LV_OPA_COVER,0);

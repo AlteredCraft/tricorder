@@ -4,6 +4,7 @@ Routes: openai, openrouter, or local (an OpenAI-compatible server on the Mac suc
 Ollama, which answers the Responses API; F-0003). Only openrouter gets vendor routing extras.
 """
 import asyncio
+import base64
 from copy import deepcopy
 import json
 
@@ -31,18 +32,26 @@ class OpenAIProvider:
         return {}
 
     async def explain(self, evidence):
-        """F-0002, F-0005: plain prose over a checked sound or motion analysis summary."""
-        from tools import motion_explain, sound_explain
-        motion = evidence.get('kind') == 'motion'
-        instructions = (motion_explain if motion else sound_explain).INSTRUCTIONS
+        """F-0002, F-0005, F-0006: plain prose over a checked sound or motion analysis summary,
+        or over a photo (the JPEG goes as an image input beside the question)."""
+        from tools import camera_explain, motion_explain, sound_explain
+        kind = evidence.get('kind', 'sound')
+        module = {'motion': motion_explain, 'camera': camera_explain}.get(kind, sound_explain)
         schema = {'type': 'object', 'additionalProperties': False,
                   'properties': {'text': {'type': 'string'}}, 'required': ['text']}
+        if kind == 'camera':
+            text = {key: value for key, value in evidence.items() if key != 'image_jpeg'}
+            image = base64.b64encode(evidence['image_jpeg']).decode()
+            content = [{'type': 'input_text', 'text': json.dumps(text, allow_nan=False)},
+                       {'type': 'input_image', 'image_url': f'data:image/jpeg;base64,{image}'}]
+        else:
+            content = json.dumps(evidence, allow_nan=False)
         try:
             routing = self.routing()
             response = await self.client.responses.create(
-                model=self.model, store=False, max_output_tokens=700, instructions=instructions,
-                input=[{'role': 'user', 'content': json.dumps(evidence, allow_nan=False)}],
-                text={'format': {'type': 'json_schema', 'name': 'motion_analysis_reading' if motion else 'sound_analysis_reading',
+                model=self.model, store=False, max_output_tokens=700, instructions=module.INSTRUCTIONS,
+                input=[{'role': 'user', 'content': content}],
+                text={'format': {'type': 'json_schema', 'name': f'{kind}_analysis_reading',
                                  'strict': True, 'schema': schema}}, **routing)
             require(response.status == 'completed', 'OpenAI response incomplete')
             wire = response.output_text

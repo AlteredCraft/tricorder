@@ -14,6 +14,7 @@
 #include "setup.h"
 #include "sound.h"
 #include "motion.h"
+#include "camera.h"
 #include "home_model.h"
 #include "restart_sequence.h"
 #include "dsp_diagnostic.h"
@@ -410,6 +411,7 @@ extern "C" void app_main() {
     investigation_ui_init(screen, media_commands);
     sound_ui_init(screen, media_commands);
     motion_ui_init(screen, media_commands);
+    camera_ui_init(screen, media_commands);
     setup_ui_init(screen);
     home_ui_init(screen);
     bsp_display_brightness_set(50);
@@ -477,6 +479,8 @@ extern "C" void app_main() {
             else if (command==sound_explain_command) sound_explain(boot_id);
             else if (command==motion_media_command) motion_run();
             else if (command==motion_explain_command) motion_explain(boot_id);
+            else if (command==camera_media_command) camera_run();
+            else if (command==camera_explain_command) camera_explain(boot_id);
             else capture_audio(boot_id, true);
             media_idle();
         }

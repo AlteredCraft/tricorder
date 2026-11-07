@@ -18,7 +18,7 @@ The device shows live sensor readings. The person opens an instrument, measures,
 | Path | Contents |
 | --- | --- |
 | `firmware/` | ESP-IDF 5.4.2 app (`main/`): start screen (`home*`), Sound and Motion instruments with header-only analyses (`sound*`, `motion*`), Setup screen, service client (`investigation.cpp`, slated for trimming in #6), SD, Wi-Fi, diagnostics |
-| `tools/` | Mac-side Python: the service (`investigation_service.py`, with `sound_explain.py` and `motion_explain.py` per instrument), serial collector, provisioning, evidence assessors |
+| `tools/` | Mac-side Python: the service (`investigation_service.py`, with `sound_explain.py`, `motion_explain.py` and `camera_explain.py` per instrument), serial collector, provisioning, evidence assessors |
 | `tests/` | Host tests (Python + native C++ under ASan) |
 | `planning/` | Milestones, features, ADRs, fixtures; M-0001 goals/specs as history |
 | `.tools/`, `.local/` | Ignored: toolchains, private runs, captures, backups |

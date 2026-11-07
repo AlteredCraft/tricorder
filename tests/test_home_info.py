@@ -29,11 +29,8 @@ int main() {
         tiles = [record.split('\x1f') for record in output.split('\x1e') if record]
         names = [name for name, _, _ in tiles]
         self.assertEqual(names, ['Sound', 'Motion', 'Camera', 'Power', 'Setup', 'Diagnostics'])
-        # Only the placeholder has no walkthrough.
         for name, _, info in tiles:
-            self.assertEqual(info == '', name == 'Camera', name)
-            if info:
-                self.assertGreater(len(info.split()), 40, name)
+            self.assertGreater(len(info.split()), 40, name)
         # Built-in Montserrat: ASCII, degree sign and bullet only.
         for name, note, info in tiles:
             for text in (name, note, info):
