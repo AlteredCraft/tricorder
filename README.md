@@ -2,7 +2,7 @@
 
 A handheld with a screen, touch and sensors (M5Stack Tab5, ESP32-P4), talking to an LLM that runs locally on a Mac.
 
-The device shows live sensor readings. The person opens an instrument, measures, taps Analysis and then Explain. The Mac, joined to the device's own Wi-Fi hotspot, has a local model (Ollama) read the analysis and speaks the answer back (Pocket TTS). No router, no Internet. Sound and Motion work this way today; Camera and Power are next. Co-developed with OpenAI Codex and Claude Code.
+The device shows live sensor readings. The person opens an instrument, measures, taps Analysis and then Explain. The Mac, joined to the device's own Wi-Fi hotspot, has a local model (Ollama) read the analysis and speaks the answer back (Pocket TTS). No router, no Internet. Sound, Motion and Camera work this way today; Power is next. Co-developed with OpenAI Codex and Claude Code.
 
 ## Start here
 
