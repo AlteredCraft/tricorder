@@ -5,8 +5,6 @@
 #include "diagnostic_events.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
-#include "esp_system.h"
-#include <atomic>
 #include "mbedtls/sha256.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -50,7 +48,6 @@ void provision(const char* json) {
     cJSON_AddStringToObject(event,"result",ok?"pass":"fail");
     cJSON_AddStringToObject(event,"source","usb");diagnostic_emit(event);
 }
-std::atomic<int> interrupt_chunk{-1};
 void console_task(void*) {
     char line[1025]{};size_t used=0;bool overflow=false;
     for(;;) {
@@ -62,27 +59,6 @@ void console_task(void*) {
             if(!overflow && !strcmp(line,"TRICORDER_POWER_STEPS")) {
                 auto* e=diagnostic_event("power_steps_requested");
                 cJSON_AddBoolToObject(e,"accepted",diagnostic_request_power_steps());diagnostic_emit(e);
-            }
-            constexpr const char* set="TRICORDER_SET ";
-            if(!overflow && !strncmp(line,set,strlen(set))) {
-                char name[32]{};int value=-1;
-                const bool scanned=sscanf(line+strlen(set),"%31s %d",name,&value)==2;
-                const bool interrupt=!strcmp(name,"interrupt_archive");
-                const bool parsed=scanned && interrupt && value>=1 && value<=70;
-                auto* e=diagnostic_event("console_set");cJSON_AddStringToObject(e,"name",name);
-                cJSON_AddNumberToObject(e,"value",value);
-                if(parsed) {
-                    // Restart during chunk `value` of the next SD save: a controlled interruption.
-                    interrupt_chunk.store(value);
-                    storage_chunk_hook=[](size_t chunk) {
-                        if(static_cast<int>(chunk)!=interrupt_chunk.load())return;
-                        auto* x=diagnostic_event("storage_interrupt");cJSON_AddNumberToObject(x,"chunk",chunk);diagnostic_emit(x);
-                        vTaskDelay(pdMS_TO_TICKS(50));esp_restart();
-                    };
-                    cJSON_AddBoolToObject(e,"accepted",true);diagnostic_emit(e);
-                    clear(line,sizeof(line));used=0;overflow=false;continue;
-                }
-                cJSON_AddBoolToObject(e,"accepted",false);diagnostic_emit(e);
             }
             clear(line,sizeof(line));used=0;overflow=false;
         } else if(ch!='\r') {
