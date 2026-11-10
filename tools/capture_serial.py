@@ -86,8 +86,7 @@ def main():
                         events.append(event)
                         out.write(json.dumps(event)+'\n')
                         out.flush()
-                        if args.console_command and not console_sent and event['event']=='check' \
-                                and event.get('check')=='storage_http':
+                        if args.console_command and not console_sent and event['event']=='console_ready':
                             command=(args.console_command+'\n').encode()
                             if port.write(command)!=len(command):raise OSError('short console command write')
                             port.flush();console_sent=True

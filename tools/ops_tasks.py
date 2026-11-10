@@ -120,7 +120,7 @@ def provision_plan(root, *, env_file, port, mac_ip, service_port=SERVICE_PORT, w
 
 
 def tcp_reachable(ip, port=80, timeout=3.0):
-    """The Tab5 serves captures over HTTP; a refused or timed-out connect means no route."""
+    """The Tab5 listens on HTTP port 80 (/echo); a refused or timed-out connect means no route."""
     try:
         with socket.create_connection((ip, port), timeout=timeout):
             return True

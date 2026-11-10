@@ -1,5 +1,4 @@
 #include "network.h"
-#include "test_storage.h"
 #include "setup.h"
 #include "service_wire.h"
 #include "diagnostic_events.h"
@@ -93,7 +92,6 @@ void start_server() {
         route.method = HTTP_POST;
         route.handler = echo;
         result = httpd_register_uri_handler(server, &route);
-        test_storage_http(server);
     }
     diagnostic_check("wifi_echo_server", result==ESP_OK ? "pass" : "fail",
                      "Listener startup only; host challenge exchange required.");

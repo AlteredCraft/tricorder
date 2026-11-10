@@ -95,7 +95,7 @@ def main():
                     event = json.loads(line[10:])
                 except (ValueError, UnicodeDecodeError):
                     continue
-                if event.get('event') in {'storage_ready','storage_config','wifi_address','wifi_disconnected','storage_archive','storage_selftest'}:
+                if event.get('event') in {'storage_ready','storage_config','wifi_address','wifi_disconnected'}:
                     events.append(event)
                     print(json.dumps(event), flush=True)
                     if event.get('event') == 'storage_config' and event.get('source') == 'usb':
