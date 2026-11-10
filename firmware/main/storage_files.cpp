@@ -10,12 +10,40 @@
 #include "esp_heap_caps.h"
 #endif
 
+namespace {
+bool parse_known(const cJSON* list,StorageConfig& out) {
+    if(!cJSON_IsArray(list) || cJSON_GetArraySize(list)>storage_known_max)return false;
+    for(auto* entry=list->child;entry;entry=entry->next) {
+        if(!cJSON_IsObject(entry))return false;
+        auto& network=out.known[out.known_count++];unsigned ssids=0,passwords=0;
+        for(auto* item=entry->child;item;item=item->next) {
+            char* dest;size_t capacity;
+            if(!strcmp(item->string,"ssid")){dest=network.ssid;capacity=sizeof(network.ssid);++ssids;}
+            else if(!strcmp(item->string,"password")){dest=network.password;capacity=sizeof(network.password);++passwords;}
+            else return false;
+            if(!cJSON_IsString(item) || strlen(item->valuestring)>=capacity)return false;
+            strcpy(dest,item->valuestring);
+        }
+        if(ssids!=1 || passwords!=1 || !network.ssid[0])return false;
+    }
+    return true;
+}
+}
+
+bool storage_config_equal(const StorageConfig& a,const StorageConfig& b) {
+    bool same=!strcmp(a.ssid,b.ssid) && !strcmp(a.password,b.password) && !strcmp(a.endpoint,b.endpoint) &&
+        a.access_point==b.access_point && a.known_count==b.known_count;
+    for(int i=0;same && i<a.known_count;++i)
+        same=!strcmp(a.known[i].ssid,b.known[i].ssid) && !strcmp(a.known[i].password,b.known[i].password);
+    return same;
+}
+
 bool storage_parse_config(const char* json, StorageConfig& out) {
     out={};
     if(!json || strlen(json)>1000 || strstr(json,"\\u0000"))return false;
     auto* root=cJSON_ParseWithOpts(json,nullptr,true);
     if(!cJSON_IsObject(root)){cJSON_Delete(root);return false;}
-    bool ok=true;unsigned ssids=0,passwords=0,endpoints=0,modes=0;
+    bool ok=true;unsigned ssids=0,passwords=0,endpoints=0,modes=0,knowns=0;
     for(auto* item=root->child;item;item=item->next) {
         char* dest=nullptr;size_t capacity=0;
         if(!strcmp(item->string,"ssid")){dest=out.ssid;capacity=sizeof(out.ssid);++ssids;}
@@ -25,6 +53,10 @@ bool storage_parse_config(const char* json, StorageConfig& out) {
             ++modes;
             if(!cJSON_IsString(item) || (strcmp(item->valuestring,"ap") && strcmp(item->valuestring,"station"))){ok=false;break;}
             out.access_point=!strcmp(item->valuestring,"ap");continue;
+        }
+        else if(!strcmp(item->string,"known")) {
+            if(++knowns>1 || !parse_known(item,out)){ok=false;break;}
+            continue;
         }
         else {ok=false;break;}
         if(!cJSON_IsString(item) || strlen(item->valuestring)>=capacity){ok=false;break;}

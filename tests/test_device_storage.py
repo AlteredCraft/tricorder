@@ -93,6 +93,17 @@ int main(int argc,char** argv) {
  for(auto* s:{R"({"ssid":"x","password":"short","mode":"ap"})",R"({"ssid":"x","password":"eight-chars","mode":"mesh"})",
      R"({"ssid":"x","password":"eight-chars","mode":1})",R"({"ssid":"x","password":"eight-chars","mode":"ap","mode":"ap"})"})
   assert(!storage_parse_config(s,cfg));
+ // Issue #9: up to four known networks beside the primary one.
+ assert(storage_parse_config(R"({"ssid":"Tricorder","password":"eight-chars","mode":"ap","known":[{"ssid":"home","password":"one"},{"ssid":"phone","password":""}]})",cfg));
+ assert(cfg.known_count==2 && !strcmp(cfg.known[0].ssid,"home") && !strcmp(cfg.known[0].password,"one") && !strcmp(cfg.known[1].ssid,"phone"));
+ StorageConfig other{};
+ assert(storage_parse_config(R"({"ssid":"Tricorder","password":"eight-chars","mode":"ap","known":[{"ssid":"home","password":"two"},{"ssid":"phone","password":""}]})",other));
+ assert(!storage_config_equal(cfg,other) && storage_config_equal(cfg,cfg));
+ assert(storage_parse_config(R"({"ssid":"x","password":"","known":[]})",cfg) && cfg.known_count==0);
+ for(auto* s:{R"({"ssid":"x","password":"","known":{}})",R"({"ssid":"x","password":"","known":[{"ssid":"a"}]})",
+     R"({"ssid":"x","password":"","known":[{"ssid":"","password":""}]})",R"({"ssid":"x","password":"","known":[{"ssid":"a","password":"","mode":"ap"}]})",
+     R"({"ssid":"x","password":"","known":[{"ssid":"a","password":""},{"ssid":"b","password":""},{"ssid":"c","password":""},{"ssid":"d","password":""},{"ssid":"e","password":""}]})"})
+  assert(!storage_parse_config(s,cfg));
 }
 ''')
             cjson = Path('.tools/esp-idf/components/json/cJSON')

@@ -26,6 +26,10 @@ std::atomic<bool> hotspot{false};
 portMUX_TYPE name_lock=portMUX_INITIALIZER_UNLOCKED;
 char hotspot_name[33]; // name_lock
 uint8_t peer_mac[6]; // event loop task only
+portMUX_TYPE known_lock=portMUX_INITIALIZER_UNLOCKED;
+StorageNetwork known[storage_known_max]; int known_count; // known_lock
+StorageNetwork saved_hotspot; // known_lock; empty ssid until hotspot mode was provisioned
+lv_obj_t *known_buttons[storage_known_max], *hotspot_button; // LVGL task only
 esp_netif_t* ap_netif;
 struct Credentials { char ssid[33]; char password[64]; bool initialize_only; bool access_point; };
 QueueHandle_t requests;
@@ -156,6 +160,8 @@ void wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
     } else if (base==IP_EVENT && id==IP_EVENT_AP_STAIPASSIGNED) {
         peer_assigned(*static_cast<ip_event_ap_staipassigned_t*>(data));
     } else if (base==WIFI_EVENT && id==WIFI_EVENT_STA_DISCONNECTED) {
+        // Going back to the hotspot disconnects the station; that is not a lost network.
+        if (hotspot.load()) return;
         station_ipv4.store(0);
         auto* disconnected = static_cast<wifi_event_sta_disconnected_t*>(data);
         auto* event = diagnostic_event("wifi_disconnected");
@@ -268,14 +274,21 @@ void network_task(void*) {
 }
 
 void focus(lv_event_t* event) { lv_keyboard_set_textarea(keyboard, static_cast<lv_obj_t*>(lv_event_get_target(event))); }
-constexpr const char* hint_text="Temporary until restart; SD settings reload at boot.";
+constexpr const char* hint_text="Tap a saved network to join it, or type one. Lasts until restart; SD settings reload at boot.";
 void open_panel(lv_event_t*) { network_ui_open(); }
 void close_panel(lv_event_t*) {
     lv_textarea_set_text(password_field, "");
     lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
 }
+void request(Credentials& credentials, const char* progress) {
+    if (xQueueSend(requests, &credentials, 0)==pdTRUE) {
+        lv_label_set_text(status, progress);
+        close_panel(nullptr);
+    }
+    volatile unsigned char* clear = reinterpret_cast<volatile unsigned char*>(&credentials);
+    for (size_t i=0; i<sizeof(credentials); ++i) clear[i]=0;
+}
 void connect_clicked(lv_event_t*) {
-    Credentials credentials{};
     const char* ssid=lv_textarea_get_text(ssid_field);
     const char* password=lv_textarea_get_text(password_field);
     if (!strlen(ssid) || strlen(ssid)>32 || strlen(password)>63) {
@@ -283,14 +296,49 @@ void connect_clicked(lv_event_t*) {
         lv_label_set_text(hint, "Wi-Fi name: 1 to 32 characters. Password: at most 63.");
         return;
     }
+    Credentials credentials{};
     memcpy(credentials.ssid, ssid, strlen(ssid));
     memcpy(credentials.password, password, strlen(password));
-    if (xQueueSend(requests, &credentials, 0)==pdTRUE) {
-        lv_label_set_text(status, "Connecting Wi-Fi...");
-        close_panel(nullptr);
+    request(credentials, "Connecting Wi-Fi...");
+}
+
+void known_clicked(lv_event_t* event) {
+    const auto index = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    Credentials credentials{};
+    portENTER_CRITICAL(&known_lock);
+    const bool found = index<known_count;
+    if (found) {
+        strlcpy(credentials.ssid, known[index].ssid, sizeof(credentials.ssid));
+        strlcpy(credentials.password, known[index].password, sizeof(credentials.password));
     }
-    volatile unsigned char* clear = reinterpret_cast<volatile unsigned char*>(&credentials);
-    for (size_t i=0; i<sizeof(credentials); ++i) clear[i]=0;
+    portEXIT_CRITICAL(&known_lock);
+    if (found) request(credentials, "Connecting Wi-Fi...");
+}
+void hotspot_clicked(lv_event_t*) {
+    Credentials credentials{};
+    portENTER_CRITICAL(&known_lock);
+    strlcpy(credentials.ssid, saved_hotspot.ssid, sizeof(credentials.ssid));
+    strlcpy(credentials.password, saved_hotspot.password, sizeof(credentials.password));
+    portEXIT_CRITICAL(&known_lock);
+    credentials.access_point = true;
+    if (credentials.ssid[0]) request(credentials, "Starting the hotspot...");
+}
+lv_obj_t* saved_button(int slot, lv_event_cb_t callback) {
+    auto* object=lv_button_create(panel);
+    lv_obj_set_size(object, 236, 58);
+    lv_obj_set_pos(object, 24+slot*249, 184);
+    lv_obj_add_event_cb(object, callback, LV_EVENT_CLICKED, reinterpret_cast<void*>(static_cast<intptr_t>(slot)));
+    auto* label=lv_label_create(object);
+    lv_obj_set_width(label, 212);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(label);
+    lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
+    return object;
+}
+void show_saved(lv_obj_t* object, const char* text, bool visible) {
+    if (visible) { lv_label_set_text(lv_obj_get_child(object, 0), text); lv_obj_remove_flag(object, LV_OBJ_FLAG_HIDDEN); }
+    else lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
 }
 
 lv_obj_t* button(lv_obj_t* parent, const char* text, int x, int y, lv_event_cb_t callback) {
@@ -323,6 +371,17 @@ lv_obj_t* dialog_field(int x, const char* placeholder, unsigned max_length) {
 
 void network_ui_open() {
     lv_label_set_text(hint, hint_text);
+    char names[storage_known_max][33]{};
+    portENTER_CRITICAL(&known_lock);
+    const int count = known_count;
+    for (int i=0; i<count; ++i) strlcpy(names[i], known[i].ssid, sizeof(names[i]));
+    const bool can_return = saved_hotspot.ssid[0];
+    portEXIT_CRITICAL(&known_lock);
+    // iPhone hotspot names use a curly apostrophe, which the built-in font lacks.
+    for (int i=0; i<count; ++i)
+        for (char* curly; (curly=strstr(names[i], "\xE2\x80\x99")); ) { *curly='\''; memmove(curly+1, curly+3, strlen(curly+3)+1); }
+    for (int i=0; i<storage_known_max; ++i) show_saved(known_buttons[i], names[i], i<count);
+    show_saved(hotspot_button, "Back to hotspot", can_return && !hotspot.load());
     lv_obj_remove_flag(panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(panel);
 }
@@ -368,9 +427,11 @@ void network_ui_init(lv_obj_t* screen, const char* boot_id) {
     lv_label_set_text(hint,hint_text);
     lv_obj_set_style_text_font(hint,&lv_font_montserrat_22,0);
     lv_obj_set_style_text_color(hint,lv_color_hex(0x90a4ae),0);
-    lv_obj_set_pos(hint,24,184);
+    lv_obj_set_pos(hint,24,252);
+    for (int i=0; i<storage_known_max; ++i) known_buttons[i]=saved_button(i, known_clicked);
+    hotspot_button=saved_button(storage_known_max, hotspot_clicked);
     keyboard=lv_keyboard_create(panel);
-    lv_obj_set_size(keyboard,1232,488); lv_obj_align(keyboard,LV_ALIGN_TOP_LEFT,24,224);
+    lv_obj_set_size(keyboard,1232,424); lv_obj_align(keyboard,LV_ALIGN_TOP_LEFT,24,288);
     lv_obj_set_style_text_font(keyboard,&lv_font_montserrat_28,LV_PART_ITEMS);
     lv_keyboard_set_textarea(keyboard,ssid_field);
     configASSERT(xTaskCreate(network_task,"network",6144,nullptr,5,nullptr)==pdPASS);
@@ -388,6 +449,9 @@ bool network_connect_saved(const char* ssid,const char* password) {
 bool network_start_access_point(const char* ssid,const char* password) {
     if(!ssid || !password || !strlen(ssid) || strlen(ssid)>32 || strlen(password)<8 || strlen(password)>63)return false;
     Credentials credentials{};strcpy(credentials.ssid,ssid);strcpy(credentials.password,password);credentials.access_point=true;
+    portENTER_CRITICAL(&known_lock);
+    strlcpy(saved_hotspot.ssid,ssid,sizeof(saved_hotspot.ssid));strlcpy(saved_hotspot.password,password,sizeof(saved_hotspot.password));
+    portEXIT_CRITICAL(&known_lock);
     bool ok=xQueueSend(requests,&credentials,0)==pdTRUE;
     volatile unsigned char* p=reinterpret_cast<volatile unsigned char*>(&credentials);
     for(size_t i=0;i<sizeof(credentials);++i)p[i]=0;
@@ -397,6 +461,16 @@ bool network_start_access_point(const char* ssid,const char* password) {
 uint32_t network_ipv4() {return station_ipv4.load();}
 uint32_t network_peer_ipv4() {return peer_ipv4.load();}
 bool network_access_point() {return hotspot.load();}
+bool network_hotspot_saved() {
+    portENTER_CRITICAL(&known_lock);const bool saved=saved_hotspot.ssid[0];portEXIT_CRITICAL(&known_lock);
+    return saved;
+}
+void network_set_known(const StorageNetwork* networks,int count) {
+    portENTER_CRITICAL(&known_lock);
+    known_count=count<storage_known_max?count:storage_known_max;
+    for(int i=0;i<known_count;++i)known[i]=networks[i];
+    portEXIT_CRITICAL(&known_lock);
+}
 void network_access_point_name(char* out,size_t size) {
     portENTER_CRITICAL(&name_lock);strlcpy(out,hotspot_name,size);portEXIT_CRITICAL(&name_lock);
 }

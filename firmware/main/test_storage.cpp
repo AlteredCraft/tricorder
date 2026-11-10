@@ -32,6 +32,7 @@ bool load_config(StorageConfig& config) {
     return storage_load_config(root,config);
 }
 bool apply_config(const StorageConfig& config) {
+    network_set_known(config.known,config.known_count);
     // Hotspot mode: the Mac joins the device, and the endpoint follows its lease (network.cpp).
     if(config.access_point)return network_start_access_point(config.ssid,config.password);
     if(config.endpoint[0])setup_set_endpoint(config.endpoint,EndpointSource::Sd);
@@ -41,8 +42,7 @@ void provision(const char* json) {
     StorageConfig config{},existing{};bool ok=storage_parse_config(json,config);
     if(ok && ready.load()) {
         xSemaphoreTake(file_mutex,portMAX_DELAY);
-        const bool same=load_config(existing) && !strcmp(config.ssid,existing.ssid) &&
-            !strcmp(config.password,existing.password) && !strcmp(config.endpoint,existing.endpoint);
+        const bool same=load_config(existing) && storage_config_equal(config,existing);
         ok=same || storage_replace_config(root,json);
         xSemaphoreGive(file_mutex);
     } else ok=false;
@@ -219,7 +219,7 @@ void test_storage_init(const char* boot,bool mounted,bool connect_saved) {
         }
         clear(&config,sizeof(config));
     }
-    configASSERT(xTaskCreate(console_task,"usb_config",6144,nullptr,3,nullptr)==pdPASS);
+    configASSERT(xTaskCreate(console_task,"usb_config",12288,nullptr,3,nullptr)==pdPASS);
 }
 void test_storage_http(httpd_handle_t server) {
     httpd_uri_t route{};route.method=HTTP_GET;route.uri="/test-files";route.handler=list_files;

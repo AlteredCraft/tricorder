@@ -36,14 +36,31 @@ def load_config(path):
     return config
 
 
+def with_known(config, known_paths):
+    """Add the networks the Wi-Fi dialog offers as one-tap joins (issue #9)."""
+    if len(known_paths) > 4:
+        raise ValueError('At most 4 --known networks')
+    known = [load_config(path) for path in known_paths]
+    if any('mode' in network for network in known):
+        raise ValueError('A --known network must be one the device joins, not WIFI_MODE=ap')
+    if known:
+        config = {**config, 'known': known}
+    # The device reads at most 1000 bytes of configuration.
+    if len(json.dumps(config).encode()) > 1000:
+        raise ValueError('Configuration too large for the device; use fewer --known networks')
+    return config
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--env', type=Path, required=True)
     parser.add_argument('--port', required=True)
     parser.add_argument('--endpoint', help='Mac service address; not used in hotspot mode (WIFI_MODE=ap)')
+    parser.add_argument('--known', type=Path, action='append', default=[],
+                        help='env file of another network to offer on the Wi-Fi dialog; repeat for up to 4')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    config = load_config(args.env)
+    config = with_known(load_config(args.env), args.known)
     if args.endpoint:
         config['endpoint'] = args.endpoint
     import serial
@@ -81,7 +98,7 @@ def main():
                 if event.get('event') in {'storage_ready','storage_config','wifi_address','wifi_disconnected','storage_archive','storage_selftest'}:
                     events.append(event)
                     print(json.dumps(event), flush=True)
-                    if event.get('event') == 'storage_config' and sent:
+                    if event.get('event') == 'storage_config' and event.get('source') == 'usb':
                         if event.get('result') != 'pass':
                             raise RuntimeError('Device rejected SD provisioning; check the SD card and configuration format')
                         provisioned = True

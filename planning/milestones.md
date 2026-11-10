@@ -8,7 +8,7 @@
 
 **Retargeted 2026-11-05 (user):** the Investigate tile (guided A/B) is dropped as not compelling to demo. The Sound tile stays. The premise is now the device, its screen, touch and sensors, connected to an LLM running locally on the Mac.
 
-**Active:** Setup copy and known networks ([#9](https://github.com/AlteredCraft/tricorder/issues/9)); then A/B code removal ([#6](https://github.com/AlteredCraft/tricorder/issues/6)).
+**Active:** Setup copy and known networks ([#9](https://github.com/AlteredCraft/tricorder/issues/9), F-0008 built, awaiting its first trial); then A/B code removal ([#6](https://github.com/AlteredCraft/tricorder/issues/6)).
 
 | Feature | Status |
 | --- | --- |
@@ -19,6 +19,7 @@
 | [F-0005 Motion](features/F-0005-motion.md) ([#3](https://github.com/AlteredCraft/tricorder/issues/3)) | Done |
 | [F-0006 Camera](features/F-0006-camera.md) ([#4](https://github.com/AlteredCraft/tricorder/issues/4)) | Done 2026-11-07 |
 | [F-0007 Power](features/F-0007-power.md) ([#5](https://github.com/AlteredCraft/tricorder/issues/5)) | Done 2026-11-09 |
+| [F-0008 Setup copy and known networks](features/F-0008-setup-known-networks.md) ([#9](https://github.com/AlteredCraft/tricorder/issues/9)) | In progress |
 
 
 ## M-0001: Validate the handheld investigation

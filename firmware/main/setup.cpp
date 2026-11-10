@@ -12,7 +12,7 @@ portMUX_TYPE endpoint_lock=portMUX_INITIALIZER_UNLOCKED;
 char endpoint[241]=CONFIG_TRICORDER_INVESTIGATION_ENDPOINT; // endpoint_lock
 EndpointSource source=EndpointSource::Default;unsigned version=1; // endpoint_lock
 // LVGL task only.
-lv_obj_t *panel,*network_label,*audio_label,*address_field,*address_label,*caption_label,*keyboard;
+lv_obj_t *panel,*network_label,*audio_label,*address_field,*address_label,*caption_label,*mode_label,*keyboard;
 unsigned shown_version=0;
 
 struct Stored {char text[sizeof(endpoint)];EndpointSource source;unsigned version;};
@@ -29,10 +29,23 @@ const char* caption(const Stored& s) {
     if(!parsed.parse(s.text))return "Not a valid address; enter ws://Mac-IP:8765/";
     switch(s.source) {
     case EndpointSource::Sd:return "From the SD card at boot";
-    case EndpointSource::Hotspot:return "Set when the Mac joined the hotspot";
+    case EndpointSource::Hotspot:
+        return network_access_point()?"Set when the Mac joined the hotspot":"Left from the hotspot; enter the Mac's address on this network";
     case EndpointSource::Typed:return "Entered here; lasts until restart";
     default:return "Built-in default; the SD card has none";
     }
+}
+const char* mode_copy(bool hotspot) {
+    if(hotspot)return "Hotspot mode: the Mac joins the device's own network, named above. The service address fills in by itself. "
+        "The Mac has no Internet while joined.\n\n"
+        "The other way is Wi-Fi mode: tap Wi-Fi setup to put the device on a network the Mac is also on.";
+    return network_hotspot_saved()?
+        "Wi-Fi mode: the device and the Mac are on the same network. Enter the Mac's address above. "
+        "Cafe and guest networks usually block this; a phone hotspot works.\n\n"
+        "The other way is hotspot mode, where the Mac joins the device's own network: tap Wi-Fi setup, then Back to hotspot.":
+        "Wi-Fi mode: the device and the Mac are on the same network. Enter the Mac's address above. "
+        "Cafe and guest networks usually block this; a phone hotspot works.\n\n"
+        "The other way is hotspot mode, where the Mac joins the device's own network. It is set up over USB.";
 }
 bool editing() {return !lv_obj_has_flag(keyboard,LV_OBJ_FLAG_HIDDEN);}
 void refresh(lv_timer_t*) {
@@ -52,6 +65,7 @@ void refresh(lv_timer_t*) {
     lv_label_set_text(address_label,waiting_for_mac()?"None yet":s.text);
     if(!editing() && s.version!=shown_version){lv_textarea_set_text(address_field,s.text);shown_version=s.version;}
     lv_label_set_text(caption_label,caption(s));
+    lv_label_set_text_static(mode_label,mode_copy(hotspot));
 }
 void commit() {
     if(!editing())return;
@@ -108,6 +122,10 @@ void setup_ui_init(lv_obj_t* screen) {
     for(auto code:{LV_EVENT_FOCUSED,LV_EVENT_CLICKED,LV_EVENT_READY,LV_EVENT_CANCEL})lv_obj_add_event_cb(address_field,field_event,code,nullptr);
     caption_label=text(panel,"",value_x,342,&lv_font_montserrat_28,0x4fc3f7);
     lv_obj_set_width(caption_label,value_w);lv_label_set_long_mode(caption_label,LV_LABEL_LONG_DOT);
+
+    // Created before the keyboard, which covers it while the address is edited.
+    mode_label=text(panel,"",label_x,416,&lv_font_montserrat_28,0xcfd8dc);
+    lv_obj_set_width(mode_label,1184);lv_label_set_long_mode(mode_label,LV_LABEL_LONG_WRAP);
 
     keyboard=lv_keyboard_create(panel);lv_obj_set_pos(keyboard,24,404);lv_obj_set_size(keyboard,1232,308);
     lv_obj_set_style_text_font(keyboard,&lv_font_montserrat_28,LV_PART_ITEMS);
