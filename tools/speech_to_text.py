@@ -1,4 +1,4 @@
-"""Mac-side speech-to-text for the spoken ask (ADR-0013), behind one interface.
+"""Mac-side speech-to-text for voice notes (ADR-0013), behind one interface.
 
 A transcriber has a `name` and `async transcribe(pcm) -> str`, where pcm is
 16 kHz mono s16le question audio. The default engine is local Parakeet TDT v3

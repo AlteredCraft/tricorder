@@ -4,7 +4,7 @@
 #include <cstring>
 #include "cJSON.h"
 
-// Spoken guidance from the Mac (ADR-0014): speech_start, speech_chunk xN,
+// A spoken reply from the Mac (ADR-0014): speech_start, speech_chunk xN,
 // speech_end for one requested reply. Validates each message and decodes its
 // 24 kHz mono s16le audio into a caller-owned buffer; playback reads frames()
 // as they grow. Anything out of order, oversized or malformed is an error.
