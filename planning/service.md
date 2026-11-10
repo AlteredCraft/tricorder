@@ -44,7 +44,7 @@ All `data` is base64 of at most 4096 bytes.
 
 - Device: connect 3 s, each send 10 s, `ready` within 15 s, transcript within 30 s of the upload, reply within 45 s, speech within 90 s.
 - Mac: transcription 10 s (then `failed`), model 30 s, idle close 30 s between messages, or 10 min while a transcript waits for the person or the reply is playing. Ping/pong (10 s + 10 s) detects a dead device.
-- One connection, one explain per session, 32 session directories per `--output`.
+- One connection, one explain per session. Session directories under `--output` are not capped.
 
 ## Provisioning
 

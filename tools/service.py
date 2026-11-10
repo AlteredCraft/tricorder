@@ -387,7 +387,7 @@ class Session:
 OPERATOR_PHASES=('transcribing','await_confirm','complete')
 
 
-async def serve_sessions(host, port, output, *, max_sessions=32, provider=None,
+async def serve_sessions(host, port, output, *, provider=None,
                          idle_s=30, operator_idle_s=600, transcriber=None, speaker=None):
     from websockets.asyncio.server import serve
     from websockets.exceptions import ConnectionClosed
@@ -399,8 +399,8 @@ async def serve_sessions(host, port, output, *, max_sessions=32, provider=None,
         peer=socket.remote_address[0] if socket.remote_address else None
         if not peer_allowed(peer):
             await socket.close(code=1008,reason='private network only');return
-        if active or sum(1 for _ in output.iterdir())>=max_sessions:
-            await socket.close(code=1013,reason='session capacity');return
+        if active:
+            await socket.close(code=1013,reason='one device at a time');return
         active=True
         async def send(message):
             await asyncio.wait_for(socket.send(json.dumps(message,allow_nan=False)),timeout=2)
