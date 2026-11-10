@@ -47,6 +47,11 @@ def provider_settings(provider, model=None, base_url=None):
     if model:
         settings['model'] = model
     return settings
+
+
+# Per instrument: validate_analysis, explain_evidence, INSTRUCTIONS, mock_text, checked_text.
+EXPLAINERS = {'sound': sound_explain, 'motion': motion_explain, 'power': power_explain,
+              'camera': camera_explain}
 # hello, the photo's chunks, analysis_explain, speak and speech_stop.
 MAX_MESSAGES = -(-camera_explain.MAX_PHOTO_BYTES//camera_explain.CHUNK_BYTES)+8
 EXPLAIN_TIMEOUT_S = 30
@@ -92,19 +97,17 @@ class Session:
         self.transcriber=transcriber
         self.transcribe_timeout_s=10
         self.archive=self.task=None
-        self.phase='new'
-        self.requests=set()
+        self.phase='new' # ready until the one analysis_explain, then pending, then complete
         self.photos={} # request_id -> JPEG bytes arriving in photo_chunk messages
         self.messages=0
         # Voice note (ADR-0013): its own IDs, store and message budget.
         self.question_store=self.heard=self.operator_question=None
         self.question_ids=[]
         self.question_messages=0
-        # Spoken reply: the checked text of the explanation, spoken once on request.
+        # Spoken reply: the reply's (request_id, checked text), spoken once on request.
         self.speaker=speaker
-        self.replies={}
-        self.acknowledged=self.speaking=self.speech_task=None
-        self.spoken=set()
+        self.reply=self.speech_task=None
+        self.spoken=self.speaking=False
         self.speech_stop=asyncio.Event()
         self.closed=False
 
@@ -150,7 +153,7 @@ class Session:
         # Never log media/base64. Voice notes, photos and speech are saved beside the transcript.
         if kind not in ('question_chunk','photo_chunk'):self.archive.record({'direction':'in','payload':message})
         # While a reply is being spoken the device may only stop it.
-        require(self.speaking is None or kind=='speech_stop','speech in progress')
+        require(not self.speaking or kind=='speech_stop','speech in progress')
         if kind in ('speak','speech_stop'):
             await self.speech(kind,message)
             return
@@ -159,7 +162,7 @@ class Session:
             await self.question(kind,message)
         elif kind=='photo_chunk':
             # Camera: the photo for the analysis_explain that follows, in order.
-            require(self.phase=='ready' and not self.requests,'photo only before its explain')
+            require(self.phase=='ready','photo only before its explain')
             request_id=identity(message['request_id'])
             require(not self.photos or request_id in self.photos,'photo request')
             buffer=self.photos.setdefault(request_id,bytearray())
@@ -174,35 +177,33 @@ class Session:
         elif kind=='analysis_explain':
             # A sound, motion or power session analysed on the device, or a photo, explained
             # once per session. A missing kind is sound.
-            require(self.phase=='ready' and not self.requests,'explain only once')
+            require(self.phase=='ready','explain only once')
             request_id=identity(message['request_id'])
             analysis=message['analysis']
             require(isinstance(analysis,dict),'analysis fields')
-            kind=analysis.get('kind','sound')
-            photo=None
-            if kind=='motion':
-                analysis=motion_explain.validate_analysis(analysis)
-            elif kind=='power':
-                analysis=power_explain.validate_analysis(analysis)
-            elif kind=='camera':
-                analysis=camera_explain.validate_analysis(analysis)
+            instrument=analysis.get('kind','sound')
+            require(instrument in EXPLAINERS,'unknown analysis kind')
+            if instrument=='sound':analysis={k:v for k,v in analysis.items() if k!='kind'}
+            analysis=EXPLAINERS[instrument].validate_analysis(analysis)
+            if instrument=='camera':
                 photo=bytes(self.photos.pop(request_id,b''))
                 camera_explain.check_photo(analysis,photo)
                 folder=self.archive.root/'photos';folder.mkdir(exist_ok=True)
                 (folder/f'{request_id}.jpg').write_bytes(photo)
+                evidence=camera_explain.explain_evidence(analysis,photo)
+            elif instrument=='sound':
+                evidence=sound_explain.explain_evidence(analysis,self.operator_question)
             else:
-                require(kind=='sound','unknown analysis kind')
-                analysis=sound_explain.validate_analysis({k:v for k,v in analysis.items() if k!='kind'})
+                evidence=EXPLAINERS[instrument].explain_evidence(analysis)
             require(not self.photos,'photo without its explain')
-            self.archive.record({'type':f'{kind}_analysis','request_id':request_id,'analysis':analysis})
-            self.requests.add(request_id)
+            self.archive.record({'type':f'{instrument}_analysis','request_id':request_id,'analysis':analysis})
             self.phase='pending'
-            self.task=asyncio.create_task(self.explain(request_id,kind,analysis,photo))
+            self.task=asyncio.create_task(self.explain(request_id,EXPLAINERS[instrument],evidence))
 
     async def question(self, kind, message):
         if kind=='question_start':
             require(self.transcriber is not None,'speech-to-text unavailable')
-            require(self.phase=='ready' and not self.requests,'voice note only before the explain')
+            require(self.phase=='ready','voice note only before the explain')
             require(len(self.question_ids)<MAX_QUESTIONS,'question capacity')
             meta=message['metadata']
             require(isinstance(meta,dict) and set(meta)==QUESTION_FIELDS,'question metadata fields')
@@ -283,12 +284,7 @@ class Session:
         await self.emit(self.envelope('transcript',question_id=key,status=status,text=text,
                                       speech_to_noise_db=None if level is None else round(level,1)))
 
-    async def explain(self, key, kind, analysis, photo=None):
-        module={'motion':motion_explain,'camera':camera_explain,'power':power_explain}.get(kind,sound_explain)
-        evidence=(motion_explain.explain_evidence(analysis) if kind=='motion'
-                  else power_explain.explain_evidence(analysis) if kind=='power'
-                  else camera_explain.explain_evidence(analysis,photo) if kind=='camera'
-                  else sound_explain.explain_evidence(analysis,self.operator_question))
+    async def explain(self, key, module, evidence):
         try:
             async with asyncio.timeout(EXPLAIN_TIMEOUT_S):
                 started=time.monotonic_ns()
@@ -300,8 +296,7 @@ class Session:
                     'finished_host_ns':time.monotonic_ns()})
             if self.phase!='pending':return
             self.phase='complete'
-            self.acknowledged=key
-            self.replies[key]=text
+            self.reply=(key,text)
             self.archive.record({'type':'analysis_reply','request_id':key,'text':text})
             await self.emit(self.envelope('analysis_reply',request_id=key,text=text))
         except asyncio.CancelledError:
@@ -315,16 +310,13 @@ class Session:
         key=message['request_id']
         if kind=='speech_stop':
             # A stop can cross an end already in flight; only a never-spoken reply is an error.
-            require(key in self.spoken,'no speech to stop')
-            if self.speaking==key:self.speech_stop.set()
+            require(self.spoken and key==self.reply[0],'no speech to stop')
+            if self.speaking:self.speech_stop.set()
             return
         require(self.speaker is not None,'speech output unavailable')
-        require(self.phase=='complete' and key==self.acknowledged and key not in self.spoken,
-                'speak needs the reply, once')
-        self.spoken.add(key)
-        self.speaking=key
-        self.speech_stop=asyncio.Event()
-        self.speech_task=asyncio.create_task(self.speak(key,self.replies[key]))
+        require(self.phase=='complete' and key==self.reply[0] and not self.spoken,'speak needs the reply, once')
+        self.spoken=self.speaking=True
+        self.speech_task=asyncio.create_task(self.speak(*self.reply))
 
     async def speak(self, key, text):
         """Stream the checked text, verbatim, as it is synthesized. Chunks go straight to the
@@ -362,7 +354,7 @@ class Session:
                 with wave.open(str(self.archive.root/'speech'/f'{key}.wav'),'wb') as stream:
                     stream.setnchannels(1);stream.setsampwidth(2);stream.setframerate(SPEECH_RATE_HZ)
                     stream.writeframes(bytes(audio[:frames*2]))
-            self.speaking=None
+            self.speaking=False
         self.archive.record({'type':'speech_output','request_id':key,'speaker':self.speaker.name,'status':status,
                              'reason':reason,'frames':frames,'started_host_ns':started,
                              'first_chunk_host_ns':first,'finished_host_ns':time.monotonic_ns()})
