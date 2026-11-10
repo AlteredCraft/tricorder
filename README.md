@@ -25,7 +25,18 @@ The device shows live sensor readings. The person opens an instrument, measures,
 
 ## Development
 
-Requires Git, `uv` and Python 3.
+Requires Git, `uv` and Python 3. `make` lists the common tasks:
+
+```sh
+make bootstrap                 # pinned vendor sources + ESP32-P4 toolchain
+make test                      # host tests (creates .tools/investigation-env)
+make flash                     # build and flash; finds the Tab5 by its USB serial, or PORT=...
+make service                   # Mac service, local provider (installs speech deps on first run)
+make provision ENV=.env.local.tricorder-ap ARGS="--known .env.local.home"
+make capture RUN=20261110-topic DURATION=360
+```
+
+Make only reads `PORT`, `ENV`, `RUN`, `ARGS`, `PROVIDER` and `DURATION` from its own command line, never from your shell. The commands underneath:
 
 ```sh
 python3 tools/bootstrap.py                     # pinned vendor sources + ESP32-P4 toolchain
