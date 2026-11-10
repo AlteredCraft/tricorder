@@ -6,7 +6,7 @@ Status: Active · Decided: 2026-09-22 · Revised: 2026-09-24 (prose numbers chec
 
 - The Mac verifies raw captures and computes every measurement and comparison. The text model gets only verified summaries plus fixture and operator context, never raw captures, network configuration or credentials.
 - The model returns bounded prose and the exact ordered capture IDs through strict structured output. The host rejects anything else and builds every numeric, identity and deadline field itself.
-- **Prose may not state a measurement the host didn't supply.** A number with a unit (dB, dBFS, Hz, kHz, counts) must match a host value of that unit, allowing rounding and ignoring sign, or the reply is rejected (`unbacked_numbers` in `tools/investigation.py`). Unitless numbers, such as distances in advice, are unchecked.
+- **Prose may not state a measurement the host didn't supply.** A number with a unit (dB, dBFS, Hz, kHz, counts) must match a host value of that unit, allowing rounding and ignoring sign, or the reply is rejected (`unbacked_numbers` in `tools/service_protocol.py`). Unitless numbers, such as distances in advice, are unchecked.
 - No automatic retries. A provider failure or rejection fails the turn visibly, never falling back to the mock. The key stays in a Mac-local file.
 - Provider and model are configuration (`--provider`, `--model`, `--env`); the current choice and timing are in the spec.
 - Audio sent to a speech provider is decided separately.

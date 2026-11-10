@@ -1,4 +1,4 @@
-"""Spoken ask (G-0002.01 Open 1): question audio, speech-to-noise and operator question."""
+"""Voice note: question audio and its speech-to-noise level."""
 import hashlib
 import math
 import random
@@ -6,9 +6,7 @@ import struct
 import sys
 import unittest
 
-from tools.investigation import (Investigation, MockProvider, ProtocolError, QuestionAudio,
-                                 speech_to_noise, validate_request)
-from test_investigation import captured, fixture
+from tools.service_protocol import ProtocolError, QuestionAudio, speech_to_noise
 
 
 def question(identity='session-q1', samples=None, **changes):
@@ -99,41 +97,6 @@ class SpeechToNoiseTests(unittest.TestCase):
         result = speech_to_noise(samples)
         self.assertEqual(result['clipped_samples'], 1)
         self.assertEqual(result['peak_counts'], 32767)
-
-
-class OperatorQuestionTests(unittest.TestCase):
-    def test_confirmed_question_reaches_requests_as_operator_context(self):
-        flow = Investigation('boot', 'session', fixture())
-        flow.ask()
-        flow.question('Is the fan louder near the wall?')
-        flow.start_capture()
-        request = flow.finish_capture(captured())
-        self.assertEqual(request['operator_question'], 'Is the fan louder near the wall?')
-        self.assertEqual(request['fixture'], fixture().to_dict())
-        reply = MockProvider().respond(request)
-        self.assertIn('Is the fan louder near the wall?', reply['text'])
-
-    def test_question_only_before_record_a_and_bounded(self):
-        flow = Investigation('boot', 'session', fixture())
-        with self.assertRaises(ProtocolError):
-            flow.question('Too early')
-        flow.ask()
-        for bad in ('', ' ', 'x' * 513, None):
-            with self.subTest(bad=bad), self.assertRaises(ProtocolError):
-                flow.question(bad)
-        flow.start_capture()
-        with self.assertRaises(ProtocolError):
-            flow.question('Too late')
-
-    def test_request_without_question_stays_valid_and_bad_question_rejected(self):
-        flow = Investigation('boot', 'session', fixture())
-        flow.ask(); flow.start_capture()
-        request = flow.finish_capture(captured())
-        self.assertIsNone(request['operator_question'])
-        validate_request(request)
-        for bad in (7, '', 'x' * 513):
-            with self.subTest(bad=bad), self.assertRaises(ProtocolError):
-                validate_request({**request, 'operator_question': bad})
 
 
 class TranscriberSeamTests(unittest.TestCase):

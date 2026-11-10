@@ -1,5 +1,5 @@
 #include "storage_files.h"
-#include "investigation_wire.h"
+#include "service_wire.h"
 #include "cJSON.h"
 #include <cstring>
 #include <string>
@@ -62,7 +62,7 @@ bool storage_parse_config(const char* json, StorageConfig& out) {
         if(!cJSON_IsString(item) || strlen(item->valuestring)>=capacity){ok=false;break;}
         strcpy(dest,item->valuestring);
     }
-    InvestigationEndpoint endpoint;
+    ServiceEndpoint endpoint;
     ok=ok && ssids==1 && passwords==1 && endpoints<=1 && modes<=1 && out.ssid[0] &&
         (!out.endpoint[0] || endpoint.parse(out.endpoint)) &&
         (!out.access_point || strlen(out.password)>=8); // WPA2 minimum

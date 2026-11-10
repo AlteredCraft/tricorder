@@ -7,12 +7,11 @@ import unittest
 
 from tools.camera_explain import (CHUNK_BYTES, QUESTION, check_photo, checked_text, explain_evidence,
                                   validate_analysis)
-from tools.investigation import ProtocolError
-from tools.investigation_service import MockSession
-from test_investigation import fixture
+from tools.service_protocol import ProtocolError
+from tools.service import Session
 from test_sound_explain import RecordingExplainer
-import test_spoken_ask_service as spoken
-from test_spoken_guidance import FakeSpeaker
+import test_service as spoken
+from test_service import FakeSpeaker
 
 PHOTO = b'\xff\xd8\xff\xe0' + bytes(range(256))*40
 
@@ -48,8 +47,8 @@ class CameraExplainTests(unittest.TestCase):
 
 
 class CameraExplainServiceTests(unittest.IsolatedAsyncioTestCase):
-    send = spoken.SpokenAskServiceTests.send
-    asyncTearDown = spoken.SpokenAskServiceTests.asyncTearDown
+    send = spoken.SessionCase.send
+    asyncTearDown = spoken.SessionCase.asyncTearDown
 
     async def asyncSetUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -58,9 +57,9 @@ class CameraExplainServiceTests(unittest.IsolatedAsyncioTestCase):
         self.provider = RecordingExplainer()
         self.sent = []
         async def send(message): self.sent.append(message)
-        self.service = MockSession(self.root / 'run', send, provider=self.provider,
+        self.service = Session(self.root / 'run', send, provider=self.provider,
                                    transcriber=spoken.FakeTranscriber('unused'), speaker=FakeSpeaker(seconds=0.2))
-        await self.send('hello', fixture=fixture().to_dict())
+        await self.send('hello')
 
     async def upload(self, photo=PHOTO, request_id='explain-1'):
         for offset in range(0, len(photo), CHUNK_BYTES):

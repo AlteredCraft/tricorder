@@ -1,17 +1,10 @@
 #pragma once
 #include <cstring>
 #include <cstddef>
-#include <initializer_list>
 
-inline bool investigation_replay_session(const char* id) {
-    if(!id || strlen(id)!=35 || strncmp(id,"ab-",3))return false;
-    for(const char* p=id+3;*p;++p)if(!((*p>='0' && *p<='9') || (*p>='a' && *p<='f')))return false;
-    return true;
-}
-
-// Experiment LAN endpoint only; explicit ws://host:port/path, no credentials,
-// query, fragments or IPv6. Nothing is persisted and no cloud keys reach device.
-struct InvestigationEndpoint {
+// The Mac service address: explicit ws://host:port/path, no credentials, query,
+// fragments or IPv6. No cloud keys reach the device.
+struct ServiceEndpoint {
     char host[97]{},path[129]{};
     int port=0;
     bool parse(const char* uri) {
@@ -33,9 +26,9 @@ struct InvestigationEndpoint {
 // Input is one esp_transport_read payload segment. Control frames are handled
 // by the transport and never passed here. Supports split reads and continuation
 // frames without allocating from lengths supplied by the peer.
-class InvestigationFrames {
+class ServiceFrames {
 public:
-    explicit InvestigationFrames(char* storage):data_(storage) {reset();}
+    explicit ServiceFrames(char* storage):data_(storage) {reset();}
     void reset() {used_=remaining_=0;fragmented_=false;done_=false;data_[0]=0;}
     int append(int opcode,int payload,bool fin,const char* bytes,size_t size) {
         if(done_ || payload<=0 || payload>32768 || !size)return -1;

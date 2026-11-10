@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 // Sound instrument (F-0001 T2): display-only level, peak hold and the sliding
-// FFT window. Host-testable; the measurement path stays in investigation_capture.
+// FFT window. Host-testable.
 namespace sound {
 constexpr float level_floor_db=-100;
 // RMS of one slot of interleaved PCM16, in dB relative to full scale (32767).

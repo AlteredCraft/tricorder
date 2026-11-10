@@ -4,7 +4,7 @@
 #include "jpeg_guard.h"
 #include "diagnostic_events.h"
 #include "home.h"
-#include "investigation.h"
+#include "service_client.h"
 #include "bsp/m5stack_tab5.h"
 #include "driver/jpeg_encode.h"
 #include "esp_heap_caps.h"
@@ -71,7 +71,7 @@ void draw(lv_timer_t*) {
 void photo_clicked(lv_event_t*) {
     const int state=photo_state.load();
     if(state==Ready || state==Failed) {
-        investigation_stop_speech();log_control("retake");camera_ui_open();return;
+        service_stop_speech();log_control("retake");camera_ui_open();return;
     }
     if(state!=NoPhoto || !view_frames)return;
     photo_state.store(Taking);photo_drawn=Taking;photo_requested.store(true);
@@ -80,14 +80,14 @@ void photo_clicked(lv_event_t*) {
 }
 // Explain: while the agent answers or speaks, the button stops the voice.
 void explain_clicked(lv_event_t*) {
-    if(explaining.load()){investigation_stop_speech();log_control("explain_stop_voice");return;}
+    if(explaining.load()){service_stop_speech();log_control("explain_stop_voice");return;}
     if(photo_state.load()!=Ready)return;
     explaining.store(true);lv_label_set_text(explain_label,"Stop voice");
     lv_obj_add_state(photo_button,LV_STATE_DISABLED);
     log_control("explain");send_media(camera_explain_command);
 }
 void back(lv_event_t*) {
-    stop.store(true);investigation_stop_speech();
+    stop.store(true);service_stop_speech();
     lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);log_control("back");home_returned("camera");
 }
 lv_obj_t* text(lv_obj_t* parent,const char* value,int x,int y,const lv_font_t* font,uint32_t color) {
@@ -247,7 +247,7 @@ void camera_explain(const char* boot) {
     AnalysisExplainHooks hooks{explain_progress};
     AnalysisExplainResult out;
     const bool ok=photo_state.load()==Ready &&
-        investigation_explain_analysis(boot,session,nullptr,photo_summary(),hooks,out,photo_jpeg,photo_jpeg_size);
+        service_explain_analysis(boot,session,nullptr,photo_summary(),hooks,out,photo_jpeg,photo_jpeg_size);
     explaining.store(false);
     restore_buttons(ok?"Tap Explain to ask again, or Retake for another photo.":out.error.empty()?"Take a photo first.":out.error.c_str());
 }

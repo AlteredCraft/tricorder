@@ -1,9 +1,7 @@
 #include "test_storage.h"
 #include "storage_files.h"
 #include "network.h"
-#include "investigation.h"
 #include "setup.h"
-#include "investigation_capture.h"
 #include "diagnostic_events.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
@@ -61,11 +59,6 @@ void console_task(void*) {
         if(ch=='\n') {
             constexpr const char* prefix="TRICORDER_CONFIG ";
             if(!overflow && !strncmp(line,prefix,strlen(prefix)))provision(line+strlen(prefix));
-            constexpr const char* replay="TRICORDER_REPLAY ";
-            if(!overflow && !strncmp(line,replay,strlen(replay))) {
-                bool accepted=investigation_request_replay(line+strlen(replay));
-                auto* e=diagnostic_event("replay_requested");cJSON_AddBoolToObject(e,"accepted",accepted);diagnostic_emit(e);
-            }
             if(!overflow && !strcmp(line,"TRICORDER_POWER_STEPS")) {
                 auto* e=diagnostic_event("power_steps_requested");
                 cJSON_AddBoolToObject(e,"accepted",diagnostic_request_power_steps());diagnostic_emit(e);
@@ -75,10 +68,10 @@ void console_task(void*) {
                 char name[32]{};int value=-1;
                 const bool scanned=sscanf(line+strlen(set),"%31s %d",name,&value)==2;
                 const bool interrupt=!strcmp(name,"interrupt_archive");
-                const bool parsed=scanned && (interrupt?(value>=1 && value<=70):(value==0 || value==1));
+                const bool parsed=scanned && interrupt && value>=1 && value<=70;
                 auto* e=diagnostic_event("console_set");cJSON_AddStringToObject(e,"name",name);
                 cJSON_AddNumberToObject(e,"value",value);
-                if(parsed && interrupt) {
+                if(parsed) {
                     // Restart during chunk `value` of the next SD save: a controlled interruption.
                     interrupt_chunk.store(value);
                     storage_chunk_hook=[](size_t chunk) {
@@ -89,14 +82,7 @@ void console_task(void*) {
                     cJSON_AddBoolToObject(e,"accepted",true);diagnostic_emit(e);
                     clear(line,sizeof(line));used=0;overflow=false;continue;
                 }
-                cJSON_AddBoolToObject(e,"accepted",parsed && investigation_set(name,value==1));diagnostic_emit(e);
-            }
-            constexpr const char* tap="TRICORDER_TAP ";
-            if(!overflow && !strncmp(line,tap,strlen(tap))) {
-                const int64_t tapped=esp_timer_get_time();
-                const bool accepted=investigation_tap(line+strlen(tap));
-                auto* e=diagnostic_event("console_tap");cJSON_AddStringToObject(e,"button",line+strlen(tap));
-                cJSON_AddBoolToObject(e,"accepted",accepted);cJSON_AddNumberToObject(e,"tap_us",tapped);diagnostic_emit(e);
+                cJSON_AddBoolToObject(e,"accepted",false);diagnostic_emit(e);
             }
             clear(line,sizeof(line));used=0;overflow=false;
         } else if(ch!='\r') {
@@ -155,12 +141,6 @@ void resources(const char* id,const char* phase) {
     diagnostic_emit(event);
 }
 }
-bool test_storage_load_capture(const char* id,InvestigationCapture& output) {
-    if(!ready.load() || !id || !storage_public_name((std::string(id)+".raw").c_str()))return false;
-    xSemaphoreTake(file_mutex,portMAX_DELAY);
-    bool ok=investigation_load_capture((std::string(captures)+"/"+id).c_str(),id,output);
-    xSemaphoreGive(file_mutex);return ok;
-}
 bool test_storage_archive(const unsigned char* bytes,size_t size,const cJSON* metadata) {
     if(!ready.load())return false;
     auto* id=cJSON_GetObjectItemCaseSensitive(metadata,"capture_id");
@@ -196,7 +176,7 @@ void test_storage_init(const char* boot,bool mounted,bool connect_saved) {
     ready.store(mounted && directory(root) && directory(captures));
     auto* event=diagnostic_event("storage_ready");cJSON_AddBoolToObject(event,"mounted",ready.load());diagnostic_emit(event);
     if(ready.load()) {
-        // Exercise a full A/B-sized file without starting sensors.
+        // Exercise a 1.15 MB file (one 3 s four-slot recording) without starting sensors.
         constexpr size_t size=1152000;
         auto* data=static_cast<unsigned char*>(heap_caps_malloc(size,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
         bool ok=false;

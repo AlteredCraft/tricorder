@@ -7,7 +7,7 @@ the prose check is the device font and length only.
 """
 import hashlib
 
-from tools.investigation import MAX_TEXT, bounded_text, device_text, integer, require
+from tools.service_protocol import MAX_TEXT, bounded_text, device_text, integer, require
 
 MAX_PHOTO_BYTES = 512*1024
 CHUNK_BYTES = 4096

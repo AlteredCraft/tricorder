@@ -4,13 +4,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from tools.investigation import ProtocolError
-from tools.investigation_service import MockSession
+from tools.service_protocol import ProtocolError
+from tools.service import Session
 from tools.power_explain import checked_text, explain_evidence, validate_analysis
-from test_investigation import fixture
 from test_sound_explain import RecordingExplainer
-import test_spoken_ask_service as spoken
-from test_spoken_guidance import FakeSpeaker
+import test_service as spoken
+from test_service import FakeSpeaker
 
 
 def summary(**changes):
@@ -74,8 +73,8 @@ class ValidatePowerAnalysisTests(unittest.TestCase):
 
 
 class PowerExplainServiceTests(unittest.IsolatedAsyncioTestCase):
-    send = spoken.SpokenAskServiceTests.send
-    asyncTearDown = spoken.SpokenAskServiceTests.asyncTearDown
+    send = spoken.SessionCase.send
+    asyncTearDown = spoken.SessionCase.asyncTearDown
 
     async def asyncSetUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -84,9 +83,9 @@ class PowerExplainServiceTests(unittest.IsolatedAsyncioTestCase):
         self.provider = RecordingExplainer()
         self.sent = []
         async def send(message): self.sent.append(message)
-        self.service = MockSession(self.root / 'run', send, provider=self.provider,
+        self.service = Session(self.root / 'run', send, provider=self.provider,
                                    transcriber=spoken.FakeTranscriber('unused'), speaker=FakeSpeaker(seconds=0.2))
-        await self.send('hello', fixture=fixture().to_dict())
+        await self.send('hello')
 
     async def explain(self, value):
         await self.send('analysis_explain', request_id='explain-1', analysis=deepcopy(value))

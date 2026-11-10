@@ -1,6 +1,6 @@
 # Resource ownership (G-0001.01 C4)
 
-One owner per resource, from the init code. Audited 2026-09-25 at `e87cb9c`. "Media owner" is the `app_main` task (core 0): every codec, camera, IMU and INA226 user runs on it. The rule was only in comments (`audio_devices.h`, `investigation.cpp`); nothing checks it at run time.
+One owner per resource, from the init code. Audited 2026-09-25 at `e87cb9c`. "Media owner" is the `app_main` task (core 0): every codec, camera, IMU and INA226 user runs on it. The rule was only in comments (`audio_devices.h`, `service_client.cpp`); nothing checks it at run time. Rows updated 2026-11-10 when the A/B code was removed (#6).
 
 | Resource | Initialized | Owner | Once? |
 | --- | --- | --- | --- |
@@ -15,15 +15,14 @@ One owner per resource, from the init code. Audited 2026-09-25 at `e87cb9c`. "Me
 | SD card + FAT | `diagnostic.cpp` `bsp_sdcard_init` | media owner writes; HTTP and USB-console tasks read/replace under `file_mutex` | yes |
 | esp_video registration | `media.cpp` `video_init_once` | media owner | yes |
 | ISP auto-exposure task | vendor `esp_video_init` (`esp_video_isp_pipeline.c`) | its own task, for the whole boot; logs "failed to receive video frame" every 2 s with no stream open | yes |
-| CSI / ISP stream | STREAMON/STREAMOFF per `VideoSession` | media owner (diagnostic run, context photo) | paired |
+| CSI / ISP stream | STREAMON/STREAMOFF per `VideoSession` | media owner (diagnostic run, Camera instrument) | paired |
 | JPEG encoder + worker | `jpeg_pipeline.cpp` | camera baseline only | paired |
 | I2S TX/RX | first codec init (BSP, guarded); RX callback wrap in `audio_ingress.cpp` | media owner | yes |
 | ES8388 speaker / ES7210 mic | `audio_devices.cpp` statics | media owner | yes |
-| Codec open/close | captures, questions, speech, baselines | media owner, one use at a time | paired, including after a failed open (below) |
+| Codec open/close | Sound instrument, voice notes, speech, baselines | media owner, one use at a time | paired, including after a failed open (below) |
 | esp_hosted, NVS, netif, event loop, Wi-Fi | `network.cpp` on the network task, guarded | network task | yes |
 | HTTP server | `network.cpp` | event-loop task | yes |
-| Per-session socket, protocol | `run_investigation` | media owner | paired |
-| Context image buffer, `draw_live` and UI-probe timers | `investigation_ui_init` | LVGL (display lock) | yes |
+| Per-session socket, protocol | `service_explain_analysis` | media owner | paired |
 
 ## Found and fixed
 

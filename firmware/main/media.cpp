@@ -4,7 +4,6 @@
 #include "audio_devices.h"
 #include "camera_baseline.h"
 #include "camera_ingress.h"
-#include "image_downsample.h"
 #include "speech_filter.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
@@ -77,7 +76,7 @@ struct VideoSession {
 };
 
 // esp_video registers its devices once per boot; the diagnostic run and the
-// Guided A/B context shot share that registration.
+// Camera instrument share that registration.
 static bool video_init_once() {
     static bool initialized=false;
     if (initialized) return true;
@@ -163,59 +162,6 @@ bool camera_stream(const std::atomic<bool>& stop,CameraFrameSink sink,void* user
     diagnostic_emit(e);
     if (dequeue_errors>=5) return fail("frame dequeue failed");
     return true;
-}
-
-bool camera_context_shot(uint16_t* output,size_t output_bytes,unsigned output_width,unsigned output_height,
-                         CameraContextShot& shot) {
-    shot={};
-    const int64_t started=esp_timer_get_time();
-    auto finish=[&](const char* error) {
-        shot.duration_us=esp_timer_get_time()-started;
-        auto* e=diagnostic_event("investigation_context_shot");
-        cJSON_AddBoolToObject(e,"ok",!error);
-        if (error) cJSON_AddStringToObject(e,"error",error);
-        cJSON_AddNumberToObject(e,"source_width",shot.source_width);
-        cJSON_AddNumberToObject(e,"source_height",shot.source_height);
-        cJSON_AddNumberToObject(e,"settle_frames",shot.settle_frames);
-        cJSON_AddNumberToObject(e,"completion_sequence",shot.sequence);
-        cJSON_AddNumberToObject(e,"completion_device_us",shot.finished_us);
-        cJSON_AddNumberToObject(e,"mean_luma",shot.luma);
-        cJSON_AddNumberToObject(e,"duration_us",shot.duration_us);
-        diagnostic_emit(e);
-        return !error;
-    };
-    if (!video_init_once()) return finish("esp_video_init failed");
-    VideoSession video;v4l2_format format{};
-    if (const char* error=open_rgb565(video,format)) return finish(error);
-    shot.source_width=format.fmt.pix.width;shot.source_height=format.fmt.pix.height;
-    const unsigned factor=output_width ? shot.source_width/output_width : 0;
-    if (!factor || shot.source_width!=output_width*factor || shot.source_height!=output_height*factor)
-        return finish("source is not an integer multiple of the context size");
-    const size_t frame_bytes=size_t(shot.source_width)*shot.source_height*2;
-    configure_camera_ingress(frame_bytes);
-    int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    if (ioctl(video.fd, VIDIOC_STREAMON, &type)) return finish("start video stream failed");
-    video.streaming = true;
-    auto dequeue=[&](v4l2_buffer& buffer) {
-        buffer={};buffer.type=V4L2_BUF_TYPE_VIDEO_CAPTURE;buffer.memory=V4L2_MEMORY_MMAP;
-        return ioctl(video.fd,VIDIOC_DQBUF,&buffer)==0 && buffer.index<camera_capture_buffer_count
-            && buffer.bytesused==frame_bytes && buffer.bytesused<=video.lengths[buffer.index];
-    };
-    // Discard frames while auto exposure settles (about 0.5 s at 30 fps).
-    v4l2_buffer buffer{};
-    for (;shot.settle_frames<camera_context_settle_frames;++shot.settle_frames)
-        if (!dequeue(buffer) || ioctl(video.fd,VIDIOC_QBUF,&buffer)) return finish("settling frame failed");
-    if (!dequeue(buffer)) return finish("context frame failed");
-    // The dequeued buffer stays owned until STREAMOFF in ~VideoSession.
-    CameraFrameEvidence evidence;
-    if (camera_frame_evidence(video.buffers[buffer.index],evidence)) {
-        shot.sequence=evidence.sequence;shot.finished_us=evidence.finished_us;
-    }
-    if (!rgb565_downsample(reinterpret_cast<const uint16_t*>(video.buffers[buffer.index]),frame_bytes,
-                           shot.source_width,shot.source_height,factor,output,output_bytes))
-        return finish("downsample failed");
-    shot.luma=rgb565_mean_luma(output,size_t(output_width)*output_height);
-    return finish(nullptr);
 }
 
 void capture_camera(const char* boot_id) {
