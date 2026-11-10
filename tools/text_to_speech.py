@@ -1,8 +1,9 @@
 """Mac-side text-to-speech for spoken guidance, behind one interface.
 
 A speaker has a `name` and `stream(text, stop)`: an async iterator of 24 kHz
-mono s16le chunks that ends early once the asyncio.Event `stop` is set. It
-reads the host-checked text verbatim (ADR-0012). The default is local Pocket
+mono s16le chunks that ends early once the asyncio.Event `stop` is set. The
+service passes it the host-checked text (ADR-0012) through `spoken_form`, which
+spells out decimals and unit symbols. The default is local Pocket
 TTS with the voice "alba" (the user's pick); macOS `say` is the fallback.
 Importing this module loads no model; tests use fakes.
 """
@@ -13,11 +14,59 @@ import tempfile
 import threading
 import wave
 
+import re
+
 DEFAULT_ENGINE = 'pocket'
 ENGINES = ('pocket', 'say', 'none')
 POCKET_VOICE = 'alba'
 SAY_VOICE = 'Samantha'
 RATE_HZ = 24000
+
+
+# Pocket TTS stumbles on decimals and unit symbols, so the voice gets them as words.
+# The screen keeps the checked text; only the spoken copy changes.
+UNITS = {
+    'mAh': 'milliamp hour', 'mWh': 'milliwatt hour', 'mA': 'milliamp', 'mW': 'milliwatt',
+    'kHz': 'kilohertz', 'Hz': 'hertz', 'dB': 'decibel', 'ms': 'millisecond', 'mg': 'milli g',
+    'V': 'volt', 'W': 'watt', 'A': 'amp', 'g': 'g', 's': 'second', '%': 'percent', '°': 'degree',
+}
+UNCOUNTED = {'kilohertz', 'hertz', 'percent', 'g', 'milli g'}
+DIGITS = 'zero one two three four five six seven eight nine'.split()
+_UNIT = '|'.join(re.escape(unit) for unit in sorted(UNITS, key=len, reverse=True))
+_CLOCK = re.compile(r'(?<![\w:.])(\d{1,2}):(\d\d)(?![\w:])')
+_NUMBER = re.compile(r'(?<![\w.])(-?)(\d+)(?:\.(\d+))?(?:\s?(' + _UNIT + r')(?![\w]))?')
+_BARE_UNIT = re.compile(r'(?<![\w.])(mAh|mWh|mA|mW|kHz|Hz|dB)(?!\w)')
+
+
+def _unit_words(unit, singular):
+    words = UNITS[unit]
+    return words if singular or words in UNCOUNTED else words + 's'
+
+
+def _clock(match):
+    minutes, seconds = int(match.group(1)), int(match.group(2))
+    parts = [f'{minutes} minute{"" if minutes == 1 else "s"}'] if minutes else []
+    if seconds or not minutes:
+        parts.append(f'{seconds} second{"" if seconds == 1 else "s"}')
+    return ' '.join(parts)
+
+
+def _number(match):
+    sign, whole, fraction, unit = match.groups()
+    fraction = (fraction or '').rstrip('0')
+    words = ('minus ' if sign else '') + ('zero' if fraction and whole == '0' else whole)
+    if fraction:
+        words += ' point ' + ' '.join(DIGITS[int(digit)] for digit in fraction)
+    if unit:
+        words += ' ' + _unit_words(unit, singular=whole == '1' and not fraction)
+    return words
+
+
+def spoken_form(text):
+    """The text as the voice should read it: 7.2 dB becomes "7 point two decibels"."""
+    text = _CLOCK.sub(_clock, text)
+    text = _NUMBER.sub(_number, text)
+    return _BARE_UNIT.sub(lambda match: _unit_words(match.group(1), singular=False), text)
 
 
 class PocketSpeaker:

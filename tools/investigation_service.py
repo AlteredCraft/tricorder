@@ -490,7 +490,7 @@ class MockSession:
         try:
             await self.emit(self.envelope('speech_start',request_id=key,format='pcm_s16le',
                                           sample_rate_hz=SPEECH_RATE_HZ,channels=1))
-            async for chunk in self.speaker.stream(text,self.speech_stop):
+            async for chunk in self.speaker.stream(text_to_speech.spoken_form(text),self.speech_stop):
                 first=first or time.monotonic_ns()
                 room=MAX_SPEECH_FRAMES*2-len(audio)
                 if len(chunk)>room:

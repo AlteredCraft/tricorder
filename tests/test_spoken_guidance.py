@@ -11,6 +11,7 @@ import unittest
 from tools.investigation import ProtocolError
 from tools.investigation_service import MockSession
 from test_investigation import evidence, fixture
+from tools.text_to_speech import spoken_form
 
 
 class FakeSpeaker:
@@ -83,7 +84,7 @@ class SpokenGuidanceServiceTests(unittest.IsolatedAsyncioTestCase):
         guidance = await self.guided()
         await self.send('speak', request_id='r1')
         await self.service.drain_speech()
-        self.assertEqual(self.speaker.texts, [guidance['text']])
+        self.assertEqual(self.speaker.texts, [spoken_form(guidance['text'])])
         messages = self.speech()
         self.assertEqual(messages[0], dict(version=1, type='speech_start', boot_id='boot', session_id='session',
                                            request_id='r1', format='pcm_s16le', sample_rate_hz=24000, channels=1))
@@ -210,7 +211,7 @@ class SpokenGuidanceServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.phase, 'complete')
         await self.send('speak', request_id='r2')
         await self.service.drain_speech()
-        self.assertEqual(self.speaker.texts[-1], comparison['text'])
+        self.assertEqual(self.speaker.texts[-1], spoken_form(comparison['text']))
         self.assertEqual(self.speech()[-1]['status'], 'complete')
 
     async def test_cancel_while_speaking_stops_the_stream(self):

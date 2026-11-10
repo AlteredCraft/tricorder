@@ -11,6 +11,7 @@ from tools.sound_explain import explain_evidence, validate_analysis
 from test_investigation import fixture
 import test_spoken_ask_service as spoken
 from test_spoken_guidance import FakeSpeaker
+from tools.text_to_speech import spoken_form
 
 
 def summary(**changes):
@@ -112,7 +113,7 @@ class SoundExplainServiceTests(unittest.IsolatedAsyncioTestCase):
         reply = await self.explain()
         await self.send('speak', request_id='explain-1')
         await self.service.drain_speech()
-        self.assertEqual(self.speaker.texts, [reply['text']])
+        self.assertEqual(self.speaker.texts, [spoken_form(reply['text'])])
         self.assertEqual(self.sent[-1]['type'], 'speech_end')
         with self.assertRaises(ProtocolError):
             await self.send('speak', request_id='explain-1')
