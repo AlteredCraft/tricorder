@@ -127,7 +127,8 @@ void setup_ui_init(lv_obj_t* screen) {
     mode_label=text(panel,"",label_x,416,&lv_font_montserrat_28,0xcfd8dc);
     lv_obj_set_width(mode_label,1184);lv_label_set_long_mode(mode_label,LV_LABEL_LONG_WRAP);
 
-    keyboard=lv_keyboard_create(panel);lv_obj_set_pos(keyboard,24,404);lv_obj_set_size(keyboard,1232,308);
+    // A new keyboard is aligned to the bottom, so a plain position would push it off the screen.
+    keyboard=lv_keyboard_create(panel);lv_obj_align(keyboard,LV_ALIGN_TOP_LEFT,24,404);lv_obj_set_size(keyboard,1232,308);
     lv_obj_set_style_text_font(keyboard,&lv_font_montserrat_28,LV_PART_ITEMS);
     lv_keyboard_set_textarea(keyboard,address_field);lv_obj_add_flag(keyboard,LV_OBJ_FLAG_HIDDEN);
     lv_timer_create(refresh,1000,nullptr);
