@@ -8,7 +8,7 @@ reading. As in ADR-0012, prose may round supplied values but never state new mea
 from copy import deepcopy
 import math
 
-from tools.investigation import MAX_TEXT, ProtocolError, bounded_text, device_text, require, unbacked_numbers
+from tools.service_protocol import MAX_TEXT, ProtocolError, bounded_text, device_text, require, unbacked_numbers
 
 MAX_EVENTS = 12
 MAX_TONES = 4

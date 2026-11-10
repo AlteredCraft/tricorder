@@ -1,4 +1,4 @@
-"""Mac-side text-to-speech for spoken guidance, behind one interface.
+"""Mac-side text-to-speech for spoken replies, behind one interface.
 
 A speaker has a `name` and `stream(text, stop)`: an async iterator of 24 kHz
 mono s16le chunks that ends early once the asyncio.Event `stop` is set. The

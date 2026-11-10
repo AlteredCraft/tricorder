@@ -22,15 +22,3 @@ inline bool rgb565_downsample(const uint16_t* source,size_t source_bytes,unsigne
         }
     return true;
 }
-
-// Mean BT.601 luma, 0..255 (exposure sanity check for a context shot).
-inline unsigned rgb565_mean_luma(const uint16_t* pixels,size_t count) {
-    if (!pixels || !count) return 0;
-    uint64_t sum=0;
-    for (size_t i=0;i<count;++i) {
-        const uint16_t p=pixels[i];
-        const unsigned r=(p>>11)*255/31,g=((p>>5)&63)*255/63,b=(p&31)*255/31;
-        sum+=(77*r+150*g+29*b)>>8;
-    }
-    return unsigned((sum+count/2)/count);
-}

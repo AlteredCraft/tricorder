@@ -1,7 +1,7 @@
 #include "network.h"
 #include "test_storage.h"
 #include "setup.h"
-#include "investigation_wire.h"
+#include "service_wire.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_event.h"
@@ -112,7 +112,7 @@ void address_event(const char* mode, uint32_t ipv4) {
 void peer_assigned(const ip_event_ap_staipassigned_t& assigned) {
     peer_ipv4.store(assigned.ip.addr);
     memcpy(peer_mac, assigned.mac, sizeof(peer_mac));
-    InvestigationEndpoint configured;
+    ServiceEndpoint configured;
     const int port = configured.parse(CONFIG_TRICORDER_INVESTIGATION_ENDPOINT) ? configured.port : 8765;
     char ip[24], endpoint[64], text[128];
     snprintf(ip, sizeof(ip), IPSTR, IP2STR(&assigned.ip));

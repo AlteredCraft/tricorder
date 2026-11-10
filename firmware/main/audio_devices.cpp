@@ -11,7 +11,7 @@ esp_codec_dev_handle_t diagnostic_speaker() {
     return handle;
 }
 // Headphones in: speaker amp off (speaker_route.h). The media owner calls this
-// before and during spoken guidance. PI4IOE1 is on the BSP's I2C bus; the BSP
+// before and during a spoken reply. PI4IOE1 is on the BSP's I2C bus; the BSP
 // writes its output latch only at init. Logs each change of route.
 bool route_speaker() {
     constexpr uint8_t input_status=0x0f,output_latch=0x05;

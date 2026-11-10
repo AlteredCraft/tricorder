@@ -2,7 +2,8 @@
 #include "home.h"
 #include "home_model.h"
 #include "network.h"
-#include "investigation_wire.h"
+#include "service_wire.h"
+#include <initializer_list>
 #include "freertos/FreeRTOS.h"
 #include <cstdio>
 #include <cstring>
@@ -25,7 +26,7 @@ Stored stored() {
 bool waiting_for_mac() {return network_access_point() && !network_peer_ipv4();}
 const char* caption(const Stored& s) {
     if(waiting_for_mac())return "Set when the Mac joins the hotspot";
-    InvestigationEndpoint parsed;
+    ServiceEndpoint parsed;
     if(!parsed.parse(s.text))return "Not a valid address; enter ws://Mac-IP:8765/";
     switch(s.source) {
     case EndpointSource::Sd:return "From the SD card at boot";

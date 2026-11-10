@@ -9,14 +9,14 @@ menu "Tricorder diagnostic fixtures"
             panic reboot. This is fault-injection firmware, not acceptance
             firmware; disable it before collecting normal workload evidence.
     config TRICORDER_GUIDED_AB_STARTUP
-        bool "Start in manual guided A/B mode without automatic media diagnostics"
+        bool "Boot to the start screen without automatic media diagnostics"
         default n
         help
-            Initialize the board/display/radio and offer the manual guided A/B
-            flow. Skip automatic camera/audio/DSP/baseline stages. This bounded
-            experiment mode is not evidence for any skipped diagnostic gate.
+            Initialize the board/display/radio and open the start screen. Skip
+            the automatic camera/audio/DSP/baseline stages. The symbol keeps
+            its A/B-era name so existing private sdkconfig files still apply.
     config TRICORDER_INVESTIGATION_ENDPOINT
-        string "Initial guided A/B LAN service endpoint (editable on device)"
+        string "Initial Mac service endpoint (editable on device)"
         default ""
         help
             Optional development default such as ws://192.168.0.2:8765/.

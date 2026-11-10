@@ -3,7 +3,7 @@
 #include "sound_analysis.h"
 #include "diagnostic_events.h"
 #include "home.h"
-#include "investigation.h"
+#include "service_client.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_random.h"
 #include "esp_heap_caps.h"
@@ -191,7 +191,7 @@ void analysis_clicked(lv_event_t*) {
     log_control("analysis");
 }
 void measure_again(lv_event_t*) {
-    investigation_stop_speech();lv_obj_add_flag(analysis_panel,LV_OBJ_FLAG_HIDDEN);log_control("measure_again");power_ui_open();
+    service_stop_speech();lv_obj_add_flag(analysis_panel,LV_OBJ_FLAG_HIDDEN);log_control("measure_again");power_ui_open();
 }
 void send_media(uint8_t command) {
     if(xQueueSend(media,&command,0)!=pdTRUE) {
@@ -201,13 +201,13 @@ void send_media(uint8_t command) {
 }
 // Explain: while the agent answers or speaks, the button stops the voice.
 void explain_clicked(lv_event_t*) {
-    if(explaining.load()){investigation_stop_speech();log_control("explain_stop_voice");return;}
+    if(explaining.load()){service_stop_speech();log_control("explain_stop_voice");return;}
     explaining.store(true);lv_label_set_text(explain_label,"Stop voice");
     lv_obj_add_state(again_button,LV_STATE_DISABLED);
     log_control("explain");send_media(power_explain_command);
 }
 void analysis_home(lv_event_t*) {
-    investigation_stop_speech();
+    service_stop_speech();
     lv_obj_add_flag(analysis_panel,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(panel,LV_OBJ_FLAG_HIDDEN);
     log_control("analysis_home");home_returned("power_analysis");
 }
@@ -437,7 +437,7 @@ void power_explain(const char* boot) {
     AnalysisExplainHooks hooks{explain_progress};
     AnalysisExplainResult out;
     const bool ok=analysis_state.load()==Ready &&
-        investigation_explain_analysis(boot,session,nullptr,analysis_summary(),hooks,out);
+        service_explain_analysis(boot,session,nullptr,analysis_summary(),hooks,out);
     explaining.store(false);
     restore_buttons(ok?"Tap Explain to ask again.":out.error.empty()?"Nothing to explain yet.":out.error.c_str());
 }

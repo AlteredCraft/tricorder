@@ -1,26 +1,25 @@
-"""Transport bounds and partial-frame reassembly for the firmware LAN client."""
+"""Endpoint parsing and partial-frame reassembly for the firmware service client."""
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
-class InvestigationWireTests(unittest.TestCase):
+class ServiceWireTests(unittest.TestCase):
     def test_endpoint_and_split_fragmented_frames(self):
         with tempfile.TemporaryDirectory() as directory:
             p=Path(directory);(p/'test.cpp').write_text(r'''
-#include "investigation_wire.h"
+#include "service_wire.h"
 #include <cassert>
+#include <initializer_list>
 #include <cstring>
 int main() {
- assert(investigation_replay_session("ab-0123456789abcdef0123456789abcdef"));
- for(const char* s:{"../wifi","ab-x","ab-0123456789abcdef0123456789abcdeg","ab-0123456789abcdef0123456789abcdef/a"})assert(!investigation_replay_session(s));
- InvestigationEndpoint e;
+ ServiceEndpoint e;
  assert(e.parse("ws://192.168.1.8:8765/"));assert(e.port==8765);
  assert(!strcmp(e.host,"192.168.1.8") && !strcmp(e.path,"/"));
  assert(e.parse("ws://mac.local:8765/ab"));assert(!strcmp(e.path,"/ab"));
  for(const char* s:{"wss://host/","http://host/","ws://host:0/","ws://host:65536/",
                    "ws://user:secret@host/","ws://host/path\r\nInjected: yes", "ws://", "ws://host:1x/"})assert(!e.parse(s));
- char memory[32769];InvestigationFrames f(memory);
+ char memory[32769];ServiceFrames f(memory);
  assert(f.append(1,7,false,"{\"a",3)==0);
  assert(f.append(1,7,false,"\": 1",4)==0);
  assert(f.append(0,1,true,"}",1)==1);assert(!strcmp(memory,"{\"a\": 1}"));

@@ -8,7 +8,6 @@
 #include "media.h"
 #include "network.h"
 #include "test_storage.h"
-#include "investigation.h"
 #include "audio_devices.h"
 #include "home.h"
 #include "setup.h"
@@ -415,7 +414,6 @@ extern "C" void app_main() {
     lv_label_set_text(baseline_label,"Audio baseline 60s");
     lv_obj_center(baseline_label);
     network_ui_init(screen, boot_id);
-    investigation_ui_init(screen, media_commands);
     sound_ui_init(screen, media_commands);
     motion_ui_init(screen, media_commands);
     camera_ui_init(screen, media_commands);
@@ -444,11 +442,11 @@ extern "C" void app_main() {
 #endif
     if (guided_startup && !resuming_restarts) {
         diagnostic_check("wifi_initialize",network_prepare(30000) ? "pass" : "fail",
-                         "Guided A/B startup; radio only, no automatic media diagnostics.");
-        auto* mode=diagnostic_event("investigation_startup");
-        cJSON_AddStringToObject(mode,"workload","manual A/B raw audio; automatic diagnostic stages skipped");
+                         "Start-screen startup; radio only, no automatic media diagnostics.");
+        auto* mode=diagnostic_event("guided_startup");
+        cJSON_AddStringToObject(mode,"workload","start screen; automatic diagnostic stages skipped");
         diagnostic_emit(mode);
-        route_speaker(); // logs the boot route; speak() re-checks
+        route_speaker(); // logs the boot route; the service client re-checks while speaking
     } else {
         capture_camera(boot_id);
         // Three isolated live raw/speech comparisons, without operator input.
@@ -479,9 +477,7 @@ extern "C" void app_main() {
             if (command==2) {
                 restart_sequence.start(esp_random());
                 continue_restarts();
-            } else if (command==4) investigation_run(boot_id);
-            else if (command==5) investigation_run_replay();
-            else if (command==3) run_audio_baseline(boot_id);
+            } else if (command==3) run_audio_baseline(boot_id);
             else if (command==6) run_power_steps();
             else if (command==sound_media_command) sound_run();
             else if (command==sound_explain_command) sound_explain(boot_id);

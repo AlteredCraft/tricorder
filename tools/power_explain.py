@@ -9,7 +9,7 @@ from copy import deepcopy
 import math
 import re
 
-from tools.investigation import ProtocolError, require
+from tools.service_protocol import ProtocolError, require
 from tools.sound_explain import checked_text as sound_checked_text
 
 MAX_STEPS = 12

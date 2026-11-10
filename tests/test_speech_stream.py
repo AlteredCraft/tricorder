@@ -8,9 +8,8 @@ import subprocess
 import tempfile
 import unittest
 
-from tools.investigation_service import MockSession
-from test_investigation import evidence, fixture
-from test_spoken_guidance import FakeSpeaker
+from tools.service import Session
+from test_service import FakeSpeaker, summary
 
 
 DRIVER = r'''
@@ -39,19 +38,12 @@ def service_stream(seconds=0.5):
         sent = []
         async def send(message): sent.append(message)
         with tempfile.TemporaryDirectory() as directory:
-            service = MockSession(Path(directory), send, speaker=FakeSpeaker(seconds=seconds))
+            service = Session(Path(directory), send, speaker=FakeSpeaker(seconds=seconds))
             async def message(kind, **fields):
                 await service.receive(dict(version=1, type=kind, boot_id='boot', session_id='session', **fields))
-            await message('hello', fixture=fixture().to_dict())
-            meta, raw = evidence('take-a', 1000)
-            await message('capture_start', metadata=meta)
-            for offset in range(0, len(raw), 4096):
-                await message('capture_chunk', capture_id='take-a', offset=offset,
-                              data=base64.b64encode(raw[offset:offset + 4096]).decode())
-            await message('capture_end', capture_id='take-a', sha256=meta['sha256'])
-            await message('turn', request_id='r1', capture_ids=['take-a'], device_ms=100, deadline_ms=15100)
+            await message('hello')
+            await message('analysis_explain', request_id='r1', analysis=summary())
             await service.drain()
-            await message('ack', request_id='r1')
             await message('speak', request_id='r1')
             await service.drain_speech()
             await service.close()

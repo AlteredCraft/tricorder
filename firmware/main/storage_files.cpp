@@ -1,5 +1,5 @@
 #include "storage_files.h"
-#include "investigation_wire.h"
+#include "service_wire.h"
 #include "cJSON.h"
 #include <cstring>
 #include <string>
@@ -62,7 +62,7 @@ bool storage_parse_config(const char* json, StorageConfig& out) {
         if(!cJSON_IsString(item) || strlen(item->valuestring)>=capacity){ok=false;break;}
         strcpy(dest,item->valuestring);
     }
-    InvestigationEndpoint endpoint;
+    ServiceEndpoint endpoint;
     ok=ok && ssids==1 && passwords==1 && endpoints<=1 && modes<=1 && out.ssid[0] &&
         (!out.endpoint[0] || endpoint.parse(out.endpoint)) &&
         (!out.access_point || strlen(out.password)>=8); // WPA2 minimum
@@ -85,8 +85,6 @@ bool storage_public_name(const char* name) {
 // G-0001.02 C2). The SD card shares the SDMMC host with the ESP-Hosted Wi-Fi link
 // (slot 1); live sessions with SD archiving off still lost Wi-Fi, so these
 // transfers are not the cause of those outages (20260925-attrib-no-sd).
-void (*storage_chunk_hook)(size_t chunk)=nullptr;
-
 bool storage_write_verified(const char* path,const unsigned char* data,size_t size) {
     if(!data || !size || access(path,F_OK)==0)return false;
     constexpr size_t chunk=16384;
@@ -109,7 +107,6 @@ bool storage_write_verified(const char* path,const unsigned char* data,size_t si
             if(n<=0){ok=false;break;}done+=n;
         }
         offset+=done;
-        if(ok && storage_chunk_hook)storage_chunk_hook((offset+chunk-1)/chunk);
     }
     ok=fsync(fd)==0 && ok;ok=close(fd)==0 && ok;
     if(!ok){free(stage);return false;}

@@ -5,38 +5,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from tools.investigation import MockProvider, ProtocolError
-from tools.investigation_service import MockSession
+from tools.service import Session
+from tools.service_protocol import ProtocolError
 from tools.sound_explain import explain_evidence, validate_analysis
-from test_investigation import fixture
-import test_spoken_ask_service as spoken
-from test_spoken_guidance import FakeSpeaker
+import test_service as spoken
+from test_service import FakeSpeaker, RecordingExplainer, summary
 from tools.text_to_speech import spoken_form
-
-
-def summary(**changes):
-    value = {
-        'duration_s': 41.4, 'background_db': -48.4, 'loud_db': -43.8, 'average_db': -45.6,
-        'max_db': -20.0, 'max_at_s': 8.5, 'threshold_db': -38.4, 'strongest_background_hz': 53.2,
-        'event_count': 1,
-        'events': [{'start_s': 15.3, 'duration_s': 0.34, 'peak_over_db': 11.3, 'band_hz': 6110.0,
-                    'band_rise_db': 14.7}],
-        'tones': [{'tone_hz': 1200.0, 'above_db': 8.1}],
-        'sharp_count': 2,
-        'sharp': [{'at_s': 8.5, 'peak_over_db': 28.4}, {'at_s': 30.1, 'peak_over_db': 12.0}],
-        'level_max_1s': [-46.7, -43.1, -20.0, -45.2],
-    }
-    value.update(changes)
-    return value
-
-
-class RecordingExplainer(MockProvider):
-    def __init__(self):
-        self.evidence = []
-
-    def explain(self, evidence):
-        self.evidence.append(deepcopy(evidence))
-        return super().explain(evidence)
 
 
 class ValidateAnalysisTests(unittest.TestCase):
@@ -69,17 +43,17 @@ class ValidateAnalysisTests(unittest.TestCase):
 
 
 class SoundExplainServiceTests(unittest.IsolatedAsyncioTestCase):
-    send = spoken.SpokenAskServiceTests.send
-    ask = spoken.SpokenAskServiceTests.ask
-    asyncTearDown = spoken.SpokenAskServiceTests.asyncTearDown
+    send = spoken.SessionCase.send
+    ask = spoken.SessionCase.ask
+    asyncTearDown = spoken.SessionCase.asyncTearDown
 
     async def open(self, transcriber):
         self.sent = []
         async def send(message): self.sent.append(message)
         self.speaker = FakeSpeaker(seconds=0.2)
-        self.service = MockSession(self.root / 'run', send, provider=self.provider,
+        self.service = Session(self.root / 'run', send, provider=self.provider,
                                    transcriber=transcriber, speaker=self.speaker)
-        await self.send('hello', fixture=fixture().to_dict())
+        await self.send('hello')
 
     async def asyncSetUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -118,7 +92,7 @@ class SoundExplainServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ProtocolError):
             await self.send('speak', request_id='explain-1')
 
-    async def test_only_once_and_not_after_a_capture_or_mid_question(self):
+    async def test_only_once(self):
         await self.explain()
         with self.assertRaises(ProtocolError):
             await self.explain('explain-2')

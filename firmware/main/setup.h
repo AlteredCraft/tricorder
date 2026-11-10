@@ -8,6 +8,6 @@ void setup_ui_init(lv_obj_t* screen);
 void setup_open();
 // Any task: the Mac service address, and where it came from.
 void setup_set_endpoint(const char* endpoint,EndpointSource source);
-// Any task: the address Explain and A/B connect to. Empty in hotspot mode until the Mac joins,
+// Any task: the address Explain connects to. Empty in hotspot mode until the Mac joins,
 // since the stored one is then an old lease or the SD value, neither on this network.
 void setup_endpoint(char* out,size_t size);

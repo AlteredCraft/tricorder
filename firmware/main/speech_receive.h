@@ -1,6 +1,6 @@
 #pragma once
 
-// Receive side of spoken-guidance playback. The stream needs about 66 KB/s of
+// Receive side of spoken-reply playback. The stream needs about 66 KB/s of
 // WebSocket payload (24 kHz s16 as base64 JSON, about 5.6 KB per 2048-frame
 // chunk), and the socket is read in pieces of at most 1 KiB. One read per 20 ms
 // playback block (about 51 KB/s) falls behind and the buffer runs dry. Before
