@@ -56,14 +56,27 @@ constexpr TileText tile_text[]={
 "• The photo is 1280 by 720 and goes to the Mac as a JPEG, where the service keeps a copy with the run. The live view is never sent.\n"
 "• The model answers one fixed question, what is this; it reads text it can see and guesses when unsure.\n"
 "• The live view is half size; the photo is sent at full size."},
-{"Power","Screen coming",
-"The tile reads the battery through the INA226 power monitor.\n\n"
-"• Volts: the battery pack. About 8.4 V is full.\n"
-"• Charging: current flowing into the battery, usually with USB plugged in.\n"
-"• Using: current drawn from the battery when running on battery power. Watts are volts times amps.\n"
-"• No battery current: the battery is neither charging nor in use.\n\n"
-"On USB, the device runs from USB, so its own consumption does not show here. Unplug USB to see what it uses.\n\n"
-"It updates once a second. A full Power screen is coming."},
+{"Power","Battery volts, amps, watts",
+"A live view of the battery: volts, the current flowing out of it and the watts, ten times a second from the INA226 power monitor. The tile shows the same once a second.\n\n"
+"Reading the screen\n"
+"• Orange trace: battery current over the last 60 seconds. Above 0 flows out of the battery (the device running on it); below 0 flows in (charging).\n"
+"• Blue trace: battery volts. About 8.4 V is full and 6.6 V is empty.\n"
+"• The numbers at the top are the reading right now. Watts are volts times amps.\n\n"
+"Only meaningful on battery\n"
+"On USB the device runs from USB, so its own draw does not pass this sensor; the trace shows charging or nothing. Unplug USB to see what the device uses.\n\n"
+"Try it\n"
+"1. Unplug USB and watch the draw settle.\n"
+"2. Tap Screen to step the backlight 50%, 100%, 20% and back; wait a few seconds at each so the change shows.\n"
+"3. Plug USB in and watch the current go below 0 as the battery charges.\n\n"
+"Analysis\n"
+"Tap Analysis to stop measuring and see what happened: time on battery, charging and with no current; the volts at the start and end; the typical, lowest and highest draw and power; the energy used in mAh and mWh; each change in draw (30 mA or more that held for 2 seconds) with its time; and the draw before and after each Screen tap. It covers up to 10 minutes.\n\n"
+"Ask the agent\n"
+"1. On the analysis, tap Explain to send the analysis to the Mac.\n"
+"2. The agent's reading appears above the changes and is spoken; Stop voice ends the speech.\n\n"
+"Notes\n"
+"• The percent full is a rough guess from the volts alone.\n"
+"• The readings are not calibrated. Use them to compare, not as exact measurements.\n"
+"• The samples are never saved or sent. Explain sends only the analysis numbers to the Mac."},
 {"Setup","Mac, Wi-Fi, audio out",
 "How the device reaches the Mac service, which runs Explain with a local model.\n\n"
 "Hotspot mode (the default, set up over USB): the device broadcasts its own Wi-Fi network, \"Tricorder\". Join the Mac to it and start the service; the service address fills in from the Mac's DHCP lease. The tile shows Hotspot on and the Mac's address, for example Mac 192.168.4.2. No router or Internet is needed; the Mac has no Internet while joined unless it has another connection.\n\n"

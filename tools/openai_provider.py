@@ -32,11 +32,11 @@ class OpenAIProvider:
         return {}
 
     async def explain(self, evidence):
-        """F-0002, F-0005, F-0006: plain prose over a checked sound or motion analysis summary,
-        or over a photo (the JPEG goes as an image input beside the question)."""
-        from tools import camera_explain, motion_explain, sound_explain
+        """F-0002, F-0005, F-0006, F-0007: plain prose over a checked sound, motion or power analysis
+        summary, or over a photo (the JPEG goes as an image input beside the question)."""
+        from tools import camera_explain, motion_explain, power_explain, sound_explain
         kind = evidence.get('kind', 'sound')
-        module = {'motion': motion_explain, 'camera': camera_explain}.get(kind, sound_explain)
+        module = {'motion': motion_explain, 'camera': camera_explain, 'power': power_explain}.get(kind, sound_explain)
         schema = {'type': 'object', 'additionalProperties': False,
                   'properties': {'text': {'type': 'string'}}, 'required': ['text']}
         if kind == 'camera':

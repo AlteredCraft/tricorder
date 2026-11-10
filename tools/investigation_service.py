@@ -18,7 +18,7 @@ import wave
 from tools.captures import CaptureStore
 from tools.speech_to_text import DEFAULT_ENGINE, ENGINES, load_transcriber
 from tools import text_to_speech
-from tools import camera_explain, motion_explain, sound_explain
+from tools import camera_explain, motion_explain, power_explain, sound_explain
 from tools.investigation import (CaptureEvidence, Fixture, MAX_CAPTURE_BYTES, MAX_QUESTIONS,
                                  MAX_QUESTION_FRAMES, MAX_QUESTION_TEXT, MockProvider,
                                  ProtocolError, QUESTION_FIELDS, QUESTION_RATE_HZ, QuestionAudio,
@@ -234,8 +234,8 @@ class MockSession:
                     'photo chunk size')
             buffer+=raw
         elif kind=='analysis_explain':
-            # F-0002, F-0005, F-0006: a sound or motion session analysed on the device, or a photo,
-            # explained once, before any capture. A missing kind is sound.
+            # F-0002, F-0005, F-0006, F-0007: a sound, motion or power session analysed on the
+            # device, or a photo, explained once, before any capture. A missing kind is sound.
             require(self.phase=='await_a' and not self.ids and self.pending is None and not self.requests,
                     'explain only once, before any capture')
             request_id=identity(message['request_id'])
@@ -245,6 +245,8 @@ class MockSession:
             photo=None
             if kind=='motion':
                 analysis=motion_explain.validate_analysis(analysis)
+            elif kind=='power':
+                analysis=power_explain.validate_analysis(analysis)
             elif kind=='camera':
                 analysis=camera_explain.validate_analysis(analysis)
                 photo=bytes(self.photos.pop(request_id,b''))
@@ -426,8 +428,9 @@ class MockSession:
             await self.emit(self.envelope('incomplete',reason='provider_or_evidence_failure'))
 
     async def explain(self, key, kind, analysis, photo=None):
-        module={'motion':motion_explain,'camera':camera_explain}.get(kind,sound_explain)
+        module={'motion':motion_explain,'camera':camera_explain,'power':power_explain}.get(kind,sound_explain)
         evidence=(motion_explain.explain_evidence(analysis) if kind=='motion'
+                  else power_explain.explain_evidence(analysis) if kind=='power'
                   else camera_explain.explain_evidence(analysis,photo) if kind=='camera'
                   else sound_explain.explain_evidence(analysis,self.operator_question))
         try:

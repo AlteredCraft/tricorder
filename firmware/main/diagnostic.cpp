@@ -15,6 +15,7 @@
 #include "sound.h"
 #include "motion.h"
 #include "camera.h"
+#include "power.h"
 #include "home_model.h"
 #include "restart_sequence.h"
 #include "dsp_diagnostic.h"
@@ -291,6 +292,12 @@ bool diagnostic_request_power_steps() {
     return media_commands && xQueueSend(media_commands,&command,0)==pdTRUE;
 }
 
+bool diagnostic_power_read(float& bus_v,float& shunt_a) {
+    if (!power_ready) return false;
+    bus_v=power_monitor.readBusVoltage();shunt_a=power_monitor.readShuntCurrent();
+    return true;
+}
+
 extern "C" void app_main() {
     event_mutex = xSemaphoreCreateMutex();
     configASSERT(event_mutex);
@@ -412,6 +419,7 @@ extern "C" void app_main() {
     sound_ui_init(screen, media_commands);
     motion_ui_init(screen, media_commands);
     camera_ui_init(screen, media_commands);
+    power_ui_init(screen, media_commands);
     setup_ui_init(screen);
     home_ui_init(screen);
     bsp_display_brightness_set(50);
@@ -481,6 +489,8 @@ extern "C" void app_main() {
             else if (command==motion_explain_command) motion_explain(boot_id);
             else if (command==camera_media_command) camera_run();
             else if (command==camera_explain_command) camera_explain(boot_id);
+            else if (command==power_media_command) power_run();
+            else if (command==power_explain_command) power_explain(boot_id);
             else capture_audio(boot_id, true);
             media_idle();
         }
