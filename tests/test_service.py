@@ -11,6 +11,7 @@ import unittest
 
 from tools.service import Session, decode_message, peer_allowed, provider_settings
 from tools.service_protocol import MockProvider, ProtocolError
+from tools.text_to_speech import spoken_form
 from test_question import question, speech
 
 
@@ -311,11 +312,11 @@ class SpokenReplyTests(SessionCase):
     def speech(self):
         return [m for m in self.sent if m['type'].startswith('speech_')]
 
-    async def test_speaks_the_checked_text_verbatim_as_a_bounded_stream(self):
+    async def test_speaks_the_checked_text_as_a_bounded_stream(self):
         reply = await self.explain()
         await self.send('speak', request_id='explain-1')
         await self.service.drain_speech()
-        self.assertEqual(self.speaker.texts, [reply['text']])
+        self.assertEqual(self.speaker.texts, [spoken_form(reply['text'])])
         messages = self.speech()
         self.assertEqual(messages[0], dict(version=1, type='speech_start', boot_id='boot', session_id='session',
                                            request_id='explain-1', format='pcm_s16le', sample_rate_hz=24000,

@@ -30,7 +30,7 @@ Every message carries `version`, `type`, `boot_id`, `session_id` (IDs are 1–96
 2. Voice note, optional, before the explain, at most 5 per session: `question_start{metadata}`, `question_chunk{question_id, offset, data}` ×N, `question_end{question_id, sha256}` → `transcript{question_id, status: heard|empty|failed, text, speech_to_noise_db}`. After `heard`, the device must send `question_confirm{question_id, accepted}` before anything else. An accepted transcript reaches the Sound prompt as `voice_note`. No instrument records a note today; the path is kept for the voice demo.
 3. Camera only: `photo_chunk{request_id, offset, data}` ×N (JPEG, at most 512 KiB), in order, before its explain.
 4. `analysis_explain{request_id, analysis}` → `analysis_reply{request_id, text}`, or `incomplete{reason}` when the model failed, timed out or its text was refused. Once per session.
-5. `speak{request_id}` → `speech_start{request_id, format: pcm_s16le, sample_rate_hz: 24000, channels: 1}`, `speech_chunk{request_id, offset, data}` ×N, `speech_end{request_id, status: complete|stopped|failed, frames}`. The text is the reply's, verbatim. While it plays the host accepts only `speech_stop{request_id}` (harmless after the end). At most 60 s.
+5. `speak{request_id}` → `speech_start{request_id, format: pcm_s16le, sample_rate_hz: 24000, channels: 1}`, `speech_chunk{request_id, offset, data}` ×N, `speech_end{request_id, status: complete|stopped|failed, frames}`. The text is the reply's, with decimals, unit symbols and clock times spelled out for the voice (`spoken_form`). While it plays the host accepts only `speech_stop{request_id}` (harmless after the end). At most 60 s.
 
 All `data` is base64 of at most 4096 bytes.
 

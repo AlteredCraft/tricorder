@@ -10,6 +10,7 @@ from tools.service_protocol import ProtocolError
 from tools.sound_explain import explain_evidence, validate_analysis
 import test_service as spoken
 from test_service import FakeSpeaker, RecordingExplainer, summary
+from tools.text_to_speech import spoken_form
 
 
 class ValidateAnalysisTests(unittest.TestCase):
@@ -86,7 +87,7 @@ class SoundExplainServiceTests(unittest.IsolatedAsyncioTestCase):
         reply = await self.explain()
         await self.send('speak', request_id='explain-1')
         await self.service.drain_speech()
-        self.assertEqual(self.speaker.texts, [reply['text']])
+        self.assertEqual(self.speaker.texts, [spoken_form(reply['text'])])
         self.assertEqual(self.sent[-1]['type'], 'speech_end')
         with self.assertRaises(ProtocolError):
             await self.send('speak', request_id='explain-1')
