@@ -2,7 +2,7 @@
 
 **Milestone:** [M-0002](../milestones.md#m-0002-sensors-explained-by-a-local-llm)
 
-**Status:** In progress · [#9](https://github.com/AlteredCraft/tricorder/issues/9)
+**Status:** Done 2026-11-09 · [#9](https://github.com/AlteredCraft/tricorder/issues/9)
 
 **Outcome:** The Setup screen says which of the two ways to reach the Mac is active (hotspot mode or Wi-Fi mode) and what the other one is. The Wi-Fi dialog shows a button for each known network from the SD card (up to 4, written by `tools.provision_device --known .env.local.<name>`); a tap joins it until restart. In Wi-Fi mode a Back to hotspot button returns to the hotspot without a restart.
 
@@ -10,8 +10,10 @@
 
 ## Next
 
-T1 build is flashed and the SD card holds four known networks (the phone hotspot, Newnet, Nossa-7C_Guest, North Bank internal; run `20261109-provision-known-2`). Trial: open Setup and read the copy; Wi-Fi setup, tap a known network the Mac is also on; Setup shows "Wi-Fi on, device x.x.x.x"; enter the Mac's address; Sound, Analysis, Explain. Then Wi-Fi setup, Back to hotspot, join the Mac to Tricorder, Explain again.
+Done.
 
 ## Trials
 
-None yet.
+### T1 2026-11-09: hotspot to a known network and back, Explain in both
+
+`cd95755` · provisioning run `20261109-provision-known-2` · service run `20261109-power-t1` (the Sound sessions). **Tried:** Wi-Fi setup, tap Newnet; type the Mac's address; Sound, Analysis, Explain; Back to hotspot; Explain again. **Happened:** the device joined Newnet without a restart (192.168.0.66). The address keyboard did not appear at first: it was placed below the screen, fixed in `cd95755`. After that the typed address worked and Explain reached the Mac. "back to hotspot worked, explain worked too". **Next:** stop.
