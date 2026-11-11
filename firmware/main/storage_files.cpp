@@ -71,14 +71,6 @@ bool storage_parse_config(const char* json, StorageConfig& out) {
     return ok;
 }
 
-bool storage_public_name(const char* name) {
-    if(!name || strncmp(name,"ab-",3) || strlen(name)>90)return false;
-    for(const char* p=name;*p;++p)
-        if(!((*p>='a' && *p<='z') || (*p>='0' && *p<='9') || *p=='-' || *p=='.'))return false;
-    const char* dot=strchr(name,'.');
-    return dot && (!strcmp(dot,".raw") || !strcmp(dot,".json"));
-}
-
 // Writes and reads go through one aligned, DMA-capable 16 KiB stage. From an
 // unaligned PSRAM source the SDMMC driver writes one 512-byte sector per command
 // (about 2.3 s per 1.15 MB capture, during which the LVGL probe stalled for as long;
@@ -142,7 +134,7 @@ bool storage_replace_config(const char* directory,const char* json) {
     if(!valid)return false;
     const std::string current=std::string(directory)+"/wifi.json",previous=std::string(directory)+"/wifi.previous.json",
         next=std::string(directory)+"/wifi.next.json";
-    // Only private configuration staging files may be replaced. Captures never are.
+    // Only private configuration staging files may be replaced.
     if(access(next.c_str(),F_OK)==0 && unlink(next.c_str()))return false;
     if(access((next+".part").c_str(),F_OK)==0 && unlink((next+".part").c_str()))return false;
     if(!storage_write_verified(next.c_str(),reinterpret_cast<const unsigned char*>(json),strlen(json)))return false;

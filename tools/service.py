@@ -18,6 +18,7 @@ import wave
 from tools.captures import CaptureStore
 from tools.speech_to_text import DEFAULT_ENGINE, ENGINES, load_transcriber
 from tools import text_to_speech
+from tools import service_discovery
 from tools import camera_explain, motion_explain, power_explain, sound_explain
 from tools.service_protocol import (MAX_QUESTIONS, MAX_QUESTION_FRAMES, MAX_QUESTION_TEXT, MockProvider,
                                     ProtocolError, QUESTION_FIELDS, QUESTION_RATE_HZ, QuestionAudio,
@@ -475,7 +476,17 @@ def main():
             print(f'{args.provider}{model} service ready at ws://{args.host}:{args.port}; speech-to-text {speech}; '
                   f'spoken replies {voice}; '
                   f'private evidence: {args.output}',flush=True)
-            async with server:await server.serve_forever()
+            discovery=None
+            try:discovery=await service_discovery.start_responder(args.port,peer_allowed)
+            except OSError as error:print(f'Device discovery off (UDP {args.port}: {error.strerror})',flush=True)
+            addresses=', '.join(f'ws://{a}:{args.port}/' for a in service_discovery.mac_addresses()) or 'none found'
+            print(f'On a shared Wi-Fi network the device finds this service by itself'
+                  f'{"" if discovery else " (not now: discovery is off)"}. '
+                  f'To type it instead, this Mac is at: {addresses}',flush=True)
+            try:
+                async with server:await server.serve_forever()
+            finally:
+                if discovery:discovery.close()
         finally:
             if client:await client.close()
     try:asyncio.run(run())

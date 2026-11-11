@@ -464,7 +464,7 @@ extern "C" void app_main() {
         }
         if (resuming_restarts) continue_restarts();
     }
-    test_storage_init(boot_id,sd_ready,!resuming_restarts);
+    test_storage_init(sd_ready,!resuming_restarts);
     media_idle();
     // Guided startup opens the start screen; diagnostics stay behind it (F-0001).
     if (guided_startup && !resuming_restarts && bsp_display_lock(1000)) {

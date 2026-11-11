@@ -25,7 +25,18 @@ The device shows live sensor readings. The person opens an instrument, measures,
 
 ## Development
 
-Requires Git, `uv` and Python 3.
+Requires Git, `uv` and Python 3. `make` lists the common tasks:
+
+```sh
+make bootstrap                 # pinned vendor sources + ESP32-P4 toolchain
+make test                      # host tests (creates .tools/investigation-env)
+make flash                     # build and flash; finds the Tab5 by its USB serial, or PORT=...
+make service                   # Mac service, local provider (installs speech deps on first run)
+make provision ENV=.env.local.tricorder-ap ARGS="--known .env.local.home"
+make capture RUN=20261110-topic DURATION=360
+```
+
+Make only reads `PORT`, `ENV`, `RUN`, `ARGS`, `PROVIDER` and `DURATION` from its own command line, never from your shell. The commands underneath:
 
 ```sh
 python3 tools/bootstrap.py                     # pinned vendor sources + ESP32-P4 toolchain
@@ -60,6 +71,7 @@ Evidence assessors (`python3 -m tools.<name> RUN_DIR`): `camera_baseline_evidenc
 - **Opening the serial port can reset the Tab5.** Keep one collector open for a whole trial, and prefix long runs with `/usr/bin/caffeinate -is` (Mac sleep drops USB data).
 - Wi-Fi and the service endpoint load from SD at boot. Provision them with `tools.provision_device` or the ops TUI ([service doc](planning/service.md#provisioning)). The SD card holds plaintext Wi-Fi credentials, so keep it private. Add `--known .env.local.<name>` (up to 4) for networks the Wi-Fi dialog offers as one-tap joins. Currently provisioned (2026-11-09) in hotspot mode (`.env.local.tricorder-ap`, network "Tricorder", device at 192.168.4.1) with four known networks (run `20261109-provision-known-2`). Before that: the phone hotspot (`.env.local.hotspot`, endpoint 172.20.10.9:8765; the device got 172.20.10.10).
 - **Hotspot mode** (F-0003): an env file with `WIFI_MODE=ap` (`.env.local.tricorder-ap`, network "Tricorder") makes the device broadcast its own network at 192.168.4.1. Join the Mac to it and start the service with the default `--host 0.0.0.0`; the device sets the service address from the Mac's DHCP lease (`wifi_ap_client` event) and the Setup tile shows "Hotspot on / Mac 192.168.4.x". Wi-Fi setup on the device switches to a known or typed network until restart, and Back to hotspot returns. The Mac has no Internet while joined unless it has another connection, so the service runs with `--provider local` (the default setup). Before `a09a2b2`, live sessions lost Wi-Fi when internal RAM ran out during uploads ([G-0001.02](planning/plans/G-0001.02-concurrent-workload.md#observed)). nossa-7c-guest (`.env.local.nossa-7c-guest`) passes device-to-Mac traffic, ping 93–187 ms.
+- **Wi-Fi mode** (device and Mac on the same network): the device finds the running service by itself (UDP broadcast on 8765; Setup shows "Found the Mac service on this network"). If it doesn't, the service prints the Mac's addresses at startup; type one into Setup. Details: [service doc](planning/service.md#provisioning).
 - Headphones in the Tab5 jack turn the speaker amp off (since `0fede86`); unplugging turns it back on.
 - The private `firmware/sdkconfig` sets `CONFIG_TRICORDER_GUIDED_AB_STARTUP=y`: boot to the start screen with the radio up, skipping the automatic media diagnostics. The option keeps its A/B-era name so that file still applies.
 - Flash backups and recovery steps: `.local/runs/20260920-baseline/RECOVERY.md`.

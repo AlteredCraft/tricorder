@@ -8,7 +8,7 @@
 
 **Retargeted 2026-11-05 (user):** the Investigate tile (guided A/B) is dropped as not compelling to demo. The Sound tile stays. The premise is now the device, its screen, touch and sensors, connected to an LLM running locally on the Mac.
 
-**Active:** A/B code removal ([#6](https://github.com/AlteredCraft/tricorder/issues/6)): the A/B UI, session states, replay, fixtures, tests and docs are gone, and what remains is `service_client.cpp` on the device and `tools/service.py` on the Mac ([service.md](service.md)). Next: flash it, restart the service with `python -m tools.service`, and run one Explain per instrument; then close #6.
+**Active:** A/B code removal ([#6](https://github.com/AlteredCraft/tricorder/issues/6)): the A/B UI, session states, replay, fixtures, tests and docs are gone, and what remains is `service_client.cpp` on the device and `tools/service.py` on the Mac ([service.md](service.md)). Next: flash it, restart the service with `python -m tools.service`, and run one Explain per instrument; then close #6. The same flash carries [#12](https://github.com/AlteredCraft/tricorder/issues/12): the boot SD self-test (`ab-storage-*` files), the `/test-files` routes and `tools/download_storage.py` are gone, and `capture_serial.py --console-command` now waits for `console_ready`.
 
 | Feature | Status |
 | --- | --- |

@@ -12,6 +12,7 @@ namespace {
 portMUX_TYPE endpoint_lock=portMUX_INITIALIZER_UNLOCKED;
 char endpoint[241]=CONFIG_TRICORDER_INVESTIGATION_ENDPOINT; // endpoint_lock
 EndpointSource source=EndpointSource::Default;unsigned version=1; // endpoint_lock
+uint32_t typed_ipv4=0; // endpoint_lock; station address when the user typed it
 // LVGL task only.
 lv_obj_t *panel,*network_label,*audio_label,*address_field,*address_label,*caption_label,*mode_label,*keyboard;
 unsigned shown_version=0;
@@ -27,8 +28,11 @@ bool waiting_for_mac() {return network_access_point() && !network_peer_ipv4();}
 const char* caption(const Stored& s) {
     if(waiting_for_mac())return "Set when the Mac joins the hotspot";
     ServiceEndpoint parsed;
+    if(network_service_searching())
+        return "Looking for the service on this network; start it on the Mac, or enter its address";
     if(!parsed.parse(s.text))return "Not a valid address; enter ws://Mac-IP:8765/";
     switch(s.source) {
+    case EndpointSource::Found:return "Found the Mac service on this network";
     case EndpointSource::Sd:return "From the SD card at boot";
     case EndpointSource::Hotspot:
         return network_access_point()?"Set when the Mac joined the hotspot":"Left from the hotspot; enter the Mac's address on this network";
@@ -41,10 +45,12 @@ const char* mode_copy(bool hotspot) {
         "The Mac has no Internet while joined.\n\n"
         "The other way is Wi-Fi mode: tap Wi-Fi setup to put the device on a network the Mac is also on.";
     return network_hotspot_saved()?
-        "Wi-Fi mode: the device and the Mac are on the same network. Enter the Mac's address above. "
+        "Wi-Fi mode: the device and the Mac are on the same network. The address fills in by itself once the service runs; "
+        "the service prints it too. "
         "Cafe and guest networks usually block this; a phone hotspot works.\n\n"
         "The other way is hotspot mode, where the Mac joins the device's own network: tap Wi-Fi setup, then Back to hotspot.":
-        "Wi-Fi mode: the device and the Mac are on the same network. Enter the Mac's address above. "
+        "Wi-Fi mode: the device and the Mac are on the same network. The address fills in by itself once the service runs; "
+        "the service prints it too. "
         "Cafe and guest networks usually block this; a phone hotspot works.\n\n"
         "The other way is hotspot mode, where the Mac joins the device's own network. It is set up over USB.";
 }
@@ -141,9 +147,18 @@ void setup_open() {
 }
 
 void setup_set_endpoint(const char* value,EndpointSource from) {
+    const uint32_t station=network_access_point()?0:network_ipv4();
     portENTER_CRITICAL(&endpoint_lock);
     strlcpy(endpoint,value,sizeof(endpoint));source=from;++version;
+    typed_ipv4=from==EndpointSource::Typed?station:0;
     portEXIT_CRITICAL(&endpoint_lock);
+}
+
+bool setup_endpoint_typed_on(uint32_t ipv4) {
+    portENTER_CRITICAL(&endpoint_lock);
+    const bool typed=ipv4 && source==EndpointSource::Typed && typed_ipv4==ipv4;
+    portEXIT_CRITICAL(&endpoint_lock);
+    return typed;
 }
 
 void setup_endpoint(char* out,size_t size) {

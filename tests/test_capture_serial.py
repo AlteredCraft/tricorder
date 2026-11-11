@@ -14,7 +14,7 @@ class CaptureSerialTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);stop=root/'stop';port=MagicMock()
             rows=[dict(event='boot'),dict(event='wifi_address',ipv4='10.0.0.2'),
-                  dict(event='check',check='storage_http',result='pass'),dict(event='check',check='storage_http',result='pass')]
+                  dict(event='console_ready'),dict(event='console_ready')]
             chunks=[('TRICORDER '+json.dumps(dict(boot_id='boot',seq=i,device_us=i,**e))+'\n').encode() for i,e in enumerate(rows)]
             def read(_):
                 if not chunks:stop.touch();return b''

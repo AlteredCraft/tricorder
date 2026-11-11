@@ -70,9 +70,6 @@ int main(int argc,char** argv) {
  assert(storage_replace_config(root.c_str(),R"({"ssid":"fixed","password":"four"})"));
  assert(unlink((root+"/wifi.json").c_str())==0);
  assert(storage_load_config(root.c_str(),saved) && !strcmp(saved.ssid,"old"));
- assert(storage_public_name("ab-123-a.raw"));
- assert(storage_public_name("ab-123-a.json"));
- for(auto* s:{"../wifi.json","wifi.json","ab-x.raw.part","ab-/x.raw","ab-x%2f.raw","ab-x.raw?x",""})assert(!storage_public_name(s));
  StorageConfig cfg{};
  assert(storage_parse_config(R"({"ssid":"test","password":"password!","endpoint":"ws://192.168.1.2:8765/"})",cfg));
  assert(!strcmp(cfg.ssid,"test") && !strcmp(cfg.password,"password!"));
