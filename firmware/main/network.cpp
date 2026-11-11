@@ -1,6 +1,7 @@
 #include "network.h"
 #include "setup.h"
 #include "service_wire.h"
+#include "service_discovery.h"
 #include "diagnostic_events.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_event.h"
@@ -13,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "lwip/sockets.h"
 #include <cstdio>
 #include <cstring>
 #include <atomic>
@@ -22,6 +24,8 @@ std::atomic<uint32_t> station_ipv4{0}; // own address, 0 while down; read by the
 // Hotspot mode: the last joined device's lease, and the MAC it was given to.
 std::atomic<uint32_t> peer_ipv4{0};
 std::atomic<bool> hotspot{false};
+// Station address the service last answered discovery on; 0 when none has.
+std::atomic<uint32_t> found_ipv4{0};
 portMUX_TYPE name_lock=portMUX_INITIALIZER_UNLOCKED;
 char hotspot_name[33]; // name_lock
 uint8_t peer_mac[6]; // event loop task only
@@ -106,12 +110,16 @@ void address_event(const char* mode, uint32_t ipv4) {
     diagnostic_emit(event);
 }
 
+int service_port() {
+    ServiceEndpoint configured;
+    return configured.parse(CONFIG_TRICORDER_INVESTIGATION_ENDPOINT) ? configured.port : 8765;
+}
+
 // The Mac joined the hotspot: its lease is where the service listens, on the configured port.
 void peer_assigned(const ip_event_ap_staipassigned_t& assigned) {
     peer_ipv4.store(assigned.ip.addr);
     memcpy(peer_mac, assigned.mac, sizeof(peer_mac));
-    ServiceEndpoint configured;
-    const int port = configured.parse(CONFIG_TRICORDER_INVESTIGATION_ENDPOINT) ? configured.port : 8765;
+    const int port = service_port();
     char ip[24], endpoint[64], text[128];
     snprintf(ip, sizeof(ip), IPSTR, IP2STR(&assigned.ip));
     snprintf(endpoint, sizeof(endpoint), "ws://%s:%d/", ip, port);
@@ -248,6 +256,7 @@ void network_task(void*) {
             if (started && !hotspot.load()) esp_wifi_disconnect();
             // Leaving hotspot mode (manual Wi-Fi setup): the mode change posts STA_START, which connects.
             const bool from_hotspot = hotspot.exchange(false);
+            found_ipv4.store(0); // a new network: look for the service again
             if (from_hotspot) { station_ipv4.store(0); peer_ipv4.store(0); }
             result=esp_wifi_set_mode(WIFI_MODE_STA);
             if (result==ESP_OK) result=esp_wifi_set_config(WIFI_IF_STA, &config);
@@ -267,6 +276,44 @@ void network_task(void*) {
         auto* event = diagnostic_event(initialize_only ? "wifi_initialize_requested" :
                                        access_point ? "wifi_access_point_requested" : "wifi_connect_requested");
         cJSON_AddStringToObject(event, "result", esp_err_to_name(result));
+        diagnostic_emit(event);
+    }
+}
+
+// Station mode: broadcast for the service until it answers, then use the address that
+// answered. Runs again on every new station address (another network or lease).
+void discovery_task(void*) {
+    int fd=-1;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        if (!network_service_searching()) continue;
+        const uint32_t station=station_ipv4.load();
+        if (fd<0) {
+            fd=socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+            if (fd<0) continue;
+            int on=1; timeval wait{}; wait.tv_sec=1; wait.tv_usec=500*1000;
+            setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on));
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, sizeof(wait));
+        }
+        sockaddr_in to{};
+        to.sin_family=AF_INET; to.sin_port=htons(service_port()); to.sin_addr.s_addr=htonl(INADDR_BROADCAST);
+        if (sendto(fd, discovery_request, sizeof(discovery_request)-1, 0, reinterpret_cast<sockaddr*>(&to), sizeof(to))<0) continue;
+        char reply[48]; sockaddr_in from{}; socklen_t size=sizeof(from);
+        const int count=recvfrom(fd, reply, sizeof(reply)-1, 0, reinterpret_cast<sockaddr*>(&from), &size);
+        if (count<=0) continue;
+        reply[count]=0;
+        const int port=discovery_reply_port(reply);
+        // The network may have changed while the request was out.
+        if (!port || station_ipv4.load()!=station || !network_service_searching()) continue;
+        char ip[24], endpoint[64], text[128];
+        inet_ntoa_r(from.sin_addr, ip, sizeof(ip));
+        snprintf(endpoint, sizeof(endpoint), "ws://%s:%d/", ip, port);
+        setup_set_endpoint(endpoint, EndpointSource::Found);
+        found_ipv4.store(station);
+        snprintf(text, sizeof(text), "Found the Mac service: %s", endpoint);
+        show_status(text);
+        auto* event = diagnostic_event("service_found");
+        cJSON_AddStringToObject(event, "endpoint", endpoint);
         diagnostic_emit(event);
     }
 }
@@ -433,6 +480,7 @@ void network_ui_init(lv_obj_t* screen, const char* boot_id) {
     lv_obj_set_style_text_font(keyboard,&lv_font_montserrat_28,LV_PART_ITEMS);
     lv_keyboard_set_textarea(keyboard,ssid_field);
     configASSERT(xTaskCreate(network_task,"network",6144,nullptr,5,nullptr)==pdPASS);
+    configASSERT(xTaskCreate(discovery_task,"discovery",4096,nullptr,2,nullptr)==pdPASS);
 }
 
 bool network_connect_saved(const char* ssid,const char* password) {
@@ -459,6 +507,10 @@ bool network_start_access_point(const char* ssid,const char* password) {
 uint32_t network_ipv4() {return station_ipv4.load();}
 uint32_t network_peer_ipv4() {return peer_ipv4.load();}
 bool network_access_point() {return hotspot.load();}
+bool network_service_searching() {
+    const uint32_t station=station_ipv4.load();
+    return !hotspot.load() && station && found_ipv4.load()!=station && !setup_endpoint_typed_on(station);
+}
 bool network_hotspot_saved() {
     portENTER_CRITICAL(&known_lock);const bool saved=saved_hotspot.ssid[0];portEXIT_CRITICAL(&known_lock);
     return saved;

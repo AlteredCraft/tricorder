@@ -27,3 +27,6 @@ bool network_hotspot_saved();
 void network_set_known(const StorageNetwork* networks, int count);
 // Hotspot only: the network name the device broadcasts. Any task.
 void network_access_point_name(char* out, size_t size);
+// Station only: true while the device broadcasts for the Mac service on this network
+// (no answer yet, and no address typed here). Any task.
+bool network_service_searching();
